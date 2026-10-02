@@ -35,6 +35,8 @@ nav:
       - Client: api/client.md
       - Server: api/server.md
       - Backends: api/backends.md
+      - Relay: api/relay.md
+      - Capture: api/capture.md
       - Options: api/options.md
       - Packets: api/packet.md
       - Transfer engine: api/transfer.md

@@ -325,6 +325,57 @@ pktinfo), `interface_index` (or 0); shortcuts `filename`, `mode`, `options`.
   `close()` wait (`WouldBlock`) until the worker calls
   `set_result(error=None)`, and re-raise its error. `size` answers `tsize`.
 
+## Relay (`tftp.relay`)
+
+**`Relay(route, host="::", port=69, *, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None)`**
+— a transparent application relay (there is no standard TFTP relay). The
+request is forwarded **byte for byte** from a fresh upstream-side socket; the
+upstream's TID is learned from its first answer (from the address asked);
+datagrams then cross unchanged between `client <-> relay(client-side TID)` and
+`relay(upstream-side TID) <-> upstream`, so options and extensions this
+library does not know work end to end. Each side negotiates nothing with the
+relay — the client sees the upstream's OACK. For different settings per side
+use `UpstreamHandler` (a terminating proxy) instead.
+
+- `route` — an upstream (`"host"`, `"host:port"`, `"[v6]:port"`,
+  `(host, port)`, `Upstream`) or `route(request, context) -> upstream | None`;
+  `None` refuses with ERROR 2 `"no route"`. Hostnames are resolved per
+  request (cached 60 s). Routes run on the relay's loop: keep them fast.
+- A transfer ends on: an ERROR either way (after ≤1 s), the final DATA/ACK
+  exchange (the block size followed from an OACK's `blksize`/`blksize2`, then
+  `linger`), `idle_timeout` without traffic, or `max_lifetime`. Keep
+  `idle_timeout` above the longest timeout × retries a peer may use.
+- A repeated request from the same client address/port is forwarded again
+  only while the upstream has not answered. Strays on either leg get ERROR 5.
+- Shutdown sends ERROR 0 `"relay shutting down"` to both sides of each
+  transfer. Windows caps `max_sessions` at 250 by default (two sockets each).
+- `on_session_end(RelaySummary)` — `session`, `client`, `upstream` (the
+  learned TID), `filename`, `operation`, `mode`, `bytes_to_client`,
+  `bytes_from_client`, `packets`, `duration`, `reason` (`"complete"`,
+  `"error"`, `"idle"`, `"lifetime"`, `"shutdown"`), `error` (`(code,
+  message)` of an ERROR that passed through, or `None`).
+- Lifecycle and properties as for `Server`: `serve_forever`, `shutdown`,
+  `start`, `stop`, `close`, context manager; `server_address`,
+  `supports_pktinfo`, `active_sessions`.
+
+Routing helpers (`tftp.relay`): **`upstream(value) -> Upstream(host, port)`**;
+**`by_subnet({cidr: upstream})`** (client address, longest prefix; mapped v4
+matches v4 networks); **`by_prefix({prefix: upstream})`** (filename, longest
+prefix, `\` = `/`, leading separators ignored); **`by_interface({ifindex or
+local address: upstream})`** (needs pktinfo); **`RouteTable(routes,
+default=None)`** (first match wins).
+
+## Packet events (`tftp.capture`)
+
+**`PacketEvent(time, direction, local, remote, data, role="capture", session=None, leg=None)`**
+— one datagram. `direction` is `"in"`/`"out"` from `role`'s view
+(`"seen"` for a passive capture); `session` correlates one transfer's events;
+`leg` is the relay side. Properties: `opcode`, `opcode_name`, `block`,
+`payload_size`, `summary` (one line, never raises), `source`, `destination`;
+methods `decode()`, `format()` (a human line), `to_dict(payload=False)` (JSON-
+ready metadata; DATA payloads only as hex with `payload=True`).
+`summarize(data)` is the one-line description on its own.
+
 ## Results and errors
 
 **`TransferResult`** — `filename`, `operation` (`"read"` for RRQ, `"write"`
