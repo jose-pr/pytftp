@@ -321,7 +321,7 @@ class Relay:
         down, client = reply_socket(self._listener.family, self._listener.host, sender, local, ifindex)
         try:
             source = self.upstream_source or ("::" if family == socket.AF_INET6 else "0.0.0.0")
-            up = bind(source, 0, family=family, reuse_address=False, connreset=False)
+            up = bind(source, 0, family=family, connreset=False)
             up.setblocking(False)
         except OSError:
             down.close()

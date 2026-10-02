@@ -313,7 +313,7 @@ class Client:
         local_host, local_port = self.local_address or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
         # connreset=False: Windows would otherwise report an ICMP
         # port-unreachable as ConnectionResetError on our next receive.
-        with bind(local_host, local_port, family=family, reuse_address=False, connreset=False) as sock:
+        with bind(local_host, local_port, family=family, connreset=False) as sock:
             started = time.monotonic()
             try:
                 return self._exchange(

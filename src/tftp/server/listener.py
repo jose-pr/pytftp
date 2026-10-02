@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import errno
 import socket
-import sys
 from typing import Any, NamedTuple, Optional, Tuple
 
 from ..packet import encode_error
@@ -30,11 +29,9 @@ class Arrival(NamedTuple):
 def _bind(host: str, port: int) -> socket.socket:
     from netimps import bind, normalize_host
 
-    # netimps maps reuse_address to SO_EXCLUSIVEADDRUSE on Windows, which
-    # stops another process taking the port over -- wanted. On POSIX it means
-    # SO_REUSEADDR, which on a UDP socket lets a second server share the port
-    # and silently take half the requests -- not wanted.
-    plain = {"reuse_address": sys.platform == "win32", "connreset": False}
+    # netimps' defaults keep the port exclusive for a datagram socket on every
+    # platform (no SO_REUSEADDR on POSIX, SO_EXCLUSIVEADDRUSE on Windows).
+    plain = {"connreset": False}
     if host in ("", "::"):
         try:
             sock = bind(

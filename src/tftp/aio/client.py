@@ -298,7 +298,7 @@ class AsyncClient(Client):
         attempts = [options, {}] if options and self.fallback else [options]
         for attempt, attempt_options in enumerate(attempts):
             # Each attempt gets its own socket (the transport closes it).
-            sock = bind(local_host, local_port, family=family, reuse_address=False, connreset=False)
+            sock = bind(local_host, local_port, family=family, connreset=False)
             sock.setblocking(False)
             try:
                 return await self._exchange_async(

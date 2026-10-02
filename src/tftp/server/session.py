@@ -96,7 +96,7 @@ def reply_socket(
     last: Optional[OSError] = None
     for candidate in candidates:
         try:
-            sock = bind(candidate, 0, family=family, reuse_address=False, connreset=False)
+            sock = bind(candidate, 0, family=family, connreset=False)
         except OSError as exc:
             last = exc
             continue
