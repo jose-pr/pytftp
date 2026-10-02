@@ -16,7 +16,15 @@ ALL = tftp.ServerOptions(allowed=tftp.SUPPORTED_OPTIONS)
 def test_standard_options_are_the_default_policy():
     assert tftp.ServerOptions().allowed == {"blksize", "timeout", "tsize", "windowsize"}
     assert tftp.STANDARD_OPTIONS == {"blksize", "timeout", "tsize", "windowsize"}
-    assert tftp.EXTENSION_OPTIONS == {"blksize2", "utimeout", "rollover", "cookie", "mstfwindow"}
+    assert tftp.EXTENSION_OPTIONS == {
+        "blksize2",
+        "utimeout",
+        "rollover",
+        "cookie",
+        "mstfwindow",
+        "x-list",
+        "x-mtime",
+    }
     requested = {
         "blksize": "1024",
         "rollover": "1",

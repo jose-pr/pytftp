@@ -241,3 +241,18 @@ def test_serve_deployment_flags(root):
 )
 def test_serve_deployment_flag_errors(tmp_path, args):
     assert run(["serve", str(tmp_path), *args]) == 2
+
+
+def test_ls_against_serve_listing(root, capsys):
+    proc, port = _serve_subprocess(["serve", str(root), "-l", "127.0.0.1", "-p", "0", "--listing"])
+    try:
+        assert not run(["ls", "127.0.0.1", "-p", str(port)])
+        out = capsys.readouterr().out
+        assert "sub/" in out and "big.bin" in out and "300001" in out
+        assert not run(["ls", "tftp://127.0.0.1:%d/sub" % port, "--json"])
+        listed = json.loads(capsys.readouterr().out)
+        assert listed[0]["name"] == "nested.bin" and listed[0]["size"] == 6
+        assert run(["ls", "127.0.0.1", "one.bin", "-p", str(port)]) == 1
+        assert "not a directory" in capsys.readouterr().err
+    finally:
+        _stop(proc)

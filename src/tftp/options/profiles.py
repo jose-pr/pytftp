@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping
 
-from .policy import EXTENSION_OPTIONS, STANDARD_OPTIONS, ServerOptions
+from .policy import STANDARD_OPTIONS, ServerOptions
 
 __all__ = ["Profile", "STRICT", "DEFAULT", "PXE", "HPA", "LEGACY", "PROFILES"]
 
@@ -55,8 +55,8 @@ PXE = Profile(
     ServerOptions(allowed=STANDARD_OPTIONS | {"rollover", "utimeout"}, fit_mtu=True),
     {"blksize": 1428},
 )
-#: tftp-hpa's own extensions (not Microsoft's ``mstfwindow``).
-_HPA_EXTENSIONS = EXTENSION_OPTIONS - {"mstfwindow"}
+#: tftp-hpa's own extensions.
+_HPA_EXTENSIONS = frozenset({"blksize2", "utimeout", "rollover", "cookie"})
 HPA = Profile("hpa", ServerOptions(allowed=STANDARD_OPTIONS | _HPA_EXTENSIONS), {"utimeout": True})
 LEGACY = Profile(
     "legacy",

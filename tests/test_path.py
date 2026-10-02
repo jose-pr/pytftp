@@ -30,8 +30,8 @@ def test_read_write_stat(root, server):
     assert not client.path("missing").exists()
     with pytest.raises(FileNotFoundError):
         client.path("missing").read_bytes()
-    client.path("written.txt").write_text("héllo\n", encoding="utf-8", newline="\n")
-    assert (root / "written.txt").read_bytes() == "héllo\n".encode()
+    client.path("written.txt").write_text("hÃ©llo\n", encoding="utf-8", newline="\n")
+    assert (root / "written.txt").read_bytes() == "hÃ©llo\n".encode()
     assert client.path("text.txt", mode="netascii").read_bytes() == (root / "text.txt").read_bytes()
 
 
@@ -54,8 +54,8 @@ def test_modes_and_unsupported_operations(root, make_server):
         client.path("one.bin").open("xb")
     with pytest.raises(NotImplementedError):
         client.path("one.bin").open("ab")
-    with pytest.raises(NotImplementedError):
-        list(client.path("sub").iterdir())
+    with pytest.raises(FileNotFoundError):
+        list(client.path("sub").iterdir())  # a server without x-list: no directories
     with pytest.raises(NotImplementedError):
         client.path("one.bin").unlink()
 
@@ -106,7 +106,7 @@ def test_uri_path(root, server, tmp_path_factory):
     target = tmp_path_factory.mktemp("uri") / "out.bin"
     path.copy(UriPath(target.as_uri()))  # tftp: -> file:
     assert target.read_bytes() == (root / "big.bin").read_bytes()
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(FileNotFoundError):
         list(UriPath(base + "sub/").iterdir())
 
 

@@ -176,7 +176,13 @@ class ServerBase:
             self.stats.add("refused")
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
             return None
-        session = Session(sock, peer, RequestContext(request, peer, local, ifindex), now)
+        context = RequestContext(request, peer, local, ifindex)
+        context.listing = (
+            request.is_read
+            and request.options.get("x-list", "").strip() == "1"
+            and self.options.accepts("x-list")
+        )
+        session = Session(sock, peer, context, now)
         if self.trace is not None:
             session.trace = self.trace
             # The request arrived at the listening port, not the transfer's.

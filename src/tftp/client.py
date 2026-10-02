@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import copy
+import errno
 import io
 import logging
 import os
 import socket
 import time
-from typing import Any, BinaryIO, Callable, Dict, Mapping, Optional, Tuple, Union
+from typing import Any, BinaryIO, Callable, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union
 
-from .errors import ProtocolError, RemoteError, TransferTimeout
+from .errors import ProtocolError, RemoteError, TftpError, TransferTimeout
+from .listing import LIST_OPTION, MTIME_OPTION, ListEntry, parse_listing
 from .netascii import NetasciiReader, NetasciiWriter, encoded_size
 from .options import (
     DEFAULT_BLKSIZE,
@@ -26,7 +29,7 @@ from ._sockets import fit_window
 from .capture.events import PacketEvent, new_session_id
 from .transfer import Receiver, Sender, Transfer, as_readinto, as_write
 
-__all__ = ["Client", "download", "upload", "MODES"]
+__all__ = ["Client", "RemoteStat", "download", "upload", "MODES"]
 
 log = logging.getLogger("tftp.client")
 
@@ -46,6 +49,28 @@ def _mode(mode: str) -> str:
     if mode not in MODES:
         raise ValueError("mode must be one of %s, not %r" % (", ".join(MODES), mode))
     return mode
+
+
+class RemoteStat(NamedTuple):
+    """What :meth:`Client.stat` learnt about a name on the server.
+
+    ``size`` is ``None`` when the server reports none (and for a directory);
+    ``mtime`` (seconds since the epoch) needs a server speaking ``x-mtime``;
+    ``is_dir`` needs one speaking ``x-list`` -- other servers report a
+    directory as not found.
+    """
+
+    size: Optional[int]
+    mtime: Optional[int] = None
+    is_dir: bool = False
+
+
+class _NotListing(ProtocolError):
+    """A listing was asked for and a file is arriving instead."""
+
+
+def _digits(text: Optional[str]) -> Optional[int]:
+    return int(text) if text is not None and text.strip().isdigit() else None
 
 
 def _source_size(source: Any) -> Optional[int]:
@@ -440,10 +465,99 @@ class Client:
         then is the size. Raises :class:`RemoteError` (``FileNotFound``...)
         like a download would.
         """
+        oack, small = self._probe(filename, _mode(mode), {"tsize": "0"})
+        return small if oack is None else _digits(oack.get("tsize"))
+
+    def stat(self, filename: str, *, mode: str = "octet") -> RemoteStat:
+        """Size, modification time and kind of ``filename``, in one probe.
+
+        Like :meth:`size`, with ``x-mtime`` and ``x-list`` asked for as well:
+        a pytftp server allowing them reports the time and recognises a
+        directory; any other server ignores them (RFC 2347). A server that
+        refuses the request over its options (ERROR 8) is probed again for
+        the size alone, when ``fallback`` is on.
+        """
         mode = _mode(mode)
+        filename = filename or "."  # the root: a request needs a name
+        asked = {"tsize": "0", MTIME_OPTION: "0", LIST_OPTION: "1"}
+        try:
+            oack, small = self._probe(filename, mode, asked)
+        except RemoteError as exc:
+            if exc.code != ErrorCode.OPTION_REFUSED or not self.fallback:
+                raise
+            return RemoteStat(Client.size(self, filename, mode=mode))
+        if oack is None:
+            return RemoteStat(small)
+        is_dir = oack.get(LIST_OPTION, "").strip() == "1"
+        size = None if is_dir else _digits(oack.get("tsize"))
+        return RemoteStat(size, _digits(oack.get(MTIME_OPTION)), is_dir)
+
+    def listdir(self, dirname: str = "") -> List[ListEntry]:
+        """The entries of directory ``dirname`` (``""`` is the server's root).
+
+        Needs a server speaking pytftp's ``x-list`` extension (``tftp.Server``
+        allowing :data:`LISTING_OPTIONS`); there is no standard way to list
+        in TFTP. Raises ``NotADirectoryError`` when the name is a file (the
+        transfer is abandoned at once), and :class:`FileNotFound` when it does
+        not exist -- which is also what a server without listing support
+        answers for a directory.
+        """
+        lister = self._lister()
+        sink = io.BytesIO()
+        try:
+            lister.download(dirname or ".", sink)
+        except _NotListing:
+            raise NotADirectoryError(errno.ENOTDIR, "not a directory", dirname) from None
+        return parse_listing(sink.getvalue())
+
+    def _lister(self) -> "Client":
+        """A copy of this client whose download is a listing or fails with _NotListing."""
+        lister = copy.copy(self)
+        lister.extra_options = dict(self.extra_options, **{LIST_OPTION: "1"})
+        lister.fallback = False
+        outer = self.on_negotiated
+
+        def check(negotiated: Negotiated, peer: Tuple[Any, ...]) -> None:
+            if not negotiated.extra.get(LIST_OPTION):
+                raise _NotListing("not a directory", ErrorCode.OPTION_REFUSED)
+            if outer is not None:
+                outer(negotiated, peer)
+
+        lister.on_negotiated = check
+        return lister
+
+    def _negotiated(
+        self, negotiated: Negotiated, peer: Tuple[Any, ...], send: Callable[[bytes], Any]
+    ) -> None:
+        """Run ``on_negotiated``; if it raises, tell the server before re-raising."""
+        if self.on_negotiated is None:
+            return
+        try:
+            self.on_negotiated(negotiated, peer)
+        except BaseException as exc:
+            if isinstance(exc, TftpError):
+                packet = encode_error(exc.code, exc.message)
+            else:
+                packet = encode_error(ErrorCode.NOT_DEFINED, "transfer cancelled")
+            try:
+                send(packet)
+            except OSError:
+                pass
+            raise
+
+    def _probe(
+        self, filename: str, mode: str, options: Mapping[str, str]
+    ) -> Tuple[Optional[Dict[str, str]], Optional[int]]:
+        """Send an RRQ and abandon it at the first answer.
+
+        ``(oack, None)`` when the server answered with an OACK (refused with
+        ERROR 8 at once); ``(None, size)`` when it ignored the options and
+        sent DATA 1 -- ``size`` is that block's length when the whole file
+        fits in it, else ``None``.
+        """
         family, server, _ = self._endpoint()
         with self._socket(family) as sock:
-            request = encode_request(Opcode.RRQ, filename, mode, {"tsize": "0"})
+            request = encode_request(Opcode.RRQ, filename, mode, options)
             buf = bytearray(4 + 65536)
             view = memoryview(buf)
             emit = self._emitter(sock)
@@ -460,15 +574,14 @@ class Client:
                 raise RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
             if op == Opcode.OACK:
                 send(encode_error(ErrorCode.OPTION_REFUSED, "size probe only"))
-                text = decode(view[:n]).options.get("tsize", "")  # type: ignore[union-attr]
-                return int(text) if text.strip().isdigit() else None
+                return dict(decode(view[:n]).options), None  # type: ignore[union-attr]
             if op == Opcode.DATA and n >= 4:
                 size = n - 4
                 if size < DEFAULT_BLKSIZE:
                     send(encode_ack(1))  # the whole file: finish politely
-                    return size
+                    return None, size
                 send(encode_error(ErrorCode.NOT_DEFINED, "size probe only"))
-                return None
+                return None, None
             send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
             raise ProtocolError("unexpected opcode %d in response to the request" % op)
 
@@ -509,8 +622,7 @@ class Client:
 
         # Before the engine exists: building a Sender already reads the first
         # block, and a caller may need to know the outcome before that.
-        if self.on_negotiated is not None:
-            self.on_negotiated(negotiated, peer)
+        self._negotiated(negotiated, peer, send)
         now = clock()
         if is_read:
             reply = None if first_data else encode_ack(0)

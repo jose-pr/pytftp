@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from .base import (
     MAX_BLKSIZE,
@@ -30,6 +30,7 @@ def negotiate(
     size: Optional[int] = None,
     mtu: Optional[int] = None,
     ipv6: bool = False,
+    stream: Any = None,
 ) -> Negotiated:
     """Server side: decide which requested options to acknowledge.
 
@@ -37,10 +38,11 @@ def negotiate(
     unusable value are left out of the acknowledgement -- RFC 2347's way of
     refusing them; the transfer then runs on that option's default. A server
     never acknowledges an option that was not requested. ``size`` is the file
-    size for an RRQ ``tsize``; ``mtu``/``ipv6`` feed ``fit_mtu``.
+    size for an RRQ ``tsize``; ``mtu``/``ipv6`` feed ``fit_mtu``; ``stream``
+    is the RRQ's opened source, for options that describe it.
     """
     result = Negotiated(timeout=timeout)
-    ctx = ServerContext(result, requested, policy, is_read, size, mtu, ipv6)
+    ctx = ServerContext(result, requested, policy, is_read, size, mtu, ipv6, stream)
     for handler in policy.registry:
         name = handler.name
         if name in requested and policy.accepts(name):

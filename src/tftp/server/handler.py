@@ -39,9 +39,12 @@ class RequestContext:
     :ivar local_address: the address the request was sent to, when the
         platform reports it (see ``Server.supports_pktinfo``), else ``None``.
     :ivar interface_index: the interface it arrived on, or ``0``.
+    :ivar listing: an RRQ asking for a directory listing (``x-list``) that
+        the server's policy allows; a handler may then answer a directory
+        with a :class:`tftp.listing.DirectoryListing`.
     """
 
-    __slots__ = ("request", "peer", "local_address", "interface_index")
+    __slots__ = ("request", "peer", "local_address", "interface_index", "listing")
 
     def __init__(
         self,
@@ -54,6 +57,7 @@ class RequestContext:
         self.peer = peer
         self.local_address = local_address
         self.interface_index = interface_index
+        self.listing = False
 
     @property
     def filename(self) -> str:
@@ -216,7 +220,14 @@ class FileSystemHandler:
         return real
 
     def open_read(self, context: RequestContext) -> BinaryIO:
-        path = self.resolve(context.filename)
+        if context.listing and _is_root(context.filename, self.backslash):
+            path = self.root
+        else:
+            path = self.resolve(context.filename)
+        if context.listing and os.path.isdir(path):
+            from ..listing import DirectoryListing
+
+            return DirectoryListing(path, self.root)  # type: ignore[return-value]
         if not os.path.isfile(path):
             raise TftpError(ErrorCode.FILE_NOT_FOUND)
         return open(path, "rb")
@@ -247,6 +258,11 @@ class FileSystemHandler:
         if self.max_upload is not None:
             return _Capped(writer, self.max_upload)
         return writer
+
+
+def _is_root(filename: str, backslash: bool) -> bool:
+    name = filename.replace("\\", "/") if backslash else filename
+    return all(part in ("", ".") for part in name.split("/"))
 
 
 class _Capped:

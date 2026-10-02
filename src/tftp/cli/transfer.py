@@ -1,4 +1,4 @@
-"""``pytftp get`` and ``pytftp put``.
+"""``pytftp get``, ``pytftp put`` and ``pytftp ls``.
 
 ``HOST`` may also be a ``tftp://host[:port]/file[;mode=netascii]`` URL, which
 then names the remote file too::
@@ -6,19 +6,22 @@ then names the remote file too::
     pytftp get 192.0.2.1 boot/pxelinux.0 pxelinux.0
     pytftp get tftp://192.0.2.1/boot/pxelinux.0 pxelinux.0
     pytftp put tftp://192.0.2.1/incoming/log.txt log.txt
+    pytftp ls 192.0.2.1 boot        # needs a server speaking x-list
 """
 
 from __future__ import annotations
 
+import json as _json
 import os as _os
 import sys as _sys
+import time as _time
 import typing as _ty
 
 from ..errors import TftpError
 from ..uri import parse_url
 from .common import ClientCmd, error
 
-__all__ = ["Get", "Put"]
+__all__ = ["Get", "Put", "Ls"]
 
 
 def _basename(remote: str) -> str:
@@ -125,4 +128,47 @@ class Put(ClientCmd):
         finally:
             self._close_trace()
         self._report(result)
+        return None
+
+
+class Ls(ClientCmd):
+    """List a directory (pytftp's x-list extension: a pytftp server with listing allowed)."""
+
+    _parsername_ = "ls"
+    _parseraliases_ = ["list"]
+
+    host: str
+    "Server name or address, or a tftp:// URL naming the directory"
+    ("host",)
+
+    remote: str = ""
+    "Directory to list; default: the server's root"
+    ("remote",)
+
+    def __call__(self) -> "int | None":
+        if _is_url(self.host):
+            url = parse_url(self.host)
+            client = self._client(url.host, url.port)
+            remote = url.filename
+        else:
+            client = self._client(self.host)
+            remote = self.remote
+        try:
+            entries = client.listdir(remote)
+        except (TftpError, OSError) as exc:
+            error("error: %s" % exc)
+            return 1
+        finally:
+            self._close_trace()
+        if self.json_out:
+            print(_json.dumps([entry._asdict() for entry in entries], indent=2))
+            return None
+        for entry in entries:
+            when = (
+                "-" if entry.mtime is None else _time.strftime("%Y-%m-%d %H:%M", _time.localtime(entry.mtime))
+            )
+            print(
+                "%s %12d %16s %s%s"
+                % ("d" if entry.is_dir else "-", entry.size, when, entry.name, "/" if entry.is_dir else "")
+            )
         return None

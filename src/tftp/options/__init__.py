@@ -30,6 +30,8 @@ from .builtin import (
     Blksize2,
     Cookie,
     Mstfwindow,
+    XList,
+    XMtime,
     Rollover,
     Timeout,
     Tsize,
@@ -37,7 +39,7 @@ from .builtin import (
     Windowsize,
 )
 from .negotiate import accept_oack, negotiate, request_options
-from .policy import EXTENSION_OPTIONS, STANDARD_OPTIONS, SUPPORTED_OPTIONS, ServerOptions
+from .policy import EXTENSION_OPTIONS, LISTING_OPTIONS, STANDARD_OPTIONS, SUPPORTED_OPTIONS, ServerOptions
 from .profiles import DEFAULT, HPA, LEGACY, PROFILES, PXE, STRICT, Profile
 from .registry import DEFAULT_REGISTRY, OptionRegistry, register_option
 
@@ -63,6 +65,8 @@ __all__ = [
     "Rollover",
     "Cookie",
     "Mstfwindow",
+    "XList",
+    "XMtime",
     "BUILTIN_OPTIONS",
     "OptionRegistry",
     "DEFAULT_REGISTRY",
@@ -70,6 +74,7 @@ __all__ = [
     "ServerOptions",
     "STANDARD_OPTIONS",
     "EXTENSION_OPTIONS",
+    "LISTING_OPTIONS",
     "SUPPORTED_OPTIONS",
     "negotiate",
     "accept_oack",

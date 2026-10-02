@@ -93,9 +93,11 @@ class ServerContext:
     :ivar size: the file size for an RRQ (``tsize``), or ``None``.
     :ivar mtu: link MTU of the interface the request arrived on, when known.
     :ivar ipv6: the transfer runs over IPv6 (header size for MTU arithmetic).
+    :ivar stream: what the handler opened for an RRQ (options may describe
+        it: ``x-mtime``, ``x-list``), else ``None``.
     """
 
-    __slots__ = ("result", "requested", "acked", "policy", "is_read", "size", "mtu", "ipv6")
+    __slots__ = ("result", "requested", "acked", "policy", "is_read", "size", "mtu", "ipv6", "stream")
 
     def __init__(
         self,
@@ -106,6 +108,7 @@ class ServerContext:
         size: Optional[int] = None,
         mtu: Optional[int] = None,
         ipv6: bool = False,
+        stream: Any = None,
     ) -> None:
         self.result = result
         self.requested = requested
@@ -115,6 +118,7 @@ class ServerContext:
         self.size = size
         self.mtu = mtu
         self.ipv6 = ipv6
+        self.stream = stream
 
     @property
     def max_blksize(self) -> int:

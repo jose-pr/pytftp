@@ -13,7 +13,7 @@ import logging as _logging
 import os as _os
 import typing as _ty
 
-from ..options import PROFILES, STANDARD_OPTIONS, ServerOptions
+from ..options import LISTING_OPTIONS, PROFILES, STANDARD_OPTIONS, ServerOptions
 from ..result import TransferResult
 from ..server import Server, ServerLimits
 from .common import PROFILE_NAMES, Choice, Traced, bind_failure, error, port_range, result_json
@@ -87,6 +87,10 @@ class Serve(Traced):
     "Never acknowledge this option, e.g. windowsize for broken firmware; repeatable"
     ("--refuse",)
 
+    listing: bool = False
+    "Answer directory listings and modification times (pytftp's x-list/x-mtime, for 'pytftp ls')"
+    ("--listing",)
+
     fit_mtu: bool = False
     "Lower blksize to fit the arrival interface's MTU (no IP fragments)"
     ("--fit-mtu",)
@@ -150,12 +154,24 @@ class Serve(Traced):
         return PerClient(self.root, make) if self.per_client else make(self.root)
 
     def _options(self) -> ServerOptions:
+        listing = LISTING_OPTIONS if self.listing else frozenset()
         if self.compat:
-            return PROFILES[self.compat].server
+            profile = PROFILES[self.compat].server
+            if not listing:
+                return profile
+            return ServerOptions(
+                max_blksize=profile.max_blksize,
+                max_windowsize=profile.max_windowsize,
+                max_window_bytes=profile.max_window_bytes,
+                allowed=profile.allowed | listing,
+                refused=profile.refused,
+                fit_mtu=profile.fit_mtu,
+                registry=profile.registry,
+            )
         return ServerOptions(
             max_blksize=self.max_blksize,
             max_windowsize=self.max_windowsize,
-            allowed=STANDARD_OPTIONS | set(self.allow),
+            allowed=STANDARD_OPTIONS | set(self.allow) | listing,
             refused=self.refuse,
             fit_mtu=self.fit_mtu,
         )

@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import io
 import os
 import socket
 import time
-from typing import Any, AsyncIterator, Optional, Tuple
+from typing import Any, AsyncIterator, List, Optional, Tuple
 
 from ..capture.events import PacketEvent, new_session_id
-from ..client import Client, Progress, _mode, _source_size
+from ..client import Client, Progress, RemoteStat, _NotListing, _mode, _source_size
+from ..listing import ListEntry, parse_listing
 from ..errors import RemoteError, TransferTimeout
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import DEFAULT_BLKSIZE
@@ -210,6 +212,21 @@ class AsyncClient(Client):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: Client.size(self, filename, mode=mode))
 
+    async def stat(self, filename: str, *, mode: str = "octet") -> RemoteStat:  # type: ignore[override]
+        """:meth:`Client.stat`, without blocking the loop (it runs in the executor)."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: Client.stat(self, filename, mode=mode))
+
+    async def listdir(self, dirname: str = "") -> List[ListEntry]:  # type: ignore[override]
+        """:meth:`Client.listdir`, as a coroutine."""
+        lister = self._lister()
+        sink = io.BytesIO()
+        try:
+            await lister.download(dirname or ".", sink)
+        except _NotListing:
+            raise NotADirectoryError(errno.ENOTDIR, "not a directory", dirname) from None
+        return parse_listing(sink.getvalue())
+
     async def stream(
         self, filename: str, *, mode: str = "octet", buffer: int = 1 << 20
     ) -> AsyncIterator[bytes]:
@@ -366,8 +383,7 @@ class AsyncClient(Client):
             data, peer = driver.first.result()
             view = memoryview(data)
             negotiated, first_data = self._first_response(view, len(data), options, is_read, driver.send)
-            if self.on_negotiated is not None:
-                self.on_negotiated(negotiated, peer)
+            self._negotiated(negotiated, peer, driver.send)
             driver.total = negotiated.tsize
             now = loop.time()
             if is_read:

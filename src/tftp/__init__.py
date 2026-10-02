@@ -23,7 +23,8 @@ group it for reading: :mod:`tftp.packet` (wire format), :mod:`tftp.options`
 
 from __future__ import annotations
 
-from .client import MODES, Client, download, upload
+from .client import MODES, Client, RemoteStat, download, upload
+from .listing import ListEntry
 from .errors import (
     AccessViolation,
     DiskFull,
@@ -46,6 +47,7 @@ from .options import (
     DEFAULT_BLKSIZE,
     DEFAULT_REGISTRY,
     EXTENSION_OPTIONS,
+    LISTING_OPTIONS,
     HPA,
     LEGACY,
     MAX_BLKSIZE,
@@ -87,6 +89,8 @@ __all__ = [
     "__version__",
     # Client
     "Client",
+    "RemoteStat",
+    "ListEntry",
     "download",
     "upload",
     "MODES",
@@ -142,6 +146,7 @@ __all__ = [
     "SUPPORTED_OPTIONS",
     "STANDARD_OPTIONS",
     "EXTENSION_OPTIONS",
+    "LISTING_OPTIONS",
     # Options and profiles
     "OptionHandler",
     "OptionRegistry",

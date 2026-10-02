@@ -305,7 +305,14 @@ class Session:
                 size = stream_size(stream) if wants_size else None
                 reader = stream
             negotiated = negotiate(
-                request.options, policy, is_read=True, timeout=timeout, size=size, mtu=mtu, ipv6=self._ipv6
+                request.options,
+                policy,
+                is_read=True,
+                timeout=timeout,
+                size=size,
+                mtu=mtu,
+                ipv6=self._ipv6,
+                stream=stream,
             )
             fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
             oack = encode_oack(negotiated.options) if negotiated.options else None

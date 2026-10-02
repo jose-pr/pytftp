@@ -13,7 +13,7 @@ from typing import Any, Tuple
 from pathlib_next.uri import UriPath
 
 from ..client import Client
-from .local import tftp_open, tftp_stat
+from .local import tftp_open, tftp_scandir, tftp_stat
 
 __all__ = ["TftpUriPath", "TftpBackend"]
 
@@ -38,7 +38,8 @@ class TftpUriPath(UriPath):
     The filename sent is the path after the authority's ``/``; a
     ``;mode=netascii`` suffix on the last segment selects the mode. Same
     operations as :class:`TftpPath`: whole-file reads and writes, ``stat()``
-    by size probe, ``exists()``; no listing, deleting or renaming.
+    by probe, ``exists()``, and listing against a server speaking ``x-list``;
+    no deleting or renaming.
     """
 
     __SCHEMES = ("tftp",)
@@ -81,12 +82,13 @@ class TftpUriPath(UriPath):
         filename, mode = self._target()
         return tftp_stat(self.backend.client, filename, mode, self)
 
-    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
-        return False
-
     def _open(self, mode: str = "r", buffering: int = -1):
         filename, transfer_mode = self._target()
         return tftp_open(self.backend.client, filename, transfer_mode, mode, self)
 
+    def _scandir(self):
+        return tftp_scandir(self.backend.client, self._target()[0], self)
+
     def _listdir(self):
-        raise NotImplementedError("TFTP cannot list directories")
+        for name, _ in self._scandir():
+            yield name

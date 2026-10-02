@@ -3,7 +3,8 @@
     pytftp get 192.0.2.1 pxelinux.0
     pytftp get tftp://192.0.2.1/boot/pxelinux.0 --trace
     pytftp put 192.0.2.1 firmware.bin --blksize 1428 --windowsize 16
-    pytftp serve /srv/tftp --port 6969 --write
+    pytftp ls 192.0.2.1 boot
+    pytftp serve /srv/tftp --port 6969 --write --listing
     pytftp serve --http https://images.example.com/pxe/ --compat pxe
     pytftp relay 10.0.0.20 --route-subnet 10.1.0.0/16=10.1.0.5 --pcap relay.pcap
     pytftp capture boot.pcapng --transfers --extract recovered/
@@ -21,9 +22,9 @@ from .common import AUTO, Args, error
 from .capture import CaptureCmd
 from .relay import RelayCmd
 from .serve import Serve
-from .transfer import Get, Put
+from .transfer import Get, Ls, Put
 
-__all__ = ["run", "Pytftp", "Get", "Put", "Serve", "RelayCmd", "CaptureCmd"]
+__all__ = ["run", "Pytftp", "Get", "Put", "Ls", "Serve", "RelayCmd", "CaptureCmd"]
 
 _NEEDS_EXTRA = "pytftp: the CLI needs the 'cli' extra -- pip install 'tftp[cli]'"
 
@@ -34,7 +35,7 @@ class Pytftp(Args):
     _parsername_ = "pytftp"
     _version_ = AUTO
     _distribution_ = "tftp"
-    _subcommands_ = [Get, Put, Serve, RelayCmd, CaptureCmd]
+    _subcommands_ = [Get, Put, Ls, Serve, RelayCmd, CaptureCmd]
 
 
 def run(argv: "_ty.Sequence[str] | None" = None) -> "int | None":

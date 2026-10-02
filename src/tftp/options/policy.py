@@ -7,13 +7,17 @@ from typing import FrozenSet, Iterable, Optional
 from .base import MAX_BLKSIZE, MAX_WINDOWSIZE, MIN_BLKSIZE
 from .registry import DEFAULT_REGISTRY, OptionRegistry
 
-__all__ = ["ServerOptions", "STANDARD_OPTIONS", "EXTENSION_OPTIONS", "SUPPORTED_OPTIONS"]
+__all__ = ["ServerOptions", "STANDARD_OPTIONS", "EXTENSION_OPTIONS", "LISTING_OPTIONS", "SUPPORTED_OPTIONS"]
 
 #: RFC 2348, 2349, 7440: what a server acknowledges by default.
 STANDARD_OPTIONS: FrozenSet[str] = DEFAULT_REGISTRY.standard()
-#: Extensions (tftp-hpa's, and Microsoft's ``mstfwindow``), acknowledged only
-#: when allowed explicitly.
-EXTENSION_OPTIONS: FrozenSet[str] = frozenset({"blksize2", "utimeout", "rollover", "cookie", "mstfwindow"})
+#: Extensions (tftp-hpa's, Microsoft's ``mstfwindow``, pytftp's ``x-list`` and
+#: ``x-mtime``), acknowledged only when allowed explicitly.
+EXTENSION_OPTIONS: FrozenSet[str] = frozenset(
+    {"blksize2", "utimeout", "rollover", "cookie", "mstfwindow", "x-list", "x-mtime"}
+)
+#: pytftp's listing extensions: a server allowing these serves ``TftpPath.iterdir()``.
+LISTING_OPTIONS: FrozenSet[str] = frozenset({"x-list", "x-mtime"})
 #: Everything built in.
 SUPPORTED_OPTIONS: FrozenSet[str] = STANDARD_OPTIONS | EXTENSION_OPTIONS
 

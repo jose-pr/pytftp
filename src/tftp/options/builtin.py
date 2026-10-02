@@ -13,12 +13,15 @@ option         defined by   meaning
 ``cookie``     tftp-hpa     opaque value, echoed back unchanged
 ``mstfwindow`` Microsoft    variable window (bootmgr/WDS): offer 31416, answer
                             27182, window 4
+``x-list``     pytftp       RRQ of a directory answered with a listing
+``x-mtime``    pytftp       RRQ: the file's modification time, in the OACK
 =============  ===========  ====================================================
 """
 
 from __future__ import annotations
 
-from typing import Optional
+import os
+from typing import Any, Optional
 
 from .base import (
     MAX_UTIMEOUT,
@@ -42,6 +45,9 @@ __all__ = [
     "Rollover",
     "Cookie",
     "Mstfwindow",
+    "XList",
+    "XMtime",
+    "stream_mtime",
     "BUILTIN_OPTIONS",
 ]
 
@@ -241,6 +247,61 @@ class Mstfwindow(OptionHandler):
         ctx.result.extra[self.name] = True
 
 
+class XList(OptionHandler):
+    """pytftp's directory listing (see :mod:`tftp.listing`): ``x-list=1``.
+
+    Acknowledged only when the handler answered the RRQ with a listing
+    (a stream marked ``_tftp_listing_``); a client seeing it left out of the
+    OACK knows it is receiving a file.
+    """
+
+    name = "x-list"
+    VERSION = "1"
+
+    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+        if not ctx.is_read or value.strip() != self.VERSION:
+            return None
+        if not getattr(ctx.stream, "_tftp_listing_", False):
+            return None
+        ctx.result.extra[self.name] = True
+        return self.VERSION
+
+    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+        if acked.strip() != self.VERSION:
+            raise refuse("server answered x-list=%r" % acked)
+        ctx.result.extra[self.name] = True
+
+
+def stream_mtime(stream: Any) -> Optional[int]:
+    """Modification time of an opened source: its ``mtime`` attribute, or ``fstat``."""
+    mtime = getattr(stream, "mtime", None)
+    if isinstance(mtime, (int, float)) and not isinstance(mtime, bool):
+        return int(mtime)
+    try:
+        return int(os.fstat(stream.fileno()).st_mtime)
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+class XMtime(OptionHandler):
+    """pytftp's ``x-mtime``: an RRQ's OACK carries the file's modification
+    time (whole seconds since the epoch), when the source knows it."""
+
+    name = "x-mtime"
+
+    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+        if not ctx.is_read:
+            return None
+        mtime = stream_mtime(ctx.stream)
+        if mtime is None:
+            return None
+        ctx.result.extra[self.name] = mtime
+        return str(mtime)
+
+    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+        ctx.result.extra[self.name] = _number(self.name, acked)
+
+
 #: In negotiation order: block size first, since the window bound depends on it.
 BUILTIN_OPTIONS = (
     Blksize(),
@@ -252,4 +313,6 @@ BUILTIN_OPTIONS = (
     Rollover(),
     Cookie(),
     Mstfwindow(),
+    XList(),
+    XMtime(),
 )

@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import errno
 import posixpath
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Iterator, Optional, Tuple
 
 from pathlib_next import Path, Pathname
 from pathlib_next.utils.stat import FileStat
@@ -14,7 +14,7 @@ from ..client import Client
 from ..errors import FileNotFound, TftpError
 from ._stream import open_reader, open_writer, os_error
 
-__all__ = ["TftpPath", "client_factory", "tftp_stat", "tftp_open"]
+__all__ = ["TftpPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir"]
 
 
 def client_factory(client: Client) -> Callable[..., Client]:
@@ -30,12 +30,26 @@ def client_factory(client: Client) -> Callable[..., Client]:
 
 
 def tftp_stat(client: Client, filename: str, mode: str, path: Any) -> FileStat:
-    """A ``FileStat`` from a size probe (``st_size`` 0 when the server reports none)."""
+    """A ``FileStat`` from :meth:`Client.stat`: one probe, nothing transferred.
+
+    ``st_size`` is 0 and ``st_mtime`` 0 when the server reports none; a
+    directory is recognised only by a server speaking ``x-list``.
+    """
     try:
-        size = client.size(filename, mode=mode)
+        info = client.stat(filename, mode=mode)
     except TftpError as exc:
         raise os_error(exc, path) from None
-    return FileStat(st_size=size or 0, is_dir=False)
+    return FileStat(st_size=info.size or 0, st_mtime=info.mtime or 0, is_dir=info.is_dir)
+
+
+def tftp_scandir(client: Client, dirname: str, path: Any) -> Iterator[Tuple[str, FileStat]]:
+    """``(name, FileStat)`` per entry, from one ``x-list`` listing."""
+    try:
+        entries = client.listdir(dirname)
+    except TftpError as exc:
+        raise os_error(exc, path) from None
+    for entry in entries:
+        yield entry.name, FileStat(st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir)
 
 
 def tftp_open(client: Client, filename: str, transfer_mode: str, mode: str, path: Any) -> Any:
@@ -70,12 +84,15 @@ class TftpPath(Path):
     to the server, so ``/boot/x`` and ``boot/x`` stay distinct (some servers
     resolve them differently). ``mode="netascii"`` selects the transfer mode.
 
-    TFTP can read and write whole files and nothing else: ``open("r")``,
+    TFTP can read and write whole files: ``open("r")``,
     ``open("w")``/``"x"``, ``read_bytes``/``write_bytes``/``read_text``/
-    ``write_text``, ``stat()`` (a size probe), ``exists()``, ``is_file()``,
-    and ``copy()``/``move()`` to and from any pathlib_next path. Listing,
-    deleting, renaming, directories and permissions raise
-    ``NotImplementedError``; ``is_dir()`` is always false.
+    ``write_text``, ``stat()`` (a probe), ``exists()``, ``is_file()``, and
+    ``copy()``/``move()`` to and from any pathlib_next path. Against a server
+    speaking pytftp's ``x-list``/``x-mtime`` extensions, ``iterdir()``,
+    ``is_dir()``, ``walk()``, ``glob()`` and ``st_mtime`` work too (one
+    listing per directory); other servers report directories as missing.
+    Deleting, renaming, creating directories and permissions raise
+    ``NotImplementedError``.
     """
 
     __slots__ = ("_client", "_segments", "_mode")
@@ -193,11 +210,12 @@ class TftpPath(Path):
     def stat(self, *, follow_symlinks: bool = True) -> FileStat:
         return tftp_stat(self._client, self.as_posix(), self._mode, self)
 
-    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
-        return False
-
     def _open(self, mode: str = "r", buffering: int = -1) -> Any:
         return tftp_open(self._client, self.as_posix(), self._mode, mode, self)
 
-    def iterdir(self):
-        raise NotImplementedError("TFTP cannot list directories")
+    def _scandir(self) -> Iterator[Tuple[str, FileStat]]:
+        return tftp_scandir(self._client, self.as_posix(), self)
+
+    def iterdir(self) -> Iterator["TftpPath"]:
+        for name, _ in self._scandir():
+            yield self / name
