@@ -14,39 +14,32 @@ import collections
 import concurrent.futures
 import heapq
 import logging
-import os
 import selectors
 import socket
 import sys
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
-from ..errors import TftpError, error_for_exception
-from ..options import Negotiated, ServerOptions
-from ..packet import ErrorCode, MalformedPacket, Opcode, Request, decode, encode_error
-from ..result import TransferResult
-from ..transfer import Receiver, Transfer
-from .handler import FileSystemHandler, RequestContext
 from ..capture.events import PacketEvent
-from .listener import Listener
-from .netinfo import InterfaceInfo
+from ..options import ServerOptions
+from ..packet import ErrorCode, encode_error
+from ..result import TransferResult
+from ..transfer import Transfer
+from .base import WINDOWS_SESSION_CAP, ServerBase
 from .policy import ServerLimits
-from .session import Session, reply_socket
+from .session import Session
 
 __all__ = ["Server"]
 
 log = logging.getLogger("tftp.server")
 
-_WINDOWS = sys.platform == "win32"
-#: select() on Windows handles at most 512 sockets.
-_WINDOWS_SESSION_CAP = 500
 _RECV_SIZE = 65536  # one receive buffer, shared by every session
 _DRAIN = 64  # packets read per readiness event before yielding to others
 _WAKE_BYTE = bytes(1)
 
 
-class Server:
+class Server(ServerBase):
     """A TFTP server.
 
     :param root_or_handler: a directory to serve (wrapped in
@@ -80,16 +73,16 @@ class Server:
         longer (RFC 1123 4.2.3.2); progress resets it.
     :param max_timeout: ceiling for the backed-off wait; ``None`` is eight
         times the timeout.
+    :param trace: ``trace(PacketEvent)`` for every datagram of every
+        transfer, received and sent (``role="server"``, one ``session``
+        id per transfer). Requests refused before a transfer exists are
+        not traced. :class:`tftp.capture.PcapWriter` is a ready hook.
     :param open_in_thread: call the handler's ``open_read``/``open_write`` in
         a worker thread, so a handler that blocks (an HTTP request, an
         upstream server) never stalls other transfers. ``None`` decides from
         the handler: those marked ``_tftp_fast_open_ = True`` (the built-in
         file and memory handlers) open inline, everything else in a worker.
     :param workers: size of that worker pool.
-    :param trace: ``trace(PacketEvent)`` for every datagram of every
-        transfer, received and sent (``role="server"``, one ``session``
-        id per transfer). Requests refused before a transfer exists are
-        not traced. :class:`tftp.capture.PcapWriter` is a ready hook.
     """
 
     def __init__(
@@ -116,50 +109,42 @@ class Server:
         open_in_thread: Optional[bool] = None,
         workers: int = 8,
     ) -> None:
-        if isinstance(root_or_handler, (str, os.PathLike)):
-            handler: Any = FileSystemHandler(
-                root_or_handler, writable=writable, create=create, overwrite=overwrite
-            )
-        else:
-            handler = root_or_handler
-        if timeout <= 0:
-            raise ValueError("timeout must be positive")
-        self.handler = handler
-        self.timeout = timeout
-        self.retries = retries
-        self.options = options or ServerOptions()
-        if max_sessions is None and _WINDOWS:
-            max_sessions = _WINDOWS_SESSION_CAP
-        self.max_sessions = max_sessions
-        self.dally = dally
-        self.on_complete = on_complete
-        self.limits = limits or ServerLimits()
-        self.ignore_broadcast = ignore_broadcast
-        self.backoff = backoff
-        self.max_timeout = max_timeout
-        self._interfaces = InterfaceInfo()
-        self.trace = trace
-        self._per_client: Dict[str, int] = {}
+        super().__init__(
+            root_or_handler,
+            host,
+            port,
+            writable=writable,
+            create=create,
+            overwrite=overwrite,
+            timeout=timeout,
+            retries=retries,
+            options=options,
+            max_sessions=max_sessions,
+            reply_from_request_address=reply_from_request_address,
+            dally=dally,
+            on_complete=on_complete,
+            limits=limits,
+            ignore_broadcast=ignore_broadcast,
+            backoff=backoff,
+            max_timeout=max_timeout,
+            trace=trace,
+            session_cap=WINDOWS_SESSION_CAP if sys.platform == "win32" else None,
+        )
         self._ready: "collections.deque[Session]" = collections.deque()
         self._pending_opens: "collections.deque[Tuple[Session, Any]]" = collections.deque()
         if open_in_thread is None:
-            open_in_thread = not getattr(handler, "_tftp_fast_open_", False)
+            open_in_thread = not getattr(self.handler, "_tftp_fast_open_", False)
         self._workers = (
             concurrent.futures.ThreadPoolExecutor(max(1, workers), thread_name_prefix="tftp-open")
             if open_in_thread
             else None
         )
-
-        self._listener = Listener(host, port, pktinfo=reply_from_request_address)
-        self._address: Tuple[Any, ...] = self._listener.sock.getsockname()
-
         self._selector = selectors.DefaultSelector()
         self._wake_r, self._wake_w = socket.socketpair()
         self._wake_r.setblocking(False)
         self._wake_w.setblocking(False)
         self._selector.register(self._listener.sock, selectors.EVENT_READ, None)
         self._selector.register(self._wake_r, selectors.EVENT_READ, self)
-        self._sessions: Dict[Tuple[str, int], Session] = {}
         self._timers: List[Tuple[float, int, Session]] = []
         self._seq = 0
         self._buf = bytearray(_RECV_SIZE)
@@ -168,25 +153,6 @@ class Server:
         self._running = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._closed = False
-
-    @property
-    def server_address(self) -> Tuple[Any, ...]:
-        """The bound listening address, e.g. to learn the port chosen for ``port=0``."""
-        return self._address
-
-    @property
-    def supports_pktinfo(self) -> bool:
-        """Replies come from the request's own destination address."""
-        return self._listener.supports_pktinfo
-
-    @property
-    def dual_stack(self) -> bool:
-        """The listening socket accepts IPv4 as well as IPv6."""
-        return self._listener.dual_stack
-
-    @property
-    def active_sessions(self) -> int:
-        return len(self._sessions)
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -216,7 +182,9 @@ class Server:
             for session in list(self._sessions.values()):
                 if session.transfer is not None and not session.transfer.done:
                     session.transfer.abort("server shutting down")
-                self._finish(session)
+                if session.transfer is not None and session.stream is not None:
+                    session.close_stream(session.transfer.error is None and session.transfer.done)
+                self._release(session)
             while self._pending_opens:
                 session, outcome = self._pending_opens.popleft()
                 self._opened(session, outcome, time.monotonic())
@@ -333,7 +301,7 @@ class Server:
                 self._schedule(session)
                 continue
             if session.linger_until is not None:
-                self._close(session)
+                self._release(session)
                 continue
             transfer = session.transfer
             assert transfer is not None
@@ -387,88 +355,21 @@ class Server:
             arrival = self._listener.recv()
             if arrival is None:
                 return
-            data, sender, local, ifindex = arrival
-            if len(data) < 2 or data[0] != 0 or data[1] not in (Opcode.RRQ, Opcode.WRQ):
-                continue  # not a request: never answer, never amplify
-            if self.ignore_broadcast and local is not None and self._interfaces.is_broadcast(local, ifindex):
-                log.debug("ignoring broadcast request from %s to %s", sender[:2], local)
-                continue
-            if len(data) > self.limits.max_request_size:
-                self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, "request too large")
-                continue
             try:
-                self._start(data, sender, local, ifindex, now)
+                session = self._admit(arrival, now)
             except Exception:  # pragma: no cover - a bug, not a client error
-                log.exception("request from %s failed", sender[:2])
+                log.exception("request from %s failed", arrival.sender[:2])
+                continue
+            if session is None:
+                continue
+            session.notify = self._notifier(session)
+            if self._workers is None:
+                self._opened(session, self._open(session), time.monotonic())
+            else:
+                self._workers.submit(self._open_in_worker, session)
 
-    def _start(
-        self, data: bytes, sender: Tuple[Any, ...], local: Optional[str], ifindex: int, now: float
-    ) -> None:
-        from netimps import unmap
-
-        key = (str(unmap(sender[0])), sender[1])
-        if key in self._sessions:
-            return  # a retransmitted request for a transfer already running
-        try:
-            request = decode(data)
-        except MalformedPacket as exc:
-            self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, str(exc))
-            return
-        assert isinstance(request, Request)
-        try:
-            self.limits.check(request)
-        except TftpError as exc:
-            self._listener.reply_error(sender, exc.code, exc.message)
-            return
-        if self.max_sessions is not None and len(self._sessions) >= self.max_sessions:
-            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
-            return
-        per_client = self.limits.max_sessions_per_client
-        if per_client is not None and self._per_client.get(key[0], 0) >= per_client:
-            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
-            return
-
-        sock, peer = reply_socket(self._listener.family, self._listener.host, sender, local, ifindex)
-        context = RequestContext(request, peer, local, ifindex)
-        session = Session(sock, peer, context, now)
-        session.notify = self._notifier(session)
-        if self.trace is not None:
-            session.trace = self.trace
-            # The request arrived at the listening port, not the transfer's.
-            listening = self._address
-            arrived = (local, listening[1]) if local is not None else listening[:2]
-            session.emit(data, "in", sender, arrived)
-        mtu = self._interfaces.mtu(ifindex) if self.options.fit_mtu else None
-        # Registered at once, so a retransmitted request is recognised while
-        # a worker is still opening this one.
-        self._sessions[session.key] = session
-        self._per_client[session.key[0]] = self._per_client.get(session.key[0], 0) + 1
-        if self._workers is None:
-            self._opened(session, self._open(session, mtu), time.monotonic())
-        else:
-            self._workers.submit(self._open_in_worker, session, mtu)
-
-    def _open(self, session: Session, mtu: Optional[int]) -> Any:
-        """Open a session's stream and build its transfer; the exception on failure."""
-        now = time.monotonic()
-        max_duration = self.limits.max_duration
-        try:
-            return session.open(
-                self.handler,
-                self.options,
-                self.timeout,
-                self.retries,
-                now,
-                mtu=mtu,
-                backoff=self.backoff,
-                max_timeout=self.max_timeout,
-                expires=None if max_duration is None else now + max_duration,
-            )
-        except Exception as exc:
-            return exc
-
-    def _open_in_worker(self, session: Session, mtu: Optional[int]) -> None:
-        outcome = self._open(session, mtu)
+    def _open_in_worker(self, session: Session) -> None:
+        outcome = self._open(session)
         self._pending_opens.append((session, outcome))
         self._wake()
 
@@ -480,14 +381,7 @@ class Server:
             session.close_stream(ok=False)
             return
         if isinstance(outcome, BaseException):
-            error = error_for_exception(outcome)
-            if not isinstance(outcome, (TftpError, OSError)):
-                log.error("handler failed for %r", session.context, exc_info=outcome)
-            log.info("%s refused: %s", session.context, error)
-            session.send(encode_error(error.code, error.message))
-            session.close_stream(ok=False)
-            self._close(session)
-            self._report(session, error, None)
+            self._refuse(session, outcome)
             return
         session.transfer = outcome
         self._selector.register(session.sock, selectors.EVENT_READ, session)
@@ -500,74 +394,16 @@ class Server:
 
     def _done(self, session: Session, now: float) -> None:
         """The transfer finished: report it, then close or linger."""
-        transfer = session.transfer
-        assert transfer is not None
-        ok = transfer.error is None
-        session.close_stream(ok)
-        self._report(session, transfer.error, transfer)
-        if ok and self.dally and isinstance(transfer, Receiver):
-            session.linger_until = now + transfer.timeout
+        if self._finished(session, now):
             self._schedule(session)
         else:
-            self._close(session)
+            self._release(session)
 
-    def _finish(self, session: Session) -> None:
-        if session.closed:
+    def _release(self, session: Session) -> None:
+        if not self._forget(session):
             return
-        if session.transfer is not None and session.stream is not None:
-            session.close_stream(session.transfer.error is None and session.transfer.done)
-        self._close(session)
-
-    def _close(self, session: Session) -> None:
-        if session.closed:
-            return
-        session.closed = True
-        if self._sessions.pop(session.key, None) is not None:
-            host = session.key[0]
-            left = self._per_client.get(host, 1) - 1
-            if left > 0:
-                self._per_client[host] = left
-            else:
-                self._per_client.pop(host, None)
         try:
             self._selector.unregister(session.sock)
         except (KeyError, ValueError):
             pass
         session.sock.close()
-
-    def _report(self, session: Session, error: Optional[TftpError], transfer: Optional[Transfer]) -> None:
-        context = session.context
-        request = context.request
-        duration = time.monotonic() - session.started
-        result = TransferResult(
-            request.filename,
-            "read" if request.is_read else "write",
-            request.mode,
-            session.peer,
-            session.local,
-            transfer.bytes if transfer else 0,
-            transfer.blocks if transfer else 0,
-            transfer.retransmits if transfer else 0,
-            duration,
-            transfer.negotiated if transfer else Negotiated(timeout=self.timeout),
-            error,
-        )
-        if error is None:
-            log.info(
-                "%s %r %s %s: %d bytes in %.3fs",
-                "sent" if request.is_read else "received",
-                request.filename,
-                "to" if request.is_read else "from",
-                session.peer[0],
-                result.bytes,
-                duration,
-            )
-        elif transfer is not None:
-            log.warning(
-                "%s %r with %s failed: %s", result.operation, request.filename, session.peer[0], error
-            )
-        if self.on_complete is not None:
-            try:
-                self.on_complete(result)
-            except Exception:
-                log.exception("on_complete callback failed")

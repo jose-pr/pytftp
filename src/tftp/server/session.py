@@ -18,7 +18,7 @@ from typing import Any, Callable, Optional, Tuple
 from .._sockets import fit_window
 from ..errors import TftpError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
-from ..options import ServerOptions, negotiate
+from ..options import Negotiated, ServerOptions, negotiate
 from ..packet import ErrorCode, Request, encode_ack, encode_oack
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from ..capture.events import PacketEvent, new_session_id
@@ -125,6 +125,7 @@ class Session:
         "notify",
         "id",
         "trace",
+        "_negotiated",
     )
 
     def __init__(
@@ -151,6 +152,7 @@ class Session:
         self.id = new_session_id("s")
         #: ``trace(PacketEvent)`` for this transfer's datagrams, or ``None``.
         self.trace: Optional[Callable[[PacketEvent], Any]] = None
+        self._negotiated: Optional[Negotiated] = None  # a WRQ's, from call_handler
 
     def wakeup(self) -> Optional[float]:
         """When the loop must next look at this session, or ``None``."""
@@ -181,6 +183,72 @@ class Session:
         except Exception:
             log.exception("trace hook failed")
 
+    def call_handler(
+        self, handler: Any, policy: ServerOptions, timeout: float, mtu: Optional[int] = None
+    ) -> Any:
+        """Step 1: ask ``handler`` for the stream (may return an awaitable).
+
+        Raises whatever the handler raises, or :class:`TftpError` for an
+        unsupported mode; the caller turns either into an ERROR packet. A WRQ
+        is negotiated here, since ``open_write`` receives the agreed ``tsize``.
+        """
+        request: Request = self.context.request
+        mode = request.mode
+        if mode == "mail":
+            raise TftpError(ErrorCode.ILLEGAL_OPERATION, "mail mode is not supported")
+        if mode not in ("octet", "netascii"):
+            raise TftpError(ErrorCode.ILLEGAL_OPERATION, "unknown mode %r" % mode)
+        if request.is_read:
+            return handler.open_read(self.context)
+        self._negotiated = negotiate(
+            request.options, policy, is_read=False, timeout=timeout, mtu=mtu, ipv6=self._ipv6
+        )
+        return handler.open_write(self.context, self._negotiated.tsize)
+
+    def start(
+        self,
+        stream: Any,
+        policy: ServerOptions,
+        timeout: float,
+        retries: int,
+        now: float,
+        mtu: Optional[int] = None,
+        **engine: Any,
+    ) -> Transfer:
+        """Step 2: negotiate (RRQ) and build the transfer around ``stream``.
+
+        ``engine`` goes to the transfer (``backoff``, ``max_timeout``,
+        ``expires``). The first packet (OACK, DATA 1 or ACK 0) is sent here.
+        """
+        request: Request = self.context.request
+        self._hook_wakeup(stream)
+        if request.is_read:
+            self.stream = stream
+            wants_size = "tsize" in request.options and policy.accepts("tsize")
+            if request.mode == "netascii":
+                size = encoded_size(stream) if wants_size else None
+                reader: Any = NetasciiReader(stream)
+            else:
+                size = stream_size(stream) if wants_size else None
+                reader = stream
+            negotiated = negotiate(
+                request.options, policy, is_read=True, timeout=timeout, size=size, mtu=mtu, ipv6=self._ipv6
+            )
+            fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
+            oack = encode_oack(negotiated.options) if negotiated.options else None
+            log.debug("%r: %r", self.context, negotiated)
+            return Sender(self.send, as_readinto(reader), negotiated, retries, now, oack=oack, **engine)
+
+        negotiated = self._negotiated
+        fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
+        writer: Any = NetasciiWriter(stream) if request.mode == "netascii" else stream
+        self.stream = writer
+        reply = encode_oack(negotiated.options) if negotiated.options else encode_ack(0)
+        log.debug("%r: %r", self.context, negotiated)
+        return Receiver(
+            self.send, as_write(writer), negotiated, retries, now, reply=reply, complete=self.commit, **engine
+        )
+
     def open(
         self,
         handler: Any,
@@ -191,51 +259,14 @@ class Session:
         mtu: Optional[int] = None,
         **engine: Any,
     ) -> Transfer:
-        """Ask ``handler`` for the stream, negotiate, and build the transfer.
+        """Both steps, for a synchronous handler."""
+        stream = self.call_handler(handler, policy, timeout, mtu)
+        self.stream = stream  # so a failure while starting still closes it
+        return self.start(stream, policy, timeout, retries, now, mtu, **engine)
 
-        Raises whatever the handler raises, or :class:`TftpError` for an
-        unsupported mode; the caller turns either into an ERROR packet.
-        ``engine`` goes to the transfer (``backoff``, ``max_timeout``,
-        ``expires``).
-        """
-        request: Request = self.context.request
-        mode = request.mode
-        if mode == "mail":
-            raise TftpError(ErrorCode.ILLEGAL_OPERATION, "mail mode is not supported")
-        if mode not in ("octet", "netascii"):
-            raise TftpError(ErrorCode.ILLEGAL_OPERATION, "unknown mode %r" % mode)
-        wants_size = "tsize" in request.options and policy.accepts("tsize")
-        ipv6 = self.sock.family == socket.AF_INET6
-
-        if request.is_read:
-            stream = handler.open_read(self.context)
-            self.stream = stream
-            self._hook_wakeup(stream)
-            if mode == "netascii":
-                size = encoded_size(stream) if wants_size else None
-                reader: Any = NetasciiReader(stream)
-            else:
-                size = stream_size(stream) if wants_size else None
-                reader = stream
-            negotiated = negotiate(
-                request.options, policy, is_read=True, timeout=timeout, size=size, mtu=mtu, ipv6=ipv6
-            )
-            fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
-            oack = encode_oack(negotiated.options) if negotiated.options else None
-            log.debug("%r: %r", self.context, negotiated)
-            return Sender(self.send, as_readinto(reader), negotiated, retries, now, oack=oack, **engine)
-
-        negotiated = negotiate(request.options, policy, is_read=False, timeout=timeout, mtu=mtu, ipv6=ipv6)
-        fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
-        stream = handler.open_write(self.context, negotiated.tsize)
-        self._hook_wakeup(stream)
-        writer: Any = NetasciiWriter(stream) if mode == "netascii" else stream
-        self.stream = writer
-        reply = encode_oack(negotiated.options) if negotiated.options else encode_ack(0)
-        log.debug("%r: %r", self.context, negotiated)
-        return Receiver(
-            self.send, as_write(writer), negotiated, retries, now, reply=reply, complete=self.commit, **engine
-        )
+    @property
+    def _ipv6(self) -> bool:
+        return self.sock.family == socket.AF_INET6
 
     def _hook_wakeup(self, stream: Any) -> None:
         set_wakeup = getattr(stream, "set_wakeup", None)
