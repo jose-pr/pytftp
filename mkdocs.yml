@@ -35,6 +35,7 @@ nav:
       - Relaying: relay.md
       - Capture and debugging: capture.md
       - asyncio: async.md
+      - Paths: paths.md
   - API Reference:
       - Client: api/client.md
       - asyncio: api/aio.md
@@ -47,6 +48,7 @@ nav:
       - Transfer engine: api/transfer.md
       - Netascii: api/netascii.md
       - URIs: api/uri.md
+      - Paths: api/path.md
       - Errors and results: api/errors.md
   - Changelog: changelog.md
 

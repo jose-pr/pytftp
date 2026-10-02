@@ -47,6 +47,7 @@ pytftp serve /srv/tftp --write --json
 - [Backends](backends.md) — memory, an HTTP(S) gateway, a terminating proxy.
 - [Relaying](relay.md) — forwarding to upstream servers, packets unchanged.
 - [Capture and debugging](capture.md) — tracing, pcaps, reconstructing transfers.
+- [Paths](paths.md) — `TftpPath` and `tftp://` URLs for pathlib-next.
 - [asyncio](async.md) — `AsyncClient`, `AsyncServer`, async handlers.
 - API reference: [Client](api/client.md), [Server](api/server.md),
   [Options](api/options.md), [Packets](api/packet.md),

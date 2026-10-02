@@ -175,7 +175,7 @@ class Client:
             rollover=rollover,
             extra=extra_options,
         )
-        self.host = host
+        self.host = host if isinstance(host, str) else str(host)  # an ipaddress object is fine too
         self.port = port
         self.timeout = timeout
         self.retries = retries
@@ -230,6 +230,12 @@ class Client:
             fileobj.close()
             return result
         return self._download(filename, dest, mode, progress)
+
+    def path(self, *segments: Any, mode: str = "octet") -> Any:
+        """A :class:`tftp.path.TftpPath` on this server (needs the ``path`` extra)."""
+        from .path import TftpPath
+
+        return TftpPath(*segments, client=self, mode=mode)
 
     def get(self, filename: str, *, mode: str = "octet") -> bytes:
         """Fetch ``filename`` and return its contents."""

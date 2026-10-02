@@ -88,6 +88,13 @@ Methods (each returns a `TransferResult` unless noted):
 - **`upload(filename, source, *, mode="octet", progress=None)`** — `source` is
   a path, a readable binary file (`readinto` or `read`), or bytes-like.
 - **`put(filename, data, *, mode="octet")`** — upload bytes.
+- **`size(filename, *, mode="octet") -> int | None`** — the file's size
+  without transferring it: an RRQ asking only for `tsize`, abandoned with
+  ERROR 8 once the server answers (a server counts that as `declined`, not
+  failed). `None` when the server reports no sizes, unless the file fits in
+  the first 512-byte block. Raises like a download (`FileNotFound`...).
+- **`path(*segments, mode="octet") -> TftpPath`** — see Paths (needs the
+  `path` extra).
 - `mode` is `"octet"` or `"netascii"`; `"binary"`/`"ascii"` are aliases. Any
   other value raises `ValueError`.
 - `progress(done_bytes, total_or_None)` is called after each packet that moved
@@ -345,6 +352,45 @@ adapters doing that (engine-side `readinto`/`write`/`close` raising
 `WouldBlock`, `set_wakeup`; writer `await finish()`); create them on the
 running loop. `is_async_reader(obj)` / `is_async_writer(obj)` say which
 objects they take.
+
+## Paths (`tftp.path`, `path` extra)
+
+`pip install tftp[path]` adds `pathlib-next[uri]`. Importing `tftp` never
+loads it.
+
+**`TftpPath(*segments, client, mode="octet")`** — a `pathlib_next.Path`
+bound to a `Client` (`client.path("boot", "x")`). Joined like a
+`PurePosixPath` (`\` counts as `/`); the path text is the filename sent,
+so `/boot/x` and `boot/x` stay distinct. Joining onto a `TftpPath` keeps its
+client; `with_client()`, `with_mode()`; `client`, `transfer_mode`. Equality
+and hashing include the server (host, port). `as_uri()` is the `tftp://`
+URL. `relative_to()` works on the path text.
+
+**`TftpUriPath`** — the `tftp://host[:port]/path[;mode=netascii]` scheme
+for `pathlib_next.uri.UriPath`, registered through the
+`pathlib_next.schemes` entry point, so `UriPath("tftp://...")` returns one
+without importing `tftp`. `filename`, `transfer_mode`;
+`with_options(**client_options)` / `with_client(client)` choose the
+`Client` (default: the URI's host and port, library defaults). The URI host
+may be an address object; `Client` accepts one.
+
+Both support exactly what TFTP can do:
+
+- `open("r")` streams a download; `open("w")` streams an upload that
+  completes (and raises the server's error) on `close()`; `open("x")`
+  first probes the size and raises `FileExistsError` if the file exists
+  (not atomic). `a` and `+` modes raise `NotImplementedError`. `open()`
+  returns only once the server has answered, so `FileNotFoundError`/
+  `PermissionError` surface there. At most 1 MiB is buffered; an abandoned
+  read sends the server an ERROR.
+- `read_bytes`, `read_text`, `write_bytes`, `write_text` (text newline
+  handling is pathlib's), `copy()`/`move()` to and from any pathlib_next path.
+- `stat()` is a size probe (`FileStat`, `st_size` 0 when unknown);
+  `exists()`, `is_file()`; `is_dir()` is always `False`.
+- Listing, deleting, renaming, directories and permissions raise
+  `NotImplementedError`.
+- TFTP errors become pathlib's: `FileNotFoundError`, `PermissionError`,
+  `FileExistsError`, `OSError(ENOSPC)`, `TimeoutError`, else `OSError(EIO)`.
 
 ## Backends (`tftp.backends`)
 

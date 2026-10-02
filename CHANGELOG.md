@@ -55,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   files from a capture; a filter language; live capture on Linux.
 - `tftp://` URLs (RFC 3617): `parse_url`, `format_url`, `download_url`,
   `upload_url`.
+- `Client.size()`: a file's size without transferring it (a `tsize` probe the
+  server counts as declined, not failed).
+- `path` extra: `TftpPath`, a pathlib-next `Path` bound to a client
+  (`client.path(...)`), and `TftpUriPath`, the `tftp://` scheme for
+  pathlib-next's `UriPath`; whole-file streaming reads and writes, `stat()`
+  by size probe, `copy()`/`move()` across schemes.
 - Typed errors: `RemoteError` raised as `FileNotFound`, `AccessViolation`,
   `DiskFull`, `IllegalOperation`, `UnknownTransferId`, `FileAlreadyExists`,
   `NoSuchUser` or `OptionNegotiationError`; `TransferAborted`.

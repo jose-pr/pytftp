@@ -1,0 +1,203 @@
+"""``TftpPath``: a pathlib_next ``Path`` for files on one TFTP server."""
+
+from __future__ import annotations
+
+import copy
+import errno
+import posixpath
+from typing import Any, Callable, Optional, Tuple
+
+from pathlib_next import Path, Pathname
+from pathlib_next.utils.stat import FileStat
+
+from ..client import Client
+from ..errors import FileNotFound, TftpError
+from ._stream import open_reader, open_writer, os_error
+
+__all__ = ["TftpPath", "client_factory", "tftp_stat", "tftp_open"]
+
+
+def client_factory(client: Client) -> Callable[..., Client]:
+    """A function returning a copy of ``client`` with some settings changed."""
+
+    def make(**overrides: Any) -> Client:
+        derived = copy.copy(client)
+        for name, value in overrides.items():
+            setattr(derived, name, value)
+        return derived
+
+    return make
+
+
+def tftp_stat(client: Client, filename: str, mode: str, path: Any) -> FileStat:
+    """A ``FileStat`` from a size probe (``st_size`` 0 when the server reports none)."""
+    try:
+        size = client.size(filename, mode=mode)
+    except TftpError as exc:
+        raise os_error(exc, path) from None
+    return FileStat(st_size=size or 0, is_dir=False)
+
+
+def tftp_open(client: Client, filename: str, transfer_mode: str, mode: str, path: Any) -> Any:
+    """pathlib_next's ``_open()``: ``r`` streams a download, ``w``/``x`` an upload.
+
+    ``x`` checks existence with a size probe first, which is not atomic: TFTP
+    has no exclusive create. ``a`` and ``+`` modes cannot be expressed in TFTP.
+    """
+    factory = client_factory(client)
+    if mode == "r":
+        return open_reader(factory, filename, transfer_mode, path)
+    if mode == "x":
+        try:
+            client.size(filename, mode=transfer_mode)
+        except FileNotFound:
+            pass
+        except TftpError as exc:
+            raise os_error(exc, path) from None
+        else:
+            raise FileExistsError(errno.EEXIST, "file exists", str(path))
+        return open_writer(factory, filename, transfer_mode, path)
+    if mode == "w":
+        return open_writer(factory, filename, transfer_mode, path)
+    raise NotImplementedError("TFTP can only read or write a whole file, not %r" % mode)
+
+
+class TftpPath(Path):
+    """A file on a TFTP server, addressed like a ``PurePosixPath``.
+
+    ``TftpPath("boot/pxelinux.0", client=tftp.Client("192.0.2.1"))``, or
+    ``client.path("boot", "pxelinux.0")``. The path text is the filename sent
+    to the server, so ``/boot/x`` and ``boot/x`` stay distinct (some servers
+    resolve them differently). ``mode="netascii"`` selects the transfer mode.
+
+    TFTP can read and write whole files and nothing else: ``open("r")``,
+    ``open("w")``/``"x"``, ``read_bytes``/``write_bytes``/``read_text``/
+    ``write_text``, ``stat()`` (a size probe), ``exists()``, ``is_file()``,
+    and ``copy()``/``move()`` to and from any pathlib_next path. Listing,
+    deleting, renaming, directories and permissions raise
+    ``NotImplementedError``; ``is_dir()`` is always false.
+    """
+
+    __slots__ = ("_client", "_segments", "_mode")
+
+    def __init__(self, *segments: Any, client: Optional[Client] = None, mode: str = "octet") -> None:
+        text = ""
+        inherited = None
+        for segment in segments:
+            if isinstance(segment, TftpPath):
+                piece = segment.as_posix()
+                inherited = segment
+            elif isinstance(segment, Pathname):
+                piece = "/".join(segment.segments)
+            elif isinstance(segment, str):
+                piece = segment
+            else:
+                raise TypeError("argument should be a str or a Pathname, not %r" % type(segment).__name__)
+            piece = piece.replace("\\", "/")
+            if piece.startswith("/") or not text:
+                text = piece
+            elif piece:
+                text = "%s/%s" % (text, piece)
+        if client is None:
+            if inherited is None:
+                raise TypeError("TftpPath needs client= (or a TftpPath to join onto)")
+            client, mode = inherited._client, inherited._mode
+        self._client = client
+        self._mode = mode
+        names = [name for name in text.split("/") if name and name != "."]
+        if text.startswith("/"):
+            self._segments = ["", *names] if names else ["", ""]
+        else:
+            self._segments = names
+
+    # -- pure path ---------------------------------------------------------------
+
+    @property
+    def client(self) -> Client:
+        return self._client
+
+    @property
+    def transfer_mode(self) -> str:
+        return self._mode
+
+    @property
+    def segments(self):
+        return self._segments
+
+    @property
+    def parts(self) -> Tuple[Any, ...]:
+        return tuple(self._segments)
+
+    @property
+    def parent(self) -> "TftpPath":
+        segments = self._segments
+        if not segments or segments == ["", ""]:
+            return self
+        if len(segments) == 2 and segments[0] == "":
+            return self.with_segments("", "")
+        return self.with_segments(*segments[:-1])
+
+    def with_segments(self, *segments: Any) -> "TftpPath":
+        if all(isinstance(segment, str) for segment in segments):
+            segments = ("/".join(segments),)
+        return type(self)(*segments, client=self._client, mode=self._mode)
+
+    def with_client(self, client: Client) -> "TftpPath":
+        return type(self)(self.as_posix(), client=client, mode=self._mode)
+
+    def with_mode(self, mode: str) -> "TftpPath":
+        return type(self)(self.as_posix(), client=self._client, mode=mode)
+
+    def is_absolute(self) -> bool:
+        return bool(self._segments) and self._segments[0] == ""
+
+    def relative_to(self, other: Any) -> "TftpPath":
+        base = other.as_posix() if isinstance(other, Pathname) else str(other)
+        relative = posixpath.relpath(self.as_posix() or ".", base or ".")
+        if relative == ".." or relative.startswith("../"):
+            raise ValueError("%r is not in the subpath of %r" % (self.as_posix(), base))
+        return self.with_segments(relative)
+
+    def as_posix(self) -> str:
+        if self._segments == ["", ""]:
+            return "/"
+        return "/".join(self._segments)
+
+    def as_uri(self) -> str:
+        from ..uri import format_url
+
+        return format_url(self._client.host, self.as_posix().lstrip("/"), self._client.port, self._mode)
+
+    def __str__(self) -> str:
+        return self.as_posix()
+
+    def __repr__(self) -> str:
+        return "TftpPath(%r, server=%s:%s)" % (self.as_posix(), self._client.host, self._client.port)
+
+    def _endpoint(self) -> Tuple[str, int]:
+        return (str(self._client.host), int(self._client.port))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TftpPath):
+            return NotImplemented
+        return self._segments == other._segments and self._endpoint() == other._endpoint()
+
+    def __hash__(self) -> int:
+        return hash((tuple(self._segments), self._endpoint()))
+
+    def _same_filesystem(self, other: "TftpPath") -> bool:
+        return self._endpoint() == other._endpoint()
+
+    # -- I/O -------------------------------------------------------------------------
+
+    def stat(self, *, follow_symlinks: bool = True) -> FileStat:
+        return tftp_stat(self._client, self.as_posix(), self._mode, self)
+
+    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
+        return False
+
+    def _open(self, mode: str = "r", buffering: int = -1) -> Any:
+        return tftp_open(self._client, self.as_posix(), self._mode, mode, self)
+
+    def iterdir(self):
+        raise NotImplementedError("TFTP cannot list directories")

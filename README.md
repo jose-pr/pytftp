@@ -53,6 +53,9 @@ with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
   relay; write Wireshark-readable pcaps; read pcap/pcapng files or a live
   `tcpdump` pipe, reconstruct each transfer and extract its file.
 - **asyncio** — `AsyncClient` and `AsyncServer` with async handlers and streams.
+- **pathlib** — `client.path("boot/x").read_bytes()`, and `tftp://` URLs in
+  [pathlib-next](https://github.com/jose-pr/pathlib-next), so
+  `UriPath("tftp://h/x").copy("s3://bucket/x")` just works (optional extra).
 - **Bounded** — limits on requests, sessions per client, window memory and
   transfer time; counters for metrics.
 - **CLI** — `pytftp get|put|serve|relay|capture` with `--json`, `--trace` and
@@ -68,6 +71,7 @@ pip install "tftp[cli]"     # plus the pytftp command
 | Extra | Adds | Needed for |
 | --- | --- | --- |
 | `cli` | `duho` | the `pytftp` command and `python -m tftp` |
+| `path` | `pathlib-next[uri]` | `TftpPath`, and `tftp://` URLs in `pathlib_next.uri.UriPath` |
 
 Requires Python 3.9+. The one required dependency, `netimps`, has no
 dependencies of its own.
@@ -168,6 +172,7 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.packet` | `Opcode`, `ErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |
 | `tftp.uri` | `tftp://` URLs |
+| `tftp.path` | `TftpPath`, `TftpUriPath` (`path` extra) |
 | `tftp.netascii` | streaming netascii translation |
 | `tftp.errors` | `TftpError` and the typed `RemoteError` subclasses |
 | `tftp.cli` | the `pytftp` command (`cli` extra) |
