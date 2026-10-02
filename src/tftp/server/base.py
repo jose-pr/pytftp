@@ -15,7 +15,7 @@ import time
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from ..capture.events import PacketEvent
-from ..errors import TftpError, error_for_exception
+from ..errors import RemoteError, TftpError, error_for_exception
 from ..options import Negotiated, ServerOptions
 from ..packet import ErrorCode, MalformedPacket, Opcode, Request, decode, encode_error
 from ..result import TransferResult
@@ -266,11 +266,22 @@ class ServerBase:
             error,
         )
         stats = self.stats
+        # The client refused our OACK before any data moved: not a failure
+        # but a size probe (EDK2 PXE asks for tsize this way before every
+        # download) or a client that dislikes an option.
+        declined = (
+            transfer is not None
+            and isinstance(error, RemoteError)
+            and error.code == ErrorCode.OPTION_REFUSED
+            and transfer.bytes == 0
+        )
         if transfer is not None:
-            stats.add("completed" if error is None else "failed")
+            stats.add("declined" if declined else "completed" if error is None else "failed")
             stats.add("bytes_sent" if request.is_read else "bytes_received", transfer.bytes)
             stats.add("retransmits", transfer.retransmits)
-        if error is None:
+        if declined:
+            log.info("%s %r: %s declined the options (%s)", result.operation, request.filename, session.peer[0], error.message)  # type: ignore[union-attr]
+        elif error is None:
             log.info(
                 "%s %r %s %s: %d bytes in %.3fs",
                 "sent" if request.is_read else "received",

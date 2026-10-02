@@ -327,3 +327,32 @@ def test_server_stats(root, make_server):
     assert (snapshot["started"], snapshot["completed"], snapshot["failed"]) == (2, 2, 0)
     assert snapshot["bytes_sent"] == 513 and snapshot["bytes_received"] == 100
     assert "active" in snapshot
+
+
+def test_size_probe(root, make_server):
+    results = []
+    server = make_server(root, on_complete=results.append)
+    client = client_for(server)
+    assert client.size("big.bin") == 300_001
+    assert client.size("one.bin") == 1
+    with pytest.raises(tftp.FileNotFound):
+        client.size("missing")
+    plain = make_server(root, options=tftp.ServerOptions(allowed=()))  # no tsize: DATA 1 instead
+    assert client_for(plain).size("511.bin") == 511  # fits in the first block
+    assert client_for(plain).size("big.bin") is None
+    # The probe never completes a transfer on the server.
+    deadline = time.monotonic() + 2
+    while len(results) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert not any(r.ok for r in results if r.filename == "big.bin")
+
+
+def test_size_probes_count_as_declined(root, make_server):
+    server = make_server(root)
+    client = client_for(server)
+    client.size("big.bin")
+    client.get("one.bin")
+    deadline = time.monotonic() + 3
+    while server.stats["declined"] + server.stats["completed"] < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert (server.stats["declined"], server.stats["completed"], server.stats["failed"]) == (1, 1, 0)

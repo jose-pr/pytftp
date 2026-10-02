@@ -14,6 +14,7 @@ class Stats:
     Server counters: ``requests`` (RRQ/WRQ seen on the listening port),
     ``refused`` (answered with an ERROR before a transfer started, or
     dropped by a limit), ``started``, ``completed``, ``failed``,
+    ``declined`` (the client refused the OACK before any data: a size probe),
     ``bytes_sent``, ``bytes_received``, ``retransmits``. A relay counts
     ``requests``, ``refused``, ``started``, ``completed``, ``failed``,
     ``bytes_to_clients``, ``bytes_from_clients``. ``snapshot()`` returns them
@@ -46,6 +47,7 @@ SERVER_COUNTERS = (
     "started",
     "completed",
     "failed",
+    "declined",
     "bytes_sent",
     "bytes_received",
     "retransmits",

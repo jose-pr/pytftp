@@ -301,19 +301,9 @@ class Client:
         return self._run(Opcode.WRQ, filename, mode, size, None, read, progress)
 
     def _run(self, opcode, filename, mode, size, write, read, progress) -> TransferResult:
-        from netimps import bind, get_ip, normalize_host
-
-        host, port = normalize_host(self.host, self.port)
-        address = get_ip(host, ipv6={socket.AF_INET6: True, socket.AF_INET: False}.get(self.family))
-        if address is None:
-            raise socket.gaierror("cannot resolve %r" % host)
-        family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
-        server = (str(address), port)
+        family, server, address = self._endpoint()
         options = self._options(opcode == Opcode.RRQ, size, address)
-        local_host, local_port = self.local_address or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
-        # connreset=False: Windows would otherwise report an ICMP
-        # port-unreachable as ConnectionResetError on our next receive.
-        with bind(local_host, local_port, family=family, connreset=False) as sock:
+        with self._socket(family) as sock:
             started = time.monotonic()
             try:
                 return self._exchange(
@@ -365,6 +355,117 @@ class Client:
         send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
         raise ProtocolError("unexpected opcode %d in response to the request" % op)
 
+    def _emitter(self, sock) -> Optional[Callable[[Any, str, Tuple[Any, ...]], None]]:
+        """``emit(data, direction, remote)`` reporting to ``trace``, or ``None``."""
+        trace = self.trace
+        if trace is None:
+            return None
+        session_id = new_session_id("c")
+        local = sock.getsockname()
+
+        def emit(data, direction: str, remote) -> None:
+            try:
+                trace(PacketEvent(time.time(), direction, local, remote, bytes(data), "client", session_id))
+            except Exception:
+                log.exception("trace hook failed")
+
+        return emit
+
+    def _request(self, sock, server, request: bytes, buf, view, expires, emit) -> Tuple[int, Tuple[Any, ...]]:
+        """Send ``request`` (retrying with backoff) until the server answers: ``(n, peer)``."""
+        clock = time.monotonic
+        sock.sendto(request, server)
+        if emit is not None:
+            emit(request, "out", server)
+        tries = self.retries
+        wait = self.timeout
+        deadline = clock() + wait
+        while True:
+            remaining = deadline - clock()
+            if remaining <= 0:
+                tries -= 1
+                if tries < 0 or (expires is not None and clock() >= expires):
+                    raise TransferTimeout("no response from %s:%s" % server[:2])
+                sock.sendto(request, server)
+                if emit is not None:
+                    emit(request, "out", server)
+                wait = min(wait * self.backoff, self.max_timeout)  # RFC 1123 4.2.3.2
+                deadline = clock() + wait
+                continue
+            sock.settimeout(remaining)
+            try:
+                n, peer = sock.recvfrom_into(buf)
+            except socket.timeout:
+                continue
+            except ConnectionResetError:  # pragma: no cover - connreset is off
+                continue
+            if emit is not None:
+                emit(view[:n], "in", peer)
+            if n < 2 or (self.strict_source and peer[0] != server[0]):
+                continue  # not the server we asked
+            return n, peer
+
+    def _endpoint(self) -> Tuple[int, Tuple[Any, ...], Any]:
+        """``(family, server sockaddr, server address)`` for this client's host."""
+        from netimps import get_ip, normalize_host
+
+        host, port = normalize_host(self.host, self.port)
+        address = get_ip(host, ipv6={socket.AF_INET6: True, socket.AF_INET: False}.get(self.family))
+        if address is None:
+            raise socket.gaierror("cannot resolve %r" % host)
+        family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
+        return family, (str(address), port), address
+
+    def _socket(self, family: int) -> socket.socket:
+        from netimps import bind
+
+        local_host, local_port = self.local_address or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
+        # connreset=False: Windows would otherwise report an ICMP
+        # port-unreachable as ConnectionResetError on our next receive.
+        return bind(local_host, local_port, family=family, connreset=False)
+
+    def size(self, filename: str, *, mode: str = "octet") -> Optional[int]:
+        """The size of ``filename`` on the server, without transferring it.
+
+        Sends an RRQ asking only for ``tsize`` and abandons the transfer as
+        soon as the server answers (ERROR 8 to an OACK, as RFC 2347 lets a
+        client refuse one). Returns ``None`` when the server does not report
+        sizes -- unless the whole file fits in the first block, whose length
+        then is the size. Raises :class:`RemoteError` (``FileNotFound``...)
+        like a download would.
+        """
+        mode = _mode(mode)
+        family, server, _ = self._endpoint()
+        with self._socket(family) as sock:
+            request = encode_request(Opcode.RRQ, filename, mode, {"tsize": "0"})
+            buf = bytearray(4 + 65536)
+            view = memoryview(buf)
+            emit = self._emitter(sock)
+            n, peer = self._request(sock, server, request, buf, view, None, emit)
+
+            def send(packet) -> None:
+                sock.sendto(packet, peer)
+                if emit is not None:
+                    emit(packet, "out", peer)
+
+            op = view[1] if view[0] == 0 else -1
+            if op == Opcode.ERROR:
+                packet = decode(view[:n])
+                raise RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
+            if op == Opcode.OACK:
+                send(encode_error(ErrorCode.OPTION_REFUSED, "size probe only"))
+                text = decode(view[:n]).options.get("tsize", "")  # type: ignore[union-attr]
+                return int(text) if text.strip().isdigit() else None
+            if op == Opcode.DATA and n >= 4:
+                size = n - 4
+                if size < DEFAULT_BLKSIZE:
+                    send(encode_ack(1))  # the whole file: finish politely
+                    return size
+                send(encode_error(ErrorCode.NOT_DEFINED, "size probe only"))
+                return None
+            send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
+            raise ProtocolError("unexpected opcode %d in response to the request" % op)
+
     def _exchange(
         self, sock, server, opcode, filename, mode, options, write, read, progress, started
     ) -> TransferResult:
@@ -381,47 +482,9 @@ class Client:
         expires = None if self.max_duration is None else started + self.max_duration
         engine = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
 
-        trace = self.trace
-        session_id = new_session_id("c") if trace is not None else None
-        local = sock.getsockname()
-
-        def emit(data, direction: str, remote) -> None:
-            try:
-                trace(PacketEvent(time.time(), direction, local, remote, bytes(data), "client", session_id))
-            except Exception:
-                log.exception("trace hook failed")
-
-        # Request phase: until the server answers from its transfer ID.
-        sock.sendto(request, server)
-        if trace is not None:
-            emit(request, "out", server)
-        tries = self.retries
-        wait = self.timeout
-        deadline = clock() + wait
-        while True:
-            remaining = deadline - clock()
-            if remaining <= 0:
-                tries -= 1
-                if tries < 0 or (expires is not None and clock() >= expires):
-                    raise TransferTimeout("no response from %s:%s" % server[:2])
-                sock.sendto(request, server)
-                if trace is not None:
-                    emit(request, "out", server)
-                wait = min(wait * self.backoff, self.max_timeout)  # RFC 1123 4.2.3.2
-                deadline = clock() + wait
-                continue
-            sock.settimeout(remaining)
-            try:
-                n, peer = recv_into(buf)
-            except socket.timeout:
-                continue
-            except ConnectionResetError:  # pragma: no cover - connreset is off
-                continue
-            if trace is not None:
-                emit(view[:n], "in", peer)
-            if n < 2 or (self.strict_source and peer[0] != server[0]):
-                continue  # not the server we asked
-            break
+        emit = self._emitter(sock)
+        trace = emit
+        n, peer = self._request(sock, server, request, buf, view, expires, emit)
 
         if trace is None:
 
@@ -432,7 +495,7 @@ class Client:
 
             def send(packet, _sendto=sock.sendto, _peer=peer):
                 result = _sendto(packet, _peer)
-                emit(packet, "out", _peer)
+                emit(packet, "out", _peer)  # type: ignore[misc]
                 return result
 
         session: Transfer

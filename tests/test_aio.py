@@ -297,3 +297,12 @@ def test_async_server_shutdown_aborts_transfers(root):
             raw.close()
 
     serve(str(root), scenario, timeout=5)
+
+
+def test_async_size(root, make_server):
+    server = make_server(root)
+
+    async def main():
+        assert await async_client(server).size("big.bin") == 300_001
+
+    run(main())
