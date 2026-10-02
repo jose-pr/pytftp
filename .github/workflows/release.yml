@@ -30,6 +30,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install package with all extras
         run: python -m pip install -e ".[dev]"
+      - name: Install TFTP peers for interop tests (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q tftp-hpa tftpd-hpa busybox dnsmasq-base
+          sudo systemctl disable --now tftpd-hpa || true
       - name: Run tests
         run: python -m pytest -q
 
@@ -68,6 +74,12 @@ jobs:
           print("\n".join(pins) or "(no floors declared)")
       - name: Install at the floors
         run: python -m pip install -c floors.txt -e ".[dev]"
+      - name: Install TFTP peers for interop tests (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q tftp-hpa tftpd-hpa busybox dnsmasq-base
+          sudo systemctl disable --now tftpd-hpa || true
       - name: Run tests
         run: python -m pytest -q
 
