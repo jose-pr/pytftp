@@ -39,7 +39,7 @@ from .errors import (
     TransferTimeout,
     UnknownTransferId,
 )
-from .server import AtomicWriter, FileSystemHandler, Handler, RequestContext, Server, ServerLimits
+from .server import AtomicWriter, FileSystemHandler, Handler, PortRange, RequestContext, Server, ServerLimits
 from .netascii import NetasciiReader, NetasciiWriter
 from .options import (
     DEFAULT,
@@ -99,6 +99,7 @@ __all__ = [
     "Server",
     "ServerOptions",
     "ServerLimits",
+    "PortRange",
     "Handler",
     "FileSystemHandler",
     "AtomicWriter",

@@ -11,7 +11,7 @@ import logging as _logging
 import typing as _ty
 
 from ..relay import Relay, RouteTable, by_prefix, by_subnet
-from .common import Traced, bind_failure, error
+from .common import Traced, bind_failure, error, port_range
 
 __all__ = ["RelayCmd"]
 
@@ -59,6 +59,10 @@ class RelayCmd(Traced):
     "Concurrent transfers; 0 is unlimited"
     ("--max-sessions",)
 
+    port_range: _ty.Optional[str] = None
+    "LOW:HIGH: take transfer ports from this range (for firewalls)"
+    ("--port-range",)
+
     def __call__(self) -> "int | None":
         try:
             routes = []
@@ -69,6 +73,7 @@ class RelayCmd(Traced):
             if not routes and not self.upstream:
                 raise ValueError("give an upstream server, or routes")
             route = RouteTable(routes, default=self.upstream)
+            ports = port_range(self.port_range)
         except ValueError as exc:
             error("error: %s" % exc)
             return 2
@@ -82,6 +87,7 @@ class RelayCmd(Traced):
                 max_sessions=self.max_sessions or None,
                 trace=self._tracer(),
                 on_session_end=on_end,
+                port_range=ports,
             )
         except OSError as exc:
             return bind_failure(exc, self.listen, self.port)

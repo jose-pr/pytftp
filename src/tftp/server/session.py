@@ -24,7 +24,7 @@ from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from ..capture.events import PacketEvent, new_session_id
 from .handler import RequestContext
 
-__all__ = ["Session", "reply_socket", "stream_size"]
+__all__ = ["Session", "PortRange", "bind_transfer", "reply_socket", "stream_size"]
 
 log = logging.getLogger("tftp.server")
 
@@ -47,12 +47,81 @@ def stream_size(stream: Any) -> Optional[int]:
         return None
 
 
+class PortRange:
+    """The UDP ports transfer sockets may use, ``low`` to ``high`` inclusive.
+
+    Each transfer needs a port of its own; pinning them to a range lets a
+    firewall allow them (tftp-hpa ``-R``, dnsmasq ``--tftp-port-range``).
+    Ports are tried round-robin from where the last search stopped, so a
+    port just released is the last to be reused.
+    """
+
+    __slots__ = ("low", "high", "_next")
+
+    def __init__(self, low: int, high: int) -> None:
+        if not 1 <= low <= high <= 65535:
+            raise ValueError("port range must satisfy 1 <= low <= high <= 65535")
+        self.low = low
+        self.high = high
+        self._next = low
+
+    @classmethod
+    def of(cls, value: Any) -> "Optional[PortRange]":
+        """``None``, a :class:`PortRange`, a ``(low, high)`` pair or a ``range``."""
+        if value is None or isinstance(value, PortRange):
+            return value
+        if isinstance(value, range):
+            if value.step != 1 or not len(value):
+                raise ValueError("port range must be a non-empty range with step 1")
+            return cls(value.start, value.stop - 1)
+        low, high = value
+        return cls(int(low), int(high))
+
+    def __len__(self) -> int:
+        return self.high - self.low + 1
+
+    def __iter__(self):
+        """Every port once, starting after the last one handed out."""
+        port = self._next
+        for _ in range(len(self)):
+            self._next = port + 1 if port < self.high else self.low
+            yield port
+            port = self._next
+
+    def __repr__(self) -> str:
+        return "PortRange(%d, %d)" % (self.low, self.high)
+
+
+def bind_transfer(host: str, family: int, ports: Optional[PortRange] = None) -> socket.socket:
+    """A non-blocking UDP socket on ``host``: any port, or a free one in ``ports``.
+
+    Raises :class:`netimps.AddressInUseError` when every port in the range
+    is taken, and any other ``OSError`` (an address that cannot be bound) as is.
+    """
+    from netimps import AddressInUseError, bind
+
+    if ports is None:
+        sock = bind(host, 0, family=family, connreset=False)
+    else:
+        for port in ports:
+            try:
+                sock = bind(host, port, family=family, connreset=False)
+                break
+            except AddressInUseError:
+                continue
+        else:
+            raise AddressInUseError("no free port in %d..%d" % (ports.low, ports.high))
+    sock.setblocking(False)
+    return sock
+
+
 def reply_socket(
     family: int,
     listen_host: Optional[str],
     sender: Tuple[Any, ...],
     local: Optional[str],
     ifindex: int,
+    ports: Optional[PortRange] = None,
 ) -> Tuple[socket.socket, Tuple[Any, ...]]:
     """A non-blocking socket for one transfer, and the peer to send to.
 
@@ -60,9 +129,11 @@ def reply_socket(
     a plain ``AF_INET`` socket, so the reply needs no dual-stack support of
     its own. The bind address is tried in order: the request's destination
     (``local``), the listening address, the wildcard -- a destination that
-    cannot be bound (a subnet broadcast) falls through to the next.
+    cannot be bound (a subnet broadcast) falls through to the next. With
+    ``ports``, the socket takes a free port from that range; a range with no
+    free port raises :class:`netimps.AddressInUseError`.
     """
-    from netimps import bind, unmap
+    from netimps import AddressInUseError, unmap
 
     mapped = unmap(sender[0])
     if family == socket.AF_INET6 and mapped.version == 4:
@@ -96,12 +167,11 @@ def reply_socket(
     last: Optional[OSError] = None
     for candidate in candidates:
         try:
-            sock = bind(candidate, 0, family=family, connreset=False)
+            return bind_transfer(candidate, family, ports), peer
+        except AddressInUseError:
+            raise  # the range is full: another address has the same ports
         except OSError as exc:
             last = exc
-            continue
-        sock.setblocking(False)
-        return sock, peer
     raise last  # type: ignore[misc]
 
 

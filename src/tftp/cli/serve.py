@@ -3,6 +3,7 @@
 pytftp serve /srv/tftp --write
 pytftp serve --http https://images.example.com/pxe/
 pytftp serve --upstream 10.0.0.20 --compat pxe
+pytftp serve /srv/tftp --per-client --ignore-case --remap '^/?pxelinux/=boot/'
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import typing as _ty
 from ..options import PROFILES, STANDARD_OPTIONS, ServerOptions
 from ..result import TransferResult
 from ..server import Server, ServerLimits
-from .common import PROFILE_NAMES, Choice, Traced, bind_failure, error, result_json
+from .common import PROFILE_NAMES, Choice, Traced, bind_failure, error, port_range, result_json
 
 __all__ = ["Serve"]
 
@@ -98,9 +99,34 @@ class Serve(Traced):
     "Concurrent transfers per client address; 0 is unlimited"
     ("--max-per-client",)
 
+    port_range: _ty.Optional[str] = None
+    "LOW:HIGH: take transfer ports from this range (for firewalls)"
+    ("--port-range",)
+
+    per_client: bool = False
+    "Serve ROOT/<client address>/ to a client when it exists (IPv6 ':' written '-')"
+    ("--per-client",)
+
+    ignore_case: bool = False
+    "Find files whatever the case of the requested name"
+    ("--ignore-case",)
+
+    remap: _ty.List[str] = []
+    "REGEX=REPLACEMENT: rewrite requested names (first matching rule); repeatable"
+    ("--remap",)
+
     def _handler(self) -> _ty.Any:
+        from .handlers import Remap, parse_rule
+
+        rules = [parse_rule(rule) for rule in self.remap]
+        handler = self._source()
+        return Remap(handler, rules) if rules else handler
+
+    def _source(self) -> _ty.Any:
         if self.http and self.upstream:
             raise ValueError("give --http or --upstream, not both")
+        if (self.http or self.upstream) and (self.per_client or self.ignore_case):
+            raise ValueError("--per-client and --ignore-case serve a directory")
         if self.http:
             from ..backends import HttpHandler
 
@@ -111,7 +137,17 @@ class Serve(Traced):
             return UpstreamHandler(self.upstream, writable=self.write)
         if not _os.path.isdir(self.root):
             raise ValueError("not a directory: %s" % self.root)
-        return self.root
+        if not (self.per_client or self.ignore_case):
+            return self.root
+        from ..server import FileSystemHandler
+        from .handlers import CaseInsensitive, PerClient
+
+        kind = CaseInsensitive if self.ignore_case else FileSystemHandler
+
+        def make(directory: str) -> _ty.Any:
+            return kind(directory, writable=self.write, create=not self.no_create, overwrite=self.overwrite)
+
+        return PerClient(self.root, make) if self.per_client else make(self.root)
 
     def _options(self) -> ServerOptions:
         if self.compat:
@@ -128,6 +164,7 @@ class Serve(Traced):
         try:
             handler = self._handler()
             options = self._options()
+            ports = port_range(self.port_range)
         except ValueError as exc:
             error("error: %s" % exc)
             return 2
@@ -149,6 +186,7 @@ class Serve(Traced):
                 limits=ServerLimits(max_sessions_per_client=self.max_per_client or None),
                 on_complete=on_complete,
                 trace=self._tracer(),
+                port_range=ports,
             )
         except OSError as exc:
             return bind_failure(exc, self.listen, self.port)

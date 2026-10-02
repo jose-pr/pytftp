@@ -31,7 +31,7 @@ from ..server.handler import RequestContext
 from ..server.listener import Listener
 from ..server.netinfo import InterfaceInfo
 from ..server.policy import ServerLimits
-from ..server.session import reply_socket
+from ..server.session import PortRange, bind_transfer, reply_socket
 from .routing import Route, Upstream, upstream as to_upstream
 from ..server.stats import RELAY_COUNTERS, Stats
 from .session import RelaySession, RelaySummary
@@ -67,6 +67,8 @@ class Relay:
         sent, with ``role="relay"`` and ``leg`` ``"client"``/``"upstream"``.
     :param on_session_end: ``on_session_end(RelaySummary)`` when a relayed
         transfer ends.
+    :param port_range: ports for both sockets of each relayed transfer (the
+        client side and the upstream side), as for ``Server``.
     """
 
     def __init__(
@@ -85,6 +87,7 @@ class Relay:
         reply_from_request_address: bool = True,
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         on_session_end: Optional[Callable[[RelaySummary], Any]] = None,
+        port_range: Any = None,
     ) -> None:
         if callable(route):
             self.route: Route = route
@@ -102,6 +105,8 @@ class Relay:
         self.ignore_broadcast = ignore_broadcast
         self.trace = trace
         self.on_session_end = on_session_end
+        #: Ports for both of a transfer's sockets (:class:`PortRange`), or ``None``.
+        self.port_range = PortRange.of(port_range)
         #: Counters since start (:class:`Stats`).
         self.stats = Stats(*RELAY_COUNTERS)
         self._listener = Listener(host, port, pktinfo=reply_from_request_address)
@@ -316,13 +321,17 @@ class Relay:
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay error")
             return False
 
-        from netimps import bind
-
-        down, client = reply_socket(self._listener.family, self._listener.host, sender, local, ifindex)
+        try:
+            down, client = reply_socket(
+                self._listener.family, self._listener.host, sender, local, ifindex, self.port_range
+            )
+        except OSError as exc:
+            log.warning("no transfer socket for %s: %s", sender[:2], exc)
+            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay busy")
+            return False
         try:
             source = self.upstream_source or ("::" if family == socket.AF_INET6 else "0.0.0.0")
-            up = bind(source, 0, family=family, connreset=False)
-            up.setblocking(False)
+            up = bind_transfer(source, family, self.port_range)
         except OSError:
             down.close()
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay error")

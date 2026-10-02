@@ -211,3 +211,33 @@ def test_capture_errors(tmp_path):
     (tmp_path / "junk.pcap").write_bytes(b"not a capture at all")
     assert run(["capture", str(tmp_path / "junk.pcap")]) == 2
     assert run(["capture", str(tmp_path / "junk.pcap"), "--filter", "colour=red"]) == 2
+
+
+def test_serve_deployment_flags(root):
+    import tftp
+
+    (root / "127.0.0.1").mkdir()
+    (root / "127.0.0.1" / "Menu.CFG").write_bytes(b"per-client menu")
+    args = ["serve", str(root), "-l", "127.0.0.1", "-p", "0", "--per-client", "--ignore-case"]
+    args += ["--remap", "^pxelinux/=", "--port-range", "45100:45120"]
+    proc, port = _serve_subprocess(args)
+    try:
+        events = []
+        client = tftp.Client("127.0.0.1", port, trace=events.append)
+        assert client.get("pxelinux/menu.cfg") == b"per-client menu"
+        assert all(45100 <= e.remote[1] <= 45120 for e in events if e.direction == "in")
+    finally:
+        _stop(proc)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--port-range", "10"],
+        ["--port-range", "9:8"],
+        ["--remap", "nothing"],
+        ["--http", "http://x/", "--per-client"],
+    ],
+)
+def test_serve_deployment_flag_errors(tmp_path, args):
+    assert run(["serve", str(tmp_path), *args]) == 2

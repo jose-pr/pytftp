@@ -56,6 +56,21 @@ def error(text: str) -> None:
     print(text, file=_sys.stderr)
 
 
+def port_range(text: _ty.Optional[str]) -> _ty.Any:
+    """``LOW:HIGH`` (or ``LOW-HIGH``) for ``--port-range``: a ``PortRange``, or ``ValueError``."""
+    if not text:
+        return None
+    from ..server import PortRange
+
+    low, sep, high = text.replace("-", ":").partition(":")
+    try:
+        if not sep:
+            raise ValueError
+        return PortRange(int(low), int(high))
+    except ValueError:
+        raise ValueError("--port-range expects LOW:HIGH within 1..65535, got %r" % text) from None
+
+
 def bind_failure(exc: OSError, address: str, port: int) -> int:
     """Report a listening socket that could not be bound; exit status 1."""
     hint = None

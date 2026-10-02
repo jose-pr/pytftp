@@ -83,6 +83,10 @@ class Server(ServerBase):
         the handler: those marked ``_tftp_fast_open_ = True`` (the built-in
         file and memory handlers) open inline, everything else in a worker.
     :param workers: size of that worker pool.
+    :param port_range: ``(low, high)`` (inclusive), a ``range`` or a
+        :class:`PortRange`: transfer sockets take their ports from it, so a
+        firewall can allow them. A request arriving while every port is in
+        use gets ERROR 0 "server busy". ``None`` lets the OS choose.
     """
 
     def __init__(
@@ -108,6 +112,7 @@ class Server(ServerBase):
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         open_in_thread: Optional[bool] = None,
         workers: int = 8,
+        port_range: Any = None,
     ) -> None:
         super().__init__(
             root_or_handler,
@@ -128,6 +133,7 @@ class Server(ServerBase):
             backoff=backoff,
             max_timeout=max_timeout,
             trace=trace,
+            port_range=port_range,
             session_cap=WINDOWS_SESSION_CAP if sys.platform == "win32" else None,
         )
         self._ready: "collections.deque[Session]" = collections.deque()

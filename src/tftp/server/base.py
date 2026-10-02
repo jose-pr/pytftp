@@ -24,7 +24,7 @@ from .handler import FileSystemHandler, RequestContext
 from .listener import Arrival, Listener
 from .netinfo import InterfaceInfo
 from .policy import ServerLimits
-from .session import Session, reply_socket
+from .session import PortRange, Session, reply_socket
 from .stats import SERVER_COUNTERS, Stats
 
 __all__ = ["ServerBase"]
@@ -61,6 +61,7 @@ class ServerBase:
         max_timeout: Optional[float] = None,
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         session_cap: Optional[int] = None,
+        port_range: Any = None,
     ) -> None:
         if isinstance(root_or_handler, (str, os.PathLike)):
             handler: Any = FileSystemHandler(
@@ -84,6 +85,8 @@ class ServerBase:
         self.backoff = backoff
         self.max_timeout = max_timeout
         self.trace = trace
+        #: Where transfer sockets take their ports (:class:`PortRange`), or ``None``.
+        self.port_range = PortRange.of(port_range)
         self._interfaces = InterfaceInfo()
         self._sessions: Dict[Tuple[str, int], Session] = {}
         self._per_client: Dict[str, int] = {}
@@ -164,7 +167,15 @@ class ServerBase:
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
             return None
 
-        sock, peer = reply_socket(self._listener.family, self._listener.host, sender, local, ifindex)
+        try:
+            sock, peer = reply_socket(
+                self._listener.family, self._listener.host, sender, local, ifindex, self.port_range
+            )
+        except OSError as exc:
+            log.warning("no transfer socket for %s: %s", sender[:2], exc)
+            self.stats.add("refused")
+            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
+            return None
         session = Session(sock, peer, RequestContext(request, peer, local, ifindex), now)
         if self.trace is not None:
             session.trace = self.trace
