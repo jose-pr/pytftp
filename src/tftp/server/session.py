@@ -12,6 +12,7 @@ import ipaddress
 import logging
 import os
 import socket
+import time
 from typing import Any, Callable, Optional, Tuple
 
 from .._sockets import fit_window
@@ -20,6 +21,7 @@ from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import ServerOptions, negotiate
 from ..packet import ErrorCode, Request, encode_ack, encode_oack
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
+from ..capture.events import PacketEvent, new_session_id
 from .handler import RequestContext
 
 __all__ = ["Session", "reply_socket", "stream_size"]
@@ -121,6 +123,8 @@ class Session:
         "key",
         "local",
         "notify",
+        "id",
+        "trace",
     )
 
     def __init__(
@@ -144,6 +148,9 @@ class Session:
         #: Thread-safe "this transfer can make progress again" callback,
         #: handed to streams that support ``set_wakeup`` (see WouldBlock).
         self.notify: Optional[Callable[[], None]] = None
+        self.id = new_session_id("s")
+        #: ``trace(PacketEvent)`` for this transfer's datagrams, or ``None``.
+        self.trace: Optional[Callable[[PacketEvent], Any]] = None
 
     def wakeup(self) -> Optional[float]:
         """When the loop must next look at this session, or ``None``."""
@@ -157,7 +164,22 @@ class Session:
         except OSError:
             # A full send buffer or a transient route error is loss, which
             # the transfer's timeout already recovers from.
-            pass
+            return
+        if self.trace is not None:
+            self.emit(packet, "out", self.peer)
+
+    def emit(
+        self, data, direction: str, remote: Tuple[Any, ...], local: Optional[Tuple[Any, ...]] = None
+    ) -> None:
+        """Report one datagram to the trace hook (exceptions are logged, not raised)."""
+        try:
+            self.trace(  # type: ignore[misc]
+                PacketEvent(
+                    time.time(), direction, local or self.local, remote, bytes(data), "server", self.id
+                )
+            )
+        except Exception:
+            log.exception("trace hook failed")
 
     def open(
         self,

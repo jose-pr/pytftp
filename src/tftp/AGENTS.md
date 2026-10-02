@@ -376,6 +376,57 @@ methods `decode()`, `format()` (a human line), `to_dict(payload=False)` (JSON-
 ready metadata; DATA payloads only as hex with `payload=True`).
 `summarize(data)` is the one-line description on its own.
 
+**Trace hooks** — `Client(trace=)`, `Server(trace=)`, `Relay(trace=)` take
+`trace(PacketEvent)`, called for every datagram received and sent, on the
+thread doing the I/O; exceptions it raises are logged, never propagated.
+Roles are `"client"`, `"server"`, `"relay"`; one `session` id per transfer
+(`c…`, `s…`, `r…`). A server traces a transfer's request as arriving at the
+listening address. Requests a server refuses before a transfer exists are
+not traced. Off (`None`) costs nothing per packet.
+
+**`PcapWriter(path_or_binary_file)`** — writes events (it is a ready trace
+hook: `Server(..., trace=PcapWriter("t.pcap"))`) or `write(time, source,
+destination, payload)` as pcap, link type RAW, with synthesized IPv4/IPv6 and
+UDP headers and valid checksums, so Wireshark/tshark decode it as TFTP
+(v4-mapped addresses are written as IPv4). Context manager; `close()`.
+
+**Reading captures** — pcap and pcapng (both byte orders, µs/ns and
+`if_tsresol`, several interfaces), from a path or a stream (a live
+`tcpdump -i eth0 -U -w - udp` pipe). Link types: Ethernet (VLAN/QinQ),
+RAW, IPv4, IPv6, Linux SLL/SLL2, BSD NULL/LOOP. IPv4 and IPv6 fragments are
+reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
+
+- **`read_frames(source) -> Iterator[(time, linktype, frame)]`**,
+  **`read_datagrams(source) -> Iterator[UdpDatagram(time, source, destination, payload)]`**
+  — `CaptureFormatError` (a `ValueError`) for anything that is not a capture.
+- **`FlowTracker(ports=(69,), keep_payloads=True)`** — `feed(datagram) ->
+  PacketEvent | None` (role `"capture"`, direction `"seen"`; `None` for UDP
+  that is neither TFTP traffic of a known transfer nor to/from a request
+  port), `feed_all(datagrams)`, `.transfers`. A transfer starts at an
+  RRQ/WRQ to a request port and follows the server's answer (its TID; from
+  another address too, within 10 s) between that TID and the client's
+  address/port. `::ffff:a.b.c.d` and `a.b.c.d` count as one host.
+- **`CapturedTransfer`** — `session`, `client`, `server`, `server_tid`,
+  `filename`, `mode`, `operation`, `requested`, `acknowledged`, `blksize`,
+  `windowsize`, `tsize`, `error` (`(code, message, "client"|"server")`),
+  `complete` (final DATA seen and ACKed), `packets`, `retransmissions` (DATA
+  seen again), `request_retransmissions`, `bytes`, `missing_blocks`,
+  `started`, `ended`, `duration`; `data(decode_netascii=True)` returns the
+  file up to the first gap (block numbers followed across rollover);
+  `to_dict()`.
+- **`analyze(source, *, ports=(69,), filter=None, keep_payloads=True) -> Analysis(events, transfers)`**
+  — a whole capture (path, stream, or datagrams) at once.
+- **`sniff(interface=None, *, stop=None) -> Iterator[UdpDatagram]`** — live,
+  Linux only (`AF_PACKET`, needs `CAP_NET_RAW`); `live_capture_supported()`.
+  Elsewhere pipe `tcpdump`/`dumpcap -w -` into `read_datagrams`.
+
+**Filters** — **`compile_filter(text) -> predicate(event)`**: `key=value`
+clauses joined by `and`, `,` for "any of", `!=` to negate; empty matches all.
+Keys: `op` (opcode name), `host`/`src`/`dst` (address, CIDR, `addr:port`,
+`[v6]:port`, `:port`; mapped v4 matches v4), `port`, `file` (shell pattern,
+requests only), `block`, `code` (ERROR code), `session`, `leg`, `direction`.
+`FilterError` (a `ValueError`) for an unknown key or malformed value.
+
 ## Results and errors
 
 **`TransferResult`** — `filename`, `operation` (`"read"` for RRQ, `"write"`

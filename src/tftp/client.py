@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 import socket
 import time
@@ -22,9 +23,12 @@ from .options import (
 from .packet import ErrorCode, Opcode, encode_ack, encode_error, encode_request, decode
 from .result import TransferResult
 from ._sockets import fit_window
+from .capture.events import PacketEvent, new_session_id
 from .transfer import Receiver, Sender, Transfer, as_readinto, as_write
 
 __all__ = ["Client", "download", "upload", "MODES"]
+
+log = logging.getLogger("tftp.client")
 
 #: Transfer modes this library speaks. ``mail`` (obsolete since RFC 1350) is not.
 MODES = ("octet", "netascii")
@@ -117,6 +121,8 @@ class Client:
         such as ``blksize2``/``cookie``, or custom ones). Built-in ones are
         validated in the OACK; custom ones land in ``negotiated.extra``.
     :param registry: the :class:`OptionRegistry` used to validate the OACK.
+    :param trace: ``trace(PacketEvent)`` for every datagram this client sends
+        or receives (``role="client"``, one ``session`` id per transfer).
     :param on_negotiated: called as ``on_negotiated(negotiated, peer)`` once
         the server has answered the request (OACK, first DATA or ACK 0),
         before any data moves -- the peer is the server's transfer address.
@@ -152,6 +158,7 @@ class Client:
         extra_options: Optional[Mapping[str, object]] = None,
         registry: Optional[OptionRegistry] = None,
         on_negotiated: Optional[Callable[[Negotiated, Tuple[Any, ...]], Any]] = None,
+        trace: Optional[Callable[[PacketEvent], Any]] = None,
     ) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
@@ -189,6 +196,7 @@ class Client:
         self.extra_options = dict(extra_options or {})
         self.registry = registry
         self.on_negotiated = on_negotiated
+        self.trace = trace
 
     # -- public API -------------------------------------------------------
 
@@ -341,8 +349,20 @@ class Client:
         expires = None if self.max_duration is None else started + self.max_duration
         engine = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
 
+        trace = self.trace
+        session_id = new_session_id("c") if trace is not None else None
+        local = sock.getsockname()
+
+        def emit(data, direction: str, remote) -> None:
+            try:
+                trace(PacketEvent(time.time(), direction, local, remote, bytes(data), "client", session_id))
+            except Exception:
+                log.exception("trace hook failed")
+
         # Request phase: until the server answers from its transfer ID.
         sock.sendto(request, server)
+        if trace is not None:
+            emit(request, "out", server)
         tries = self.retries
         wait = self.timeout
         deadline = clock() + wait
@@ -353,6 +373,8 @@ class Client:
                 if tries < 0 or (expires is not None and clock() >= expires):
                     raise TransferTimeout("no response from %s:%s" % server[:2])
                 sock.sendto(request, server)
+                if trace is not None:
+                    emit(request, "out", server)
                 wait = min(wait * self.backoff, self.max_timeout)  # RFC 1123 4.2.3.2
                 deadline = clock() + wait
                 continue
@@ -363,12 +385,23 @@ class Client:
                 continue
             except ConnectionResetError:  # pragma: no cover - connreset is off
                 continue
+            if trace is not None:
+                emit(view[:n], "in", peer)
             if n < 2 or (self.strict_source and peer[0] != server[0]):
                 continue  # not the server we asked
             break
 
-        def send(packet, _sendto=sock.sendto, _peer=peer):
-            return _sendto(packet, _peer)
+        if trace is None:
+
+            def send(packet, _sendto=sock.sendto, _peer=peer):
+                return _sendto(packet, _peer)
+
+        else:
+
+            def send(packet, _sendto=sock.sendto, _peer=peer):
+                result = _sendto(packet, _peer)
+                emit(packet, "out", _peer)
+                return result
 
         now = clock()
         op = buf[1] if buf[0] == 0 else -1
@@ -445,9 +478,14 @@ class Client:
                 continue
             except ConnectionResetError:  # pragma: no cover - connreset is off
                 continue
+            if trace is not None:
+                emit(view[:n], "in", addr)
             if addr[1] != peer_port or addr[0] != peer_host:
                 try:
-                    sock.sendto(encode_error(ErrorCode.UNKNOWN_TID), addr)
+                    stray = encode_error(ErrorCode.UNKNOWN_TID)
+                    sock.sendto(stray, addr)
+                    if trace is not None:
+                        emit(stray, "out", addr)
                 except OSError:
                     pass
                 continue
@@ -470,6 +508,8 @@ class Client:
                     n, addr = recv_into(buf)
                 except (socket.timeout, ConnectionResetError):
                     break
+                if trace is not None:
+                    emit(view[:n], "in", addr)
                 if addr[1] == peer_port and addr[0] == peer_host:
                     session.handle(view, n, clock())
 

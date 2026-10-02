@@ -28,6 +28,7 @@ from ..packet import ErrorCode, MalformedPacket, Opcode, Request, decode, encode
 from ..result import TransferResult
 from ..transfer import Receiver, Transfer
 from .handler import FileSystemHandler, RequestContext
+from ..capture.events import PacketEvent
 from .listener import Listener
 from .netinfo import InterfaceInfo
 from .policy import ServerLimits
@@ -85,6 +86,10 @@ class Server:
         the handler: those marked ``_tftp_fast_open_ = True`` (the built-in
         file and memory handlers) open inline, everything else in a worker.
     :param workers: size of that worker pool.
+    :param trace: ``trace(PacketEvent)`` for every datagram of every
+        transfer, received and sent (``role="server"``, one ``session``
+        id per transfer). Requests refused before a transfer exists are
+        not traced. :class:`tftp.capture.PcapWriter` is a ready hook.
     """
 
     def __init__(
@@ -107,6 +112,7 @@ class Server:
         ignore_broadcast: bool = True,
         backoff: float = 2.0,
         max_timeout: Optional[float] = None,
+        trace: Optional[Callable[[PacketEvent], Any]] = None,
         open_in_thread: Optional[bool] = None,
         workers: int = 8,
     ) -> None:
@@ -132,6 +138,7 @@ class Server:
         self.backoff = backoff
         self.max_timeout = max_timeout
         self._interfaces = InterfaceInfo()
+        self.trace = trace
         self._per_client: Dict[str, int] = {}
         self._ready: "collections.deque[Session]" = collections.deque()
         self._pending_opens: "collections.deque[Tuple[Session, Any]]" = collections.deque()
@@ -346,6 +353,7 @@ class Server:
         view = self._view
         host = session.host
         port = session.port
+        trace = session.trace
         for _ in range(_DRAIN):
             try:
                 n, addr = recv(buf)
@@ -353,9 +361,14 @@ class Server:
                 break
             except OSError:
                 continue
+            if trace is not None:
+                session.emit(view[:n], "in", addr)
             if addr[1] != port or addr[0] != host:
                 try:
-                    session.sock.sendto(encode_error(ErrorCode.UNKNOWN_TID), addr)
+                    stray = encode_error(ErrorCode.UNKNOWN_TID)
+                    session.sock.sendto(stray, addr)
+                    if trace is not None:
+                        session.emit(stray, "out", addr)
                 except OSError:
                     pass
                 continue
@@ -419,6 +432,12 @@ class Server:
         context = RequestContext(request, peer, local, ifindex)
         session = Session(sock, peer, context, now)
         session.notify = self._notifier(session)
+        if self.trace is not None:
+            session.trace = self.trace
+            # The request arrived at the listening port, not the transfer's.
+            listening = self._address
+            arrived = (local, listening[1]) if local is not None else listening[:2]
+            session.emit(data, "in", sender, arrived)
         mtu = self._interfaces.mtu(ifindex) if self.options.fit_mtu else None
         # Registered at once, so a retransmitted request is recognised while
         # a worker is still opening this one.
