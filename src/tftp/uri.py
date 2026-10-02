@@ -10,7 +10,10 @@ RFC 3617's grammar but universal in practice, defaults to 69.
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
+
+if TYPE_CHECKING:
+    from netimps import AddressLike, Host
 from urllib.parse import quote, unquote, urlsplit
 
 __all__ = ["TftpURL", "parse_url", "format_url", "download_url", "upload_url"]
@@ -59,8 +62,12 @@ def parse_url(url: str) -> TftpURL:
     return TftpURL(host, port, filename, mode)
 
 
-def format_url(host: str, filename: str, port: int = 69, mode: str = "octet") -> str:
-    """The ``tftp://`` URI for a file; the inverse of :func:`parse_url`."""
+def format_url(host: "AddressLike | Host", filename: str, port: int = 69, mode: str = "octet") -> str:
+    """The ``tftp://`` URI for a file; the inverse of :func:`parse_url`.
+
+    ``host`` is a name or address string, an ``ipaddress`` address or
+    interface, or a ``netimps.Host``.
+    """
     from netimps import join_host
 
     authority = join_host(host, None if port == 69 else port)

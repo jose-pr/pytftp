@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import errno
 import socket
-from typing import Any, NamedTuple, Optional, Tuple
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Tuple
+
+if TYPE_CHECKING:
+    from netimps import Host, IPAddressLike
 
 from ..packet import encode_error
 
@@ -26,13 +29,16 @@ class Arrival(NamedTuple):
     ifindex: int
 
 
-def _bind(host: str, port: int) -> socket.socket:
-    from netimps import bind, normalize_host
+def _bind(host: "IPAddressLike | Host | None", port: int) -> socket.socket:
+    from netimps import bind, get_ip, is_wildcard, normalize_host
 
     # netimps' defaults keep the port exclusive for a datagram socket on every
     # platform (no SO_REUSEADDR on POSIX, SO_EXCLUSIVEADDRUSE on Windows).
     plain = {"connreset": False}
-    if host in ("", "::"):
+    if isinstance(host, str) and host:
+        host = normalize_host(host)[0]  # "[::1]" -> "::1"; other values carry no brackets
+    address = get_ip(host) if host else None
+    if not host or (is_wildcard(host) and address is not None and address.version == 6):
         try:
             sock = bind(
                 "::",
@@ -48,8 +54,9 @@ def _bind(host: str, port: int) -> socket.socket:
             # No IPv6 on this host: IPv4 alone.
             sock = bind("0.0.0.0", port, family=socket.AF_INET, **plain)
     else:
-        host = normalize_host(host)[0]
-        family = socket.getaddrinfo(host, port, 0, socket.SOCK_DGRAM, 0, socket.AI_PASSIVE)[0][0]
+        if address is None:
+            raise socket.gaierror("cannot resolve %r" % (host,))
+        family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
         sock = bind(host, port, family=family, **plain)
     return sock
 
@@ -61,7 +68,7 @@ class Listener:
         :class:`netimps.UdpEndpoint`, where the platform allows it.
     """
 
-    def __init__(self, host: str, port: int, pktinfo: bool = True) -> None:
+    def __init__(self, host: "IPAddressLike | Host | None", port: int, pktinfo: bool = True) -> None:
         self.sock = _bind(host, port)
         self.family = self.sock.family
         try:

@@ -304,10 +304,10 @@ class AsyncClient(Client):
         return await self._run(Opcode.WRQ, filename, mode, size, None, as_readinto(reader), progress, bridge)
 
     async def _run(self, opcode, filename, mode, size, write, read, progress, bridge) -> TransferResult:
-        from netimps import bind, get_ip, normalize_host
+        from netimps import bind, get_ip
 
         loop = asyncio.get_running_loop()
-        host, port = normalize_host(self.host, self.port)
+        host, port = self._target()
         ipv6 = {socket.AF_INET6: True, socket.AF_INET: False}.get(self.family)
         address = await loop.run_in_executor(None, get_ip, host, ipv6)  # DNS off the loop
         if address is None:

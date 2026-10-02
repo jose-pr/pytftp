@@ -7,52 +7,67 @@ the common ones; :class:`RouteTable` combines them, first match wins.
 
 from __future__ import annotations
 
-import ipaddress
-from typing import Any, Callable, Iterable, NamedTuple, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, NamedTuple, Optional, Sequence, Tuple, Union
+
+if TYPE_CHECKING:
+    from netimps import AddressLike, Host, Interface, IPAddressLike, IPNetworkLike
 
 __all__ = ["Upstream", "upstream", "RouteTable", "by_subnet", "by_prefix", "by_interface", "Route"]
 
 
 class Upstream(NamedTuple):
-    """Where to forward: an upstream server's host and request port."""
+    """Where to forward: an upstream server's host and request port.
 
-    host: str
+    ``host`` is whatever was given: a name or address string, an
+    ``ipaddress`` address, or a ``netimps.Host``.
+    """
+
+    host: "AddressLike | Host"
     port: int = 69
 
 
-UpstreamLike = Union[Upstream, str, Tuple[str, int]]
+UpstreamLike = Union[Upstream, "AddressLike", "Host", Tuple["AddressLike | Host", int]]
 Route = Callable[[Any, Any], Optional[UpstreamLike]]
 
 
 def upstream(value: UpstreamLike) -> Upstream:
-    """``"host"``, ``"host:port"``, ``"[v6]:port"`` or ``(host, port)`` -> :class:`Upstream`."""
+    """An :class:`Upstream` from ``"host"``, ``"host:port"``, ``"[v6]:port"``,
+    an address or ``netimps.Host`` (port 69), or ``(host, port)``."""
     if isinstance(value, Upstream):
         return value
     if isinstance(value, tuple):
-        return Upstream(str(value[0]), int(value[1]))
+        return Upstream(value[0], int(value[1]))
+    if not isinstance(value, str):
+        return Upstream(value, 69)  # only a string can carry a port
     from netimps import normalize_host
 
     host, port = normalize_host(value, 69)
     return Upstream(host, port or 69)
 
 
-def by_subnet(table: "dict[str, UpstreamLike] | Sequence[Tuple[str, UpstreamLike]]") -> Route:
+def by_subnet(
+    table: "dict[IPNetworkLike, UpstreamLike] | Sequence[Tuple[IPNetworkLike, UpstreamLike]]",
+) -> Route:
     """Route by the client's address: ``{"10.1.0.0/16": "10.1.0.5", ...}``.
 
-    The most specific (longest prefix) matching network wins. A v4 client
-    seen as ``::ffff:a.b.c.d`` matches v4 networks.
+    Keys are anything ``netimps.parse(..., IPNetwork)`` takes: CIDR strings,
+    ``ipaddress`` networks, interfaces (their network) or addresses (a /32 or
+    /128). The most specific (longest prefix) matching network wins. A v4
+    client seen as ``::ffff:a.b.c.d`` matches v4 networks.
     """
+    from netimps import IPNetwork, parse
+
     items = table.items() if isinstance(table, dict) else table
     networks = sorted(
-        ((ipaddress.ip_network(net, strict=False), upstream(target)) for net, target in items),
+        ((parse(net, IPNetwork), upstream(target)) for net, target in items),
         key=lambda pair: pair[0].prefixlen,
         reverse=True,
     )
 
     def route(request: Any, context: Any) -> Optional[Upstream]:
-        address = ipaddress.ip_address(str(context.peer[0]).split("%", 1)[0])
-        if address.version == 6 and address.ipv4_mapped is not None:
-            address = address.ipv4_mapped
+        from netimps import unmap
+
+        address = unmap(context.peer[0])
         for network, target in networks:
             if address.version == network.version and address in network:
                 return target
@@ -82,18 +97,35 @@ def by_prefix(table: "dict[str, UpstreamLike] | Sequence[Tuple[str, UpstreamLike
     return route
 
 
-def by_interface(table: "dict[Union[int, str], UpstreamLike]") -> Route:
-    """Route by arrival interface: index (int) or the address the request was sent to (str).
+def by_interface(table: "dict[Union[int, Interface, IPAddressLike], UpstreamLike]") -> Route:
+    """Route by arrival: an interface index (``int``), a ``netimps.Interface``,
+    or the local address the request was sent to (an address string or
+    object, an ``ipaddress`` interface, a ``netimps.Host``).
 
     Needs pktinfo; without it neither is known and nothing matches.
     """
-    resolved = {key: upstream(target) for key, target in table.items()}
+    from netimps import Interface, get_ip, unmap
+
+    by_index: Dict[int, Upstream] = {}
+    by_address: Dict[Any, Upstream] = {}
+    for key, target in table.items():
+        if isinstance(key, bool):
+            raise TypeError("by_interface keys are indexes, interfaces or addresses, not bool")
+        if isinstance(key, int):
+            by_index[key] = upstream(target)
+        elif isinstance(key, Interface):
+            by_index[key.index] = upstream(target)
+        else:
+            address = get_ip(key)  # an ipaddress interface counts as its address
+            if address is None:
+                raise ValueError("by_interface: cannot resolve %r" % (key,))
+            by_address[unmap(address)] = upstream(target)
 
     def route(request: Any, context: Any) -> Optional[Upstream]:
-        if context.interface_index and context.interface_index in resolved:
-            return resolved[context.interface_index]
-        if context.local_address is not None:
-            return resolved.get(context.local_address.split("%", 1)[0])
+        if context.interface_index and context.interface_index in by_index:
+            return by_index[context.interface_index]
+        if context.local_address is not None and by_address:
+            return by_address.get(unmap(context.local_address.split("%", 1)[0]))
         return None
 
     return route

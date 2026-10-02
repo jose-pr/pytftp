@@ -21,7 +21,10 @@ import socket
 import sys
 import threading
 import time
-from typing import Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Tuple
+
+if TYPE_CHECKING:
+    from netimps import Host, IPAddressLike
 
 from ..packet import ErrorCode, encode_error
 from ..server.base import WINDOWS_SESSION_CAP, ServerBase
@@ -66,7 +69,13 @@ class AsyncServer(ServerBase):
     """
 
     def __init__(
-        self, root_or_handler: Any, host: str = "::", port: int = 69, *, executor: Any = None, **kwargs: Any
+        self,
+        root_or_handler: Any,
+        host: "IPAddressLike | Host | None" = "::",
+        port: int = 69,
+        *,
+        executor: Any = None,
+        **kwargs: Any,
     ) -> None:
         if sys.platform == "win32":
             kwargs.setdefault("session_cap", WINDOWS_SESSION_CAP)  # a selector loop's select()

@@ -12,7 +12,10 @@ import logging
 import os
 import sys
 import time
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+
+if TYPE_CHECKING:
+    from netimps import Host, IPAddressLike
 
 from ..capture.events import PacketEvent
 from ..errors import RemoteError, TftpError, error_for_exception
@@ -42,7 +45,7 @@ class ServerBase:
     def __init__(
         self,
         root_or_handler: Any,
-        host: str = "::",
+        host: "IPAddressLike | Host | None" = "::",
         port: int = 69,
         *,
         writable: bool = False,

@@ -9,7 +9,19 @@ import logging
 import os
 import socket
 import time
-from typing import Any, BinaryIO, Callable, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from .errors import ProtocolError, RemoteError, TftpError, TransferTimeout
 from .listing import LIST_OPTION, MTIME_OPTION, ListEntry, parse_listing
@@ -28,6 +40,9 @@ from .result import TransferResult
 from ._sockets import fit_window
 from .capture.events import PacketEvent, new_session_id
 from .transfer import Receiver, Sender, Transfer, as_readinto, as_write
+
+if TYPE_CHECKING:  # netimps is imported lazily at run time
+    from netimps import AddressLike, Host
 
 __all__ = ["Client", "RemoteStat", "download", "upload", "MODES"]
 
@@ -111,7 +126,9 @@ def _mtu_blksize(server: Any) -> int:
 class Client:
     """A TFTP client bound to one server.
 
-    :param host: server name or address; ``[v6]`` brackets are accepted.
+    :param host: server name or address: a string (``"name"``, ``"10.0.0.1"``,
+        ``"[v6]:port"``), an ``ipaddress`` address or interface, or a
+        ``netimps.Host``. Only a string can carry a port.
     :param port: server port.
     :param timeout: seconds before a retransmission. Also requested from the
         server, as ``timeout`` when whole and as ``utimeout`` when fractional,
@@ -129,7 +146,8 @@ class Client:
         followed.
     :param family: ``socket.AF_INET`` / ``AF_INET6`` to force one, ``0`` for
         whatever ``host`` resolves to first.
-    :param local_address: ``(host, port)`` to send from.
+    :param local_address: ``(address, port)`` to send from; the address as
+        for ``host``.
     :param fallback: when the server refuses a request because of its options
         (ERROR 8), retry once without any.
     :param dally: after acknowledging the last DATA of a download, keep
@@ -161,7 +179,7 @@ class Client:
 
     def __init__(
         self,
-        host: str,
+        host: "AddressLike | Host",
         port: int = 69,
         *,
         timeout: float = 1.0,
@@ -200,7 +218,7 @@ class Client:
             rollover=rollover,
             extra=extra_options,
         )
-        self.host = host if isinstance(host, str) else str(host)  # an ipaddress object is fine too
+        self.host = host
         self.port = port
         self.timeout = timeout
         self.retries = retries
@@ -436,11 +454,20 @@ class Client:
                 continue  # not the server we asked
             return n, peer
 
+    def _target(self) -> Tuple[Any, int]:
+        """``(host, port)``: a ``"host:port"`` string is split; any other value has no port."""
+        if isinstance(self.host, str):
+            from netimps import normalize_host
+
+            host, port = normalize_host(self.host, self.port)
+            return host, port if port is not None else self.port
+        return self.host, self.port
+
     def _endpoint(self) -> Tuple[int, Tuple[Any, ...], Any]:
         """``(family, server sockaddr, server address)`` for this client's host."""
-        from netimps import get_ip, normalize_host
+        from netimps import get_ip
 
-        host, port = normalize_host(self.host, self.port)
+        host, port = self._target()
         address = get_ip(host, ipv6={socket.AF_INET6: True, socket.AF_INET: False}.get(self.family))
         if address is None:
             raise socket.gaierror("cannot resolve %r" % host)
@@ -717,7 +744,7 @@ class Client:
 
 
 def download(
-    host: str,
+    host: "AddressLike | Host",
     filename: str,
     dest: PathOrFile,
     *,
@@ -731,7 +758,7 @@ def download(
 
 
 def upload(
-    host: str,
+    host: "AddressLike | Host",
     filename: str,
     source: Union[PathOrFile, bytes],
     *,

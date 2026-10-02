@@ -22,7 +22,10 @@ import socket
 import sys
 import threading
 import time
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+
+if TYPE_CHECKING:
+    from netimps import Host, IPAddressLike
 
 from ..capture.events import PacketEvent, new_session_id
 from ..errors import TftpError
@@ -60,7 +63,8 @@ class Relay:
     :param max_lifetime: end any transfer after this long.
     :param linger: after a recognised final DATA/ACK exchange (or an ERROR,
         up to 1 s), keep forwarding this long for retransmissions.
-    :param upstream_source: local address to send upstream from.
+    :param upstream_source: local address to send upstream from (a string,
+        an ``ipaddress`` address or a ``netimps.Host``).
     :param limits, max_sessions, ignore_broadcast,
         reply_from_request_address: as for ``Server``.
     :param trace: ``trace(PacketEvent)`` for every datagram received or
@@ -74,13 +78,13 @@ class Relay:
     def __init__(
         self,
         route: Any,
-        host: str = "::",
+        host: "IPAddressLike | Host | None" = "::",
         port: int = 69,
         *,
         idle_timeout: float = 30.0,
         max_lifetime: float = 3600.0,
         linger: float = 2.0,
-        upstream_source: Optional[str] = None,
+        upstream_source: "IPAddressLike | Host | None" = None,
         limits: Optional[ServerLimits] = None,
         max_sessions: Optional[int] = None,
         ignore_broadcast: bool = True,

@@ -92,7 +92,7 @@ class PortRange:
         return "PortRange(%d, %d)" % (self.low, self.high)
 
 
-def bind_transfer(host: str, family: int, ports: Optional[PortRange] = None) -> socket.socket:
+def bind_transfer(host: Any, family: int, ports: Optional[PortRange] = None) -> socket.socket:
     """A non-blocking UDP socket on ``host``: any port, or a free one in ``ports``.
 
     Raises :class:`netimps.AddressInUseError` when every port in the range
