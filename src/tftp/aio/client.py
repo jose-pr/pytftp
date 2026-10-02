@@ -205,6 +205,11 @@ class AsyncClient(Client):
     async def put(self, filename: str, data: bytes, *, mode: str = "octet") -> TransferResult:  # type: ignore[override]
         return await self.upload(filename, data, mode=mode)
 
+    async def size(self, filename: str, *, mode: str = "octet") -> Optional[int]:  # type: ignore[override]
+        """:meth:`Client.size`, without blocking the loop (it runs in the executor)."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: Client.size(self, filename, mode=mode))
+
     async def stream(
         self, filename: str, *, mode: str = "octet", buffer: int = 1 << 20
     ) -> AsyncIterator[bytes]:
