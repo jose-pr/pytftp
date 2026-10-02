@@ -24,8 +24,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.9", "3.14"] # oldest + newest supported
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package with all extras
@@ -33,13 +33,51 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
-  build:
-    name: Build distribution
-    needs: test
+  # The declared floors, exercised on a real release: every runtime dependency
+  # installed AT the lower bound pyproject.toml declares, on the oldest
+  # supported Python, so a v* tag can never publish over a broken floor.
+  floors:
+    name: Test at the declared dependency floors
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+      - name: Pin every declared dependency to its floor
+        shell: python
+        run: |
+          import re
+          import subprocess
+          import sys
+
+          subprocess.run([sys.executable, "-m", "pip", "install", "-q", "tomli"], check=True)
+          import tomli
+
+          project = tomli.load(open("pyproject.toml", "rb"))["project"]
+          specs = list(project.get("dependencies", []))
+          for extra, deps in project.get("optional-dependencies", {}).items():
+              if extra not in ("dev", "docs"):
+                  specs += deps
+          pins = []
+          for spec in specs:
+              m = re.match(r"^\s*([A-Za-z0-9._-]+)(\[[^\]]*\])?\s*[^;]*?>=\s*([^,;\s]+)", spec)
+              if m:
+                  pins.append("%s==%s" % (m.group(1), m.group(3)))
+          open("floors.txt", "w").write("\n".join(pins) + "\n")
+          print("\n".join(pins) or "(no floors declared)")
+      - name: Install at the floors
+        run: python -m pip install -c floors.txt -e ".[dev]"
+      - name: Run tests
+        run: python -m pytest -q
+
+  build:
+    name: Build distribution
+    needs: [test, floors]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - name: Install build tooling
@@ -71,10 +109,37 @@ jobs:
       - name: Verify sdist and wheel
         run: python -m twine check dist/*
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+
+  # What users install, tested as installed: the built wheel in a fresh venv,
+  # imported from site-packages, shipped docs present, a loopback transfer.
+  wheel-smoke:
+    name: Installed-wheel smoke test (py${{ matrix.python-version }})
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Install the wheel into a fresh venv
+        run: |
+          python -m venv "$RUNNER_TEMP/smoke"
+          "$RUNNER_TEMP/smoke/bin/pip" install dist/*.whl
+      - name: Smoke-test the installed distribution
+        run: '"$RUNNER_TEMP/smoke/bin/python" tests/smoke_installed.py'
 
   # Docs are DEPLOYED by docs.yml. This job only GATES the release on a strict
   # docs BUILD: a release must never ship if the docs site is broken, but the
@@ -85,8 +150,8 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - name: Install package with docs tooling
@@ -96,14 +161,14 @@ jobs:
 
   github-release:
     name: Create GitHub Release
-    needs: [build, docs-gate]
+    needs: [build, docs-gate, wheel-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -137,7 +202,7 @@ jobs:
           pathlib.Path("release_notes.md").write_text(match.group(1).strip() + "\n", encoding="utf-8")
       - name: Create GitHub Release
         # Pinned to a commit: this action runs with contents: write.
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           files: dist/*
           # Pin the release object to the tagged commit; left unset it defaults
@@ -166,7 +231,7 @@ jobs:
       id-token: write # required for PyPI Trusted Publishing (OIDC)
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/

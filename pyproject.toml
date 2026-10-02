@@ -52,7 +52,9 @@ Issues = "https://github.com/jose-pr/pytftp/issues"
 # Personal overrides (`*.local.*`) and agent config (`CLAUDE*`) never ship, even
 # from a tree without its .gitignore (a copy, an sdist rebuild).
 [tool.hatch.build.targets.sdist]
-exclude = ["/.*", "/benchmarks", "*.local.*", "CLAUDE*"]
+# The repo-root AGENTS.md is contributor orientation for a checkout; the
+# consumer docs are src/tftp/AGENTS.md, which ships in the wheel.
+exclude = ["/.*", "/benchmarks", "/AGENTS.md", "*.local.*", "CLAUDE*"]
 
 # Explicit, so it works whether or not the import name matches the
 # distribution name (hatchling only guesses the matching case).
