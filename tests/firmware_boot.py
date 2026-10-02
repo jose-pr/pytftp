@@ -11,6 +11,13 @@ doing **DHCP only** (its TFTP is off) and pointing PXE at 192.168.77.1, and
 our server listening on 192.168.77.1:69. QEMU's user-mode network cannot be
 used: it answers port 69 on its gateway itself. Prints each transfer the
 server completed, then a verdict per firmware.
+
+Status: ``ipxe`` passes (iPXE fetches its script and a 2 MB file with
+blksize 1432 and tsize). ``uefi`` does not get as far as the network: the
+OVMF build tried (Fedora 44 edk2-ovmf 20260812, 2M and 4M images, virtio-net
+and e1000, with and without the NIC option ROM, with the IPv4PXESupport
+fw_cfg knob) reports "No bootable option or device was found" without
+sending a DHCP request, so EDK2's PXE client is not yet verified.
 """
 
 from __future__ import annotations
@@ -174,9 +181,12 @@ def uefi(workdir: str) -> bool:
                 "q35",
                 "-no-reboot",
                 "-drive",
-                "if=pflash,format=raw,readonly=on,file=" + ovmf,
+                "if=pflash,format=%s,readonly=on,file=%s" % (_fmt(ovmf), ovmf),
                 "-drive",
-                "if=pflash,format=raw,file=" + vars_file,
+                "if=pflash,format=%s,file=%s" % (_fmt(vars_file), vars_file),
+                # Recent OVMF builds ship with network boot off; this knob turns it on.
+                "-fw_cfg",
+                "name=opt/org.tianocore/IPv4PXESupport,string=yes",
                 # The NIC's option ROM (iPXE's EFI build) only supplies the network
                 # driver (SNP); OVMF has none of its own for virtio-net. The PXE
                 # boot itself -- DHCP, then MTFTP -- is EDK2's PxeBcDxe on top.
