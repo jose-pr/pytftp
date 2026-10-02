@@ -169,6 +169,8 @@ class FileSystemHandler:
     leaves no trace, and directories are never created.
     """
 
+    _tftp_fast_open_ = True  # local files: the server opens them inline
+
     def __init__(
         self,
         root: "str | os.PathLike[str]",

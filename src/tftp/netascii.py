@@ -57,12 +57,23 @@ class NetasciiReader:
     """A binary reader whose bytes come out netascii-encoded.
 
     Only ``readinto`` and ``close`` are provided -- what a sender needs.
+    The source is read with ``readinto`` when it has one, so a non-blocking
+    source's ``WouldBlock`` passes through (after any bytes already
+    produced) instead of a blocking ``read`` stalling the caller.
     """
 
     def __init__(self, raw: BinaryIO) -> None:
         self._raw = raw
         self._pending = b""
         self._eof = False
+        self._readinto = getattr(raw, "readinto", None)
+
+    def _read_raw(self, n: int) -> bytes:
+        if self._readinto is None:
+            return self._raw.read(n)
+        chunk = bytearray(n)
+        got = self._readinto(chunk) or 0
+        return bytes(chunk[:got])
 
     def readinto(self, buffer) -> int:
         view = memoryview(buffer)
@@ -72,7 +83,12 @@ class NetasciiReader:
             if not self._pending:
                 if self._eof:
                     break
-                chunk = self._raw.read(max(_CHUNK, want))
+                try:
+                    chunk = self._read_raw(max(_CHUNK, want))
+                except BlockingIOError:
+                    if filled:
+                        return filled  # deliver what we have; the next call re-raises
+                    raise
                 if not chunk:
                     self._eof = True
                     break
@@ -103,12 +119,14 @@ class NetasciiWriter:
         chunk = bytes(data)
         if self._held_cr:
             chunk = b"\r" + chunk
-            self._held_cr = False
-        if chunk.endswith(b"\r"):
+        held = chunk.endswith(b"\r")
+        if held:
             chunk = chunk[:-1]
-            self._held_cr = True
         if chunk:
+            # May raise (WouldBlock from a full sink): the state below is only
+            # updated once the write went through, so a retry is exact.
             self._raw.write(decode(chunk))
+        self._held_cr = held
         return size
 
     def flush(self) -> None:

@@ -35,7 +35,7 @@ Not implemented: RFC 2090 multicast.
 
 ## Client
 
-**`Client(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, max_duration=None, strict_source=True, utimeout=False, extra_options=None, registry=None)`**
+**`Client(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, max_duration=None, strict_source=True, utimeout=False, extra_options=None, registry=None, on_negotiated=None)`**
 
 - `host` — name or address; `"[v6]"`, `"host:port"` and `"[v6]:port"` are
   accepted, and a port written there overrides `port`.
@@ -54,6 +54,9 @@ Not implemented: RFC 2090 multicast.
 - `blksize` — requested; `None` asks for nothing (512). The default 1428 fits
   one Ethernet frame on IPv4 and IPv6. `"mtu"` sizes it to the MTU of the
   interface the route to the server uses (1428 when unknown).
+- `on_negotiated(negotiated, peer)` — called once the server has answered
+  the request (OACK, first DATA or ACK 0) and **before any data moves**;
+  `peer` is the server's transfer address.
 - `extra_options` — further options to request verbatim (`{"blksize2": 4096}`,
   `{"cookie": "x"}`, custom ones). A known option's answer is validated by
   its handler (`registry`, default `DEFAULT_REGISTRY`); an unknown one's
@@ -103,7 +106,7 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 
 ## Server
 
-**`Server(root_or_handler, host="::", port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=None, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None)`**
+**`Server(root_or_handler, host="::", port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=None, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8)`**
 
 - `root_or_handler` — a directory (wrapped in `FileSystemHandler` with
   `writable`, `create`, `overwrite`) or any handler object (see below).
@@ -132,6 +135,12 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
   (limited or subnet) or multicast address. Needs pktinfo to see the
   destination; without it every request looks unicast.
 - `backoff`, `max_timeout` — as for `Client`, per transfer.
+- `open_in_thread`, `workers` — call the handler's `open_read`/`open_write`
+  in a pool of `workers` threads so a handler that blocks (HTTP, an upstream
+  server) never stalls other transfers. `None` decides per handler: one
+  with `_tftp_fast_open_ = True` (`FileSystemHandler`, `MemoryHandler`)
+  opens inline on the loop, anything else in a worker. A retransmitted
+  request is still recognised while its open is pending.
 - Raises `OSError` if the port cannot be bound (port 69 needs privileges on
   POSIX).
 
@@ -288,6 +297,33 @@ pktinfo), `interface_index` (or 0); shortcuts `filename`, `mode`, `options`.
 **`AtomicWriter(path, overwrite=True)`** — writes to a hidden temp file beside
 `path`; `close()` renames it into place (refusing with ERROR 6 if
 `overwrite=False` and `path` appeared meanwhile); `abort()` deletes it.
+
+## Backends (`tftp.backends`)
+
+- **`MemoryHandler(files=None, *, writable=False, overwrite=True, max_upload=None)`**
+  — serves `files` (name → bytes; names normalised so `/a\\b` is `a/b`);
+  uploads replace an entry only when complete. Thread-safe `files` updates.
+- **`HttpHandler(base_url=None, *, url_for=None, writable=False, headers=None, timeout=10.0, buffer=1 MiB, opener=None)`**
+  — TFTP-to-HTTP(S) gateway on `urllib`: GET `base_url + quote(name)`
+  (or `url_for(context)`), streamed; `Content-Length` answers `tsize`;
+  WRQ → `PUT` (chunked without `tsize`) when `writable`; the final ACK
+  waits for the PUT's response. HTTP 404/410 → ERROR 1, 401/403 → 2,
+  409 → 6, 413/507 → 3, other → 0. `..` in a name → ERROR 2.
+- **`UpstreamHandler(upstream, *, client_options=None, buffer=1 MiB, stall_timeout=30.0, writable=False)`**
+  — terminating proxy: `upstream` is `"host"`, `"host:port"`,
+  `(host, port)`, or `upstream(context)` returning one. Each side
+  negotiates independently (`client_options` for the upstream `Client`);
+  only bytes cross, through a bounded pipe, so a slow client slows the
+  upstream. The RRQ is answered after the upstream answers: its ERROR
+  reaches the client with the same code and text, its `tsize` passes
+  through. A WRQ's final ACK waits for the upstream's final ACK.
+- **`Pipe(capacity=1 MiB, size=None)`** — the bounded byte pipe between a
+  worker thread and a transfer, for your own handlers. Transfer side
+  (non-blocking, `WouldBlock`): `readinto`, `write`, `close`, `abort`,
+  `set_wakeup`. Worker side (blocking): `put(data, timeout)`,
+  `get(n, timeout)`/`read(n)`, `finish(error=None)`. `for_upload()` makes
+  `close()` wait (`WouldBlock`) until the worker calls
+  `set_result(error=None)`, and re-raise its error. `size` answers `tsize`.
 
 ## Results and errors
 

@@ -34,6 +34,7 @@ nav:
   - API Reference:
       - Client: api/client.md
       - Server: api/server.md
+      - Backends: api/backends.md
       - Options: api/options.md
       - Packets: api/packet.md
       - Transfer engine: api/transfer.md

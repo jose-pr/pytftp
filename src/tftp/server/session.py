@@ -221,9 +221,13 @@ class Session:
             set_wakeup(self.notify)
 
     def commit(self) -> None:
-        """Close the upload stream before the final ACK, so a failure is reported."""
-        stream, self.stream = self.stream, None
-        stream.close()
+        """Close the upload stream before the final ACK, so a failure is reported.
+
+        ``close`` may raise :class:`WouldBlock` (an upload still on its way
+        upstream); the stream is kept so the retry after ``resume`` closes it.
+        """
+        self.stream.close()
+        self.stream = None
 
     def close_stream(self, ok: bool) -> None:
         """Close the stream; a failed upload is aborted when the stream allows."""

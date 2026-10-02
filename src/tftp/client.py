@@ -47,6 +47,9 @@ def _mode(mode: str) -> str:
 def _source_size(source: Any) -> Optional[int]:
     if isinstance(source, (bytes, bytearray, memoryview)):
         return len(source)
+    size = getattr(source, "size", None)
+    if isinstance(size, int) and not isinstance(size, bool):
+        return size
     try:
         return os.fstat(source.fileno()).st_size - source.tell()
     except (AttributeError, OSError, ValueError, io.UnsupportedOperation):
@@ -114,6 +117,9 @@ class Client:
         such as ``blksize2``/``cookie``, or custom ones). Built-in ones are
         validated in the OACK; custom ones land in ``negotiated.extra``.
     :param registry: the :class:`OptionRegistry` used to validate the OACK.
+    :param on_negotiated: called as ``on_negotiated(negotiated, peer)`` once
+        the server has answered the request (OACK, first DATA or ACK 0),
+        before any data moves -- the peer is the server's transfer address.
     :param strict_source: the first answer must come from the address the
         request was sent to. ``False`` accepts any address, for multi-homed
         servers that answer from another one (the transfer then locks on to
@@ -145,6 +151,7 @@ class Client:
         utimeout: bool = False,
         extra_options: Optional[Mapping[str, object]] = None,
         registry: Optional[OptionRegistry] = None,
+        on_negotiated: Optional[Callable[[Negotiated, Tuple[Any, ...]], Any]] = None,
     ) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
@@ -181,6 +188,7 @@ class Client:
         self.utimeout = utimeout
         self.extra_options = dict(extra_options or {})
         self.registry = registry
+        self.on_negotiated = on_negotiated
 
     # -- public API -------------------------------------------------------
 
@@ -379,20 +387,28 @@ class Client:
             except ProtocolError as exc:
                 send(encode_error(exc.code, exc.message))
                 raise
-            if is_read:
-                session = Receiver(send, write, negotiated, self.retries, now, reply=encode_ack(0), **engine)
-            else:
-                session = Sender(send, read, negotiated, self.retries, now, **engine)
-        elif is_read and op == Opcode.DATA:
+            first_data = False
+        elif (is_read and op == Opcode.DATA) or (
+            not is_read and op == Opcode.ACK and buf[2] == 0 and buf[3] == 0
+        ):
             negotiated = Negotiated(timeout=self.timeout)
-            session = Receiver(send, write, negotiated, self.retries, now, **engine)
-            session.handle(view, n, now)
-        elif not is_read and op == Opcode.ACK and buf[2] == 0 and buf[3] == 0:
-            negotiated = Negotiated(timeout=self.timeout)
-            session = Sender(send, read, negotiated, self.retries, now, **engine)
+            first_data = is_read
         else:
             send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
             raise ProtocolError("unexpected opcode %d in response to the request" % op)
+
+        # Before the engine exists: building a Sender already reads the first
+        # block, and a caller may need to know the outcome before that.
+        if self.on_negotiated is not None:
+            self.on_negotiated(negotiated, peer)
+        now = clock()
+        if is_read:
+            reply = None if first_data else encode_ack(0)
+            session = Receiver(send, write, negotiated, self.retries, now, reply=reply, **engine)
+            if first_data:
+                session.handle(view, n, now)
+        else:
+            session = Sender(send, read, negotiated, self.retries, now, **engine)
 
         if len(buf) < 4 + negotiated.blksize + 1:
             buf = bytearray(4 + negotiated.blksize + 1)

@@ -25,6 +25,7 @@ src/tftp/
 │   ├── handler.py     # Handler protocol, FileSystemHandler, AtomicWriter
 │   ├── policy.py      # ServerLimits
 │   └── netinfo.py     # cached interface facts (broadcast addresses, MTU)
+├── backends/          # memory.py, http.py (urllib gateway), proxy.py (upstream TFTP), pipe.py
 ├── cli/               # pytftp (duho): common.py, transfer.py (get/put), serve.py
 └── _sockets.py        # window-sized socket buffers (everything else is netimps)
 tests/                 # pytest; engine tests need no sockets

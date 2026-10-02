@@ -11,6 +11,7 @@ entry comes due, so the hot path never touches the heap.
 from __future__ import annotations
 
 import collections
+import concurrent.futures
 import heapq
 import logging
 import os
@@ -78,6 +79,12 @@ class Server:
         longer (RFC 1123 4.2.3.2); progress resets it.
     :param max_timeout: ceiling for the backed-off wait; ``None`` is eight
         times the timeout.
+    :param open_in_thread: call the handler's ``open_read``/``open_write`` in
+        a worker thread, so a handler that blocks (an HTTP request, an
+        upstream server) never stalls other transfers. ``None`` decides from
+        the handler: those marked ``_tftp_fast_open_ = True`` (the built-in
+        file and memory handlers) open inline, everything else in a worker.
+    :param workers: size of that worker pool.
     """
 
     def __init__(
@@ -100,6 +107,8 @@ class Server:
         ignore_broadcast: bool = True,
         backoff: float = 2.0,
         max_timeout: Optional[float] = None,
+        open_in_thread: Optional[bool] = None,
+        workers: int = 8,
     ) -> None:
         if isinstance(root_or_handler, (str, os.PathLike)):
             handler: Any = FileSystemHandler(
@@ -125,6 +134,14 @@ class Server:
         self._interfaces = InterfaceInfo()
         self._per_client: Dict[str, int] = {}
         self._ready: "collections.deque[Session]" = collections.deque()
+        self._pending_opens: "collections.deque[Tuple[Session, Any]]" = collections.deque()
+        if open_in_thread is None:
+            open_in_thread = not getattr(handler, "_tftp_fast_open_", False)
+        self._workers = (
+            concurrent.futures.ThreadPoolExecutor(max(1, workers), thread_name_prefix="tftp-open")
+            if open_in_thread
+            else None
+        )
 
         self._listener = Listener(host, port, pktinfo=reply_from_request_address)
         self._address: Tuple[Any, ...] = self._listener.sock.getsockname()
@@ -193,6 +210,9 @@ class Server:
                 if session.transfer is not None and not session.transfer.done:
                     session.transfer.abort("server shutting down")
                 self._finish(session)
+            while self._pending_opens:
+                session, outcome = self._pending_opens.popleft()
+                self._opened(session, outcome, time.monotonic())
 
     def shutdown(self) -> None:
         """Stop :meth:`serve_forever`; safe from any thread or a handler."""
@@ -221,6 +241,11 @@ class Server:
             return
         self.stop()
         self._closed = True
+        if self._workers is not None:
+            self._workers.shutdown(wait=True)
+            while self._pending_opens:
+                session, outcome = self._pending_opens.popleft()
+                self._opened(session, outcome, time.monotonic())
         self._selector.close()
         self._listener.close()
         for sock in (self._wake_r, self._wake_w):
@@ -244,6 +269,9 @@ class Server:
         except OSError:
             pass
         now = time.monotonic()
+        while self._pending_opens:
+            session, outcome = self._pending_opens.popleft()
+            self._opened(session, outcome, now)
         while self._ready:
             session = self._ready.popleft()
             transfer = session.transfer
@@ -391,34 +419,60 @@ class Server:
         context = RequestContext(request, peer, local, ifindex)
         session = Session(sock, peer, context, now)
         session.notify = self._notifier(session)
+        mtu = self._interfaces.mtu(ifindex) if self.options.fit_mtu else None
+        # Registered at once, so a retransmitted request is recognised while
+        # a worker is still opening this one.
+        self._sessions[session.key] = session
+        self._per_client[session.key[0]] = self._per_client.get(session.key[0], 0) + 1
+        if self._workers is None:
+            self._opened(session, self._open(session, mtu), time.monotonic())
+        else:
+            self._workers.submit(self._open_in_worker, session, mtu)
+
+    def _open(self, session: Session, mtu: Optional[int]) -> Any:
+        """Open a session's stream and build its transfer; the exception on failure."""
+        now = time.monotonic()
         max_duration = self.limits.max_duration
         try:
-            transfer = session.open(
+            return session.open(
                 self.handler,
                 self.options,
                 self.timeout,
                 self.retries,
                 now,
-                mtu=self._interfaces.mtu(ifindex) if self.options.fit_mtu else None,
+                mtu=mtu,
                 backoff=self.backoff,
                 max_timeout=self.max_timeout,
                 expires=None if max_duration is None else now + max_duration,
             )
         except Exception as exc:
-            error = error_for_exception(exc)
-            if not isinstance(exc, (TftpError, OSError)):
-                log.exception("handler failed for %r", context)
-            log.info("%s refused: %s", context, error)
+            return exc
+
+    def _open_in_worker(self, session: Session, mtu: Optional[int]) -> None:
+        outcome = self._open(session, mtu)
+        self._pending_opens.append((session, outcome))
+        self._wake()
+
+    def _opened(self, session: Session, outcome: Any, now: float) -> None:
+        """Loop thread: a session finished opening (``outcome`` is a transfer or an exception)."""
+        if session.closed:  # the server stopped while a worker was opening it
+            if isinstance(outcome, Transfer):
+                outcome.abort("server shutting down")
+            session.close_stream(ok=False)
+            return
+        if isinstance(outcome, BaseException):
+            error = error_for_exception(outcome)
+            if not isinstance(outcome, (TftpError, OSError)):
+                log.error("handler failed for %r", session.context, exc_info=outcome)
+            log.info("%s refused: %s", session.context, error)
             session.send(encode_error(error.code, error.message))
             session.close_stream(ok=False)
-            sock.close()
+            self._close(session)
             self._report(session, error, None)
             return
-        session.transfer = transfer
-        self._sessions[session.key] = session
-        self._per_client[session.key[0]] = self._per_client.get(session.key[0], 0) + 1
-        self._selector.register(sock, selectors.EVENT_READ, session)
-        if transfer.done:  # e.g. the first read failed
+        session.transfer = outcome
+        self._selector.register(session.sock, selectors.EVENT_READ, session)
+        if outcome.done:  # e.g. the first read failed
             self._done(session, now)
         else:
             self._schedule(session)

@@ -44,6 +44,7 @@ class Receiver(Transfer):
         "_reply",
         "_final",
         "_pending",
+        "_dropped",
     )
 
     def __init__(
@@ -68,6 +69,8 @@ class Receiver(Transfer):
         self._final: Optional[bytes] = None
         #: (payload, wire, written) of a block held by a stalled sink.
         self._pending: Optional[tuple] = None
+        #: DATA arrived (and was dropped) while the sink was stalled.
+        self._dropped = False
         if reply is not None:
             send(reply)
             self._arm(now)
@@ -132,6 +135,16 @@ class Receiver(Transfer):
         self._pending = None
         self.stalled = False
         self._accept(memoryview(payload), wire, size, now, written)
+        if self._dropped and not self.done and not self.stalled:
+            # The rest of the window was dropped while we stalled: say where
+            # we are now rather than wait for a window that cannot complete
+            # (RFC 7440: ACK the last block received in order). Nothing to
+            # do if accepting the block just completed, and ACKed, a window.
+            self._dropped = False
+            if self._in_window:
+                self._in_window = 0
+                self._nacked = True
+                self._ack_last()
 
     def handle(self, packet: memoryview, n: int, now: float) -> None:
         if n < 4 or packet[0]:
@@ -144,6 +157,7 @@ class Receiver(Transfer):
                     self._send(self._final)
                 return
             if self.stalled:
+                self._dropped = True
                 return  # unacknowledged on purpose; the sender will resend
             if wire == self._expected_wire:
                 size = n - 4
