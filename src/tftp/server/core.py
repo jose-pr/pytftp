@@ -10,6 +10,7 @@ entry comes due, so the hot path never touches the heap.
 
 from __future__ import annotations
 
+import collections
 import heapq
 import logging
 import os
@@ -20,7 +21,6 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .._sockets import unmap
 from ..errors import TftpError, error_for_exception
 from ..options import Negotiated, ServerOptions
 from ..packet import ErrorCode, MalformedPacket, Opcode, Request, decode, encode_error
@@ -28,6 +28,8 @@ from ..result import TransferResult
 from ..transfer import Receiver, Transfer
 from .handler import FileSystemHandler, RequestContext
 from .listener import Listener
+from .netinfo import InterfaceInfo
+from .policy import ServerLimits
 from .session import Session, reply_socket
 
 __all__ = ["Server"]
@@ -39,6 +41,7 @@ _WINDOWS = sys.platform == "win32"
 _WINDOWS_SESSION_CAP = 500
 _RECV_SIZE = 65536  # one receive buffer, shared by every session
 _DRAIN = 64  # packets read per readiness event before yielding to others
+_WAKE_BYTE = bytes(1)
 
 
 class Server:
@@ -66,6 +69,15 @@ class Server:
         block (RFC 1350 section 6). Costs nothing but a socket for that long.
     :param on_complete: called with a :class:`TransferResult` after every
         transfer, failed ones included (``result.error`` is set).
+    :param limits: request, per-client and duration bounds
+        (:class:`ServerLimits`).
+    :param ignore_broadcast: silently drop requests sent to a broadcast or
+        multicast address (RFC 1123 4.2.3.4). Needs pktinfo to see the
+        destination; without it every request looks unicast.
+    :param backoff: each consecutive retransmission waits this many times
+        longer (RFC 1123 4.2.3.2); progress resets it.
+    :param max_timeout: ceiling for the backed-off wait; ``None`` is eight
+        times the timeout.
     """
 
     def __init__(
@@ -84,6 +96,10 @@ class Server:
         reply_from_request_address: bool = True,
         dally: bool = True,
         on_complete: Optional[Callable[[TransferResult], Any]] = None,
+        limits: Optional[ServerLimits] = None,
+        ignore_broadcast: bool = True,
+        backoff: float = 2.0,
+        max_timeout: Optional[float] = None,
     ) -> None:
         if isinstance(root_or_handler, (str, os.PathLike)):
             handler: Any = FileSystemHandler(
@@ -102,6 +118,13 @@ class Server:
         self.max_sessions = max_sessions
         self.dally = dally
         self.on_complete = on_complete
+        self.limits = limits or ServerLimits()
+        self.ignore_broadcast = ignore_broadcast
+        self.backoff = backoff
+        self.max_timeout = max_timeout
+        self._interfaces = InterfaceInfo()
+        self._per_client: Dict[str, int] = {}
+        self._ready: "collections.deque[Session]" = collections.deque()
 
         self._listener = Listener(host, port, pktinfo=reply_from_request_address)
         self._address: Tuple[Any, ...] = self._listener.sock.getsockname()
@@ -168,16 +191,13 @@ class Server:
             self._running.clear()
             for session in list(self._sessions.values()):
                 if session.transfer is not None and not session.transfer.done:
-                    session.transfer.fail(TftpError(ErrorCode.NOT_DEFINED, "server shutting down"))
+                    session.transfer.abort("server shutting down")
                 self._finish(session)
 
     def shutdown(self) -> None:
         """Stop :meth:`serve_forever`; safe from any thread or a handler."""
         self._stopping = True
-        try:
-            self._wake_w.send(b"\0")
-        except OSError:
-            pass
+        self._wake()
 
     def start(self) -> "Server":
         """Run :meth:`serve_forever` in a daemon thread; returns ``self``."""
@@ -223,6 +243,32 @@ class Server:
                 pass
         except OSError:
             pass
+        now = time.monotonic()
+        while self._ready:
+            session = self._ready.popleft()
+            transfer = session.transfer
+            if session.closed or transfer is None or transfer.done:
+                continue
+            transfer.resume(now)
+            if transfer.done:
+                self._done(session, now)
+            else:
+                self._schedule(session)
+
+    def _wake(self) -> None:
+        try:
+            self._wake_w.send(_WAKE_BYTE)
+        except OSError:
+            pass
+
+    def _notifier(self, session: Session) -> Callable[[], None]:
+        """A thread-safe callback resuming ``session`` on the loop thread."""
+
+        def notify() -> None:
+            self._ready.append(session)
+            self._wake()
+
+        return notify
 
     def _next_timeout(self, now: float) -> Optional[float]:
         if not self._timers:
@@ -303,6 +349,12 @@ class Server:
             data, sender, local, ifindex = arrival
             if len(data) < 2 or data[0] != 0 or data[1] not in (Opcode.RRQ, Opcode.WRQ):
                 continue  # not a request: never answer, never amplify
+            if self.ignore_broadcast and local is not None and self._interfaces.is_broadcast(local, ifindex):
+                log.debug("ignoring broadcast request from %s to %s", sender[:2], local)
+                continue
+            if len(data) > self.limits.max_request_size:
+                self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, "request too large")
+                continue
             try:
                 self._start(data, sender, local, ifindex, now)
             except Exception:  # pragma: no cover - a bug, not a client error
@@ -311,7 +363,9 @@ class Server:
     def _start(
         self, data: bytes, sender: Tuple[Any, ...], local: Optional[str], ifindex: int, now: float
     ) -> None:
-        key = (unmap(sender[0]), sender[1])
+        from netimps import unmap
+
+        key = (str(unmap(sender[0])), sender[1])
         if key in self._sessions:
             return  # a retransmitted request for a transfer already running
         try:
@@ -320,15 +374,35 @@ class Server:
             self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, str(exc))
             return
         assert isinstance(request, Request)
+        try:
+            self.limits.check(request)
+        except TftpError as exc:
+            self._listener.reply_error(sender, exc.code, exc.message)
+            return
         if self.max_sessions is not None and len(self._sessions) >= self.max_sessions:
+            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
+            return
+        per_client = self.limits.max_sessions_per_client
+        if per_client is not None and self._per_client.get(key[0], 0) >= per_client:
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
             return
 
         sock, peer = reply_socket(self._listener.family, self._listener.host, sender, local, ifindex)
         context = RequestContext(request, peer, local, ifindex)
         session = Session(sock, peer, context, now)
+        session.notify = self._notifier(session)
+        max_duration = self.limits.max_duration
         try:
-            transfer = session.open(self.handler, self.options, self.timeout, self.retries, now)
+            transfer = session.open(
+                self.handler,
+                self.options,
+                self.timeout,
+                self.retries,
+                now,
+                backoff=self.backoff,
+                max_timeout=self.max_timeout,
+                expires=None if max_duration is None else now + max_duration,
+            )
         except Exception as exc:
             error = error_for_exception(exc)
             if not isinstance(exc, (TftpError, OSError)):
@@ -341,6 +415,7 @@ class Server:
             return
         session.transfer = transfer
         self._sessions[session.key] = session
+        self._per_client[session.key[0]] = self._per_client.get(session.key[0], 0) + 1
         self._selector.register(sock, selectors.EVENT_READ, session)
         if transfer.done:  # e.g. the first read failed
             self._done(session, now)
@@ -373,7 +448,13 @@ class Server:
         if session.closed:
             return
         session.closed = True
-        self._sessions.pop(session.key, None)
+        if self._sessions.pop(session.key, None) is not None:
+            host = session.key[0]
+            left = self._per_client.get(host, 1) - 1
+            if left > 0:
+                self._per_client[host] = left
+            else:
+                self._per_client.pop(host, None)
         try:
             self._selector.unregister(session.sock)
         except (KeyError, ValueError):

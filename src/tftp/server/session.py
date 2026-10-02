@@ -12,9 +12,9 @@ import ipaddress
 import logging
 import os
 import socket
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
-from .._sockets import fit_window, udp_socket, unmap
+from .._sockets import fit_window
 from ..errors import TftpError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import ServerOptions, negotiate
@@ -60,14 +60,16 @@ def reply_socket(
     (``local``), the listening address, the wildcard -- a destination that
     cannot be bound (a subnet broadcast) falls through to the next.
     """
-    host = sender[0]
-    peer_v4 = unmap(host)
-    if peer_v4 != host:
-        family, peer = socket.AF_INET, (peer_v4, sender[1])
+    from netimps import bind, unmap
+
+    mapped = unmap(sender[0])
+    if family == socket.AF_INET6 and mapped.version == 4:
+        family, peer = socket.AF_INET, (str(mapped), sender[1])
         if local is not None:
-            local = unmap(local)
+            local = str(unmap(local))
         if listen_host is not None:
-            listen_host = unmap(listen_host) if "." in listen_host else None
+            plain = unmap(listen_host)
+            listen_host = str(plain) if plain.version == 4 else None
     else:
         peer = sender
 
@@ -82,16 +84,17 @@ def reply_socket(
             address.is_multicast or address.is_unspecified or bare == "255.255.255.255"
         ):
             if family == socket.AF_INET6:
-                candidates.append((bare, 0, 0, ifindex if address.is_link_local else 0))
+                scoped = address.is_link_local and ifindex
+                candidates.append("%s%%%d" % (bare, ifindex) if scoped else bare)
             elif address.version == 4:
-                candidates.append((bare, 0))
+                candidates.append(bare)
     if listen_host is not None:
-        candidates.append((listen_host, 0))
-    candidates.append(("::", 0) if family == socket.AF_INET6 else ("0.0.0.0", 0))
+        candidates.append(listen_host)
+    candidates.append("::" if family == socket.AF_INET6 else "0.0.0.0")
     last: Optional[OSError] = None
-    for bind in candidates:
+    for candidate in candidates:
         try:
-            sock = udp_socket(family, bind)
+            sock = bind(candidate, 0, family=family, reuse_address=False, connreset=False)
         except OSError as exc:
             last = exc
             continue
@@ -117,6 +120,7 @@ class Session:
         "closed",
         "key",
         "local",
+        "notify",
     )
 
     def __init__(
@@ -133,8 +137,13 @@ class Session:
         self.timer_at: Optional[float] = None
         self.linger_until: Optional[float] = None
         self.closed = False
-        self.key: Tuple[str, int] = (unmap(peer[0]), peer[1])
+        from netimps import unmap
+
+        self.key: Tuple[str, int] = (str(unmap(peer[0])), peer[1])
         self.local: Tuple[Any, ...] = sock.getsockname()
+        #: Thread-safe "this transfer can make progress again" callback,
+        #: handed to streams that support ``set_wakeup`` (see WouldBlock).
+        self.notify: Optional[Callable[[], None]] = None
 
     def wakeup(self) -> Optional[float]:
         """When the loop must next look at this session, or ``None``."""
@@ -150,11 +159,15 @@ class Session:
             # the transfer's timeout already recovers from.
             pass
 
-    def open(self, handler: Any, policy: ServerOptions, timeout: float, retries: int, now: float) -> Transfer:
+    def open(
+        self, handler: Any, policy: ServerOptions, timeout: float, retries: int, now: float, **engine: Any
+    ) -> Transfer:
         """Ask ``handler`` for the stream, negotiate, and build the transfer.
 
         Raises whatever the handler raises, or :class:`TftpError` for an
         unsupported mode; the caller turns either into an ERROR packet.
+        ``engine`` goes to the transfer (``backoff``, ``max_timeout``,
+        ``expires``).
         """
         request: Request = self.context.request
         mode = request.mode
@@ -167,6 +180,7 @@ class Session:
         if request.is_read:
             stream = handler.open_read(self.context)
             self.stream = stream
+            self._hook_wakeup(stream)
             if mode == "netascii":
                 size = encoded_size(stream) if wants_size else None
                 reader: Any = NetasciiReader(stream)
@@ -177,18 +191,24 @@ class Session:
             fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
             oack = encode_oack(negotiated.options) if negotiated.options else None
             log.debug("%r: %r", self.context, negotiated)
-            return Sender(self.send, as_readinto(reader), negotiated, retries, now, oack=oack)
+            return Sender(self.send, as_readinto(reader), negotiated, retries, now, oack=oack, **engine)
 
         negotiated = negotiate(request.options, policy, is_read=False, timeout=timeout)
         fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
         stream = handler.open_write(self.context, negotiated.tsize)
+        self._hook_wakeup(stream)
         writer: Any = NetasciiWriter(stream) if mode == "netascii" else stream
         self.stream = writer
         reply = encode_oack(negotiated.options) if negotiated.options else encode_ack(0)
         log.debug("%r: %r", self.context, negotiated)
         return Receiver(
-            self.send, as_write(writer), negotiated, retries, now, reply=reply, complete=self.commit
+            self.send, as_write(writer), negotiated, retries, now, reply=reply, complete=self.commit, **engine
         )
+
+    def _hook_wakeup(self, stream: Any) -> None:
+        set_wakeup = getattr(stream, "set_wakeup", None)
+        if set_wakeup is not None and self.notify is not None:
+            set_wakeup(self.notify)
 
     def commit(self) -> None:
         """Close the upload stream before the final ACK, so a failure is reported."""

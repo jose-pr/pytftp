@@ -276,18 +276,3 @@ def test_client_accepts_host_with_port():
         assert tftp.Client("127.0.0.1:%d" % fake.address[1], 1).get("f") == b"ok"
     finally:
         fake.close()
-
-
-@pytest.mark.parametrize(
-    "text,plain",
-    [
-        ("::ffff:127.0.0.2", "127.0.0.2"),
-        ("::ffff:7f00:2", "127.0.0.2"),
-        ("::1", "::1"),
-        ("10.0.0.1", "10.0.0.1"),
-    ],
-)
-def test_unmap_handles_both_mapped_spellings(text, plain):
-    from tftp._sockets import unmap
-
-    assert unmap(text) == plain

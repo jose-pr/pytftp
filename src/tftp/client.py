@@ -13,7 +13,7 @@ from .netascii import NetasciiReader, NetasciiWriter, encoded_size
 from .options import DEFAULT_BLKSIZE, Negotiated, accept_oack, request_options
 from .packet import ErrorCode, Opcode, encode_ack, encode_error, encode_request, decode
 from .result import TransferResult
-from ._sockets import fit_window, resolve, udp_socket
+from ._sockets import fit_window
 from .transfer import Receiver, Sender, Transfer, as_readinto, as_write
 
 __all__ = ["Client", "download", "upload", "MODES"]
@@ -78,6 +78,15 @@ class Client:
     :param dally: after acknowledging the last DATA of a download, keep
         answering a retransmitted last DATA for one ``timeout`` (RFC 1350
         section 6). Costs that much time on every download.
+    :param backoff: each consecutive retransmission waits this many times
+        longer (RFC 1123 4.2.3.2); progress resets it to ``timeout``.
+    :param max_timeout: ceiling for the backed-off wait; ``None`` is eight
+        times ``timeout``.
+    :param max_duration: seconds a whole transfer may take, or ``None``.
+    :param strict_source: the first answer must come from the address the
+        request was sent to. ``False`` accepts any address, for multi-homed
+        servers that answer from another one (the transfer then locks on to
+        whichever answered first).
 
     A client is not thread-safe; use one per thread.
     """
@@ -98,6 +107,10 @@ class Client:
         local_address: Optional[Tuple[Any, ...]] = None,
         fallback: bool = True,
         dally: bool = False,
+        backoff: float = 2.0,
+        max_timeout: Optional[float] = None,
+        max_duration: Optional[float] = None,
+        strict_source: bool = True,
     ) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
@@ -118,6 +131,10 @@ class Client:
         self.local_address = local_address
         self.fallback = fallback
         self.dally = dally
+        self.backoff = max(1.0, backoff)
+        self.max_timeout = max_timeout if max_timeout is not None else timeout * 8
+        self.max_duration = max_duration
+        self.strict_source = strict_source
 
     # -- public API -------------------------------------------------------
 
@@ -217,9 +234,18 @@ class Client:
         return self._run(Opcode.WRQ, filename, mode, self._options(False, size), None, read, progress)
 
     def _run(self, opcode, filename, mode, options, write, read, progress) -> TransferResult:
-        family, server = resolve(self.host, self.port, self.family)
-        bind = self.local_address or (("::", 0) if family == socket.AF_INET6 else ("0.0.0.0", 0))
-        with udp_socket(family, bind) as sock:
+        from netimps import bind, get_ip, normalize_host
+
+        host, port = normalize_host(self.host, self.port)
+        address = get_ip(host, ipv6={socket.AF_INET6: True, socket.AF_INET: False}.get(self.family))
+        if address is None:
+            raise socket.gaierror("cannot resolve %r" % host)
+        family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
+        server = (str(address), port)
+        local_host, local_port = self.local_address or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
+        # connreset=False: Windows would otherwise report an ICMP
+        # port-unreachable as ConnectionResetError on our next receive.
+        with bind(local_host, local_port, family=family, reuse_address=False, connreset=False) as sock:
             started = time.monotonic()
             try:
                 return self._exchange(
@@ -252,27 +278,32 @@ class Client:
 
         fit_window(sock, requested_blksize, int(options.get("windowsize", 1)))
 
+        expires = None if self.max_duration is None else started + self.max_duration
+        engine = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
+
         # Request phase: until the server answers from its transfer ID.
         sock.sendto(request, server)
         tries = self.retries
-        deadline = clock() + self.timeout
+        wait = self.timeout
+        deadline = clock() + wait
         while True:
             remaining = deadline - clock()
             if remaining <= 0:
                 tries -= 1
-                if tries < 0:
+                if tries < 0 or (expires is not None and clock() >= expires):
                     raise TransferTimeout("no response from %s:%s" % server[:2])
                 sock.sendto(request, server)
-                deadline = clock() + self.timeout
+                wait = min(wait * self.backoff, self.max_timeout)  # RFC 1123 4.2.3.2
+                deadline = clock() + wait
                 continue
             sock.settimeout(remaining)
             try:
                 n, peer = recv_into(buf)
             except socket.timeout:
                 continue
-            except ConnectionResetError:  # pragma: no cover - see _sockets
+            except ConnectionResetError:  # pragma: no cover - connreset is off
                 continue
-            if peer[0] != server[0] or n < 2:
+            if n < 2 or (self.strict_source and peer[0] != server[0]):
                 continue  # not the server we asked
             break
 
@@ -284,7 +315,7 @@ class Client:
         session: Transfer
         if op == Opcode.ERROR:
             packet = decode(view[:n])
-            refused = RemoteError(packet.code, packet.message)  # type: ignore[union-attr]
+            refused = RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
             refused._in_request = True  # type: ignore[attr-defined]
             raise refused
         if op == Opcode.OACK:
@@ -295,16 +326,16 @@ class Client:
                 send(encode_error(exc.code, exc.message))
                 raise
             if is_read:
-                session = Receiver(send, write, negotiated, self.retries, now, reply=encode_ack(0))
+                session = Receiver(send, write, negotiated, self.retries, now, reply=encode_ack(0), **engine)
             else:
-                session = Sender(send, read, negotiated, self.retries, now)
+                session = Sender(send, read, negotiated, self.retries, now, **engine)
         elif is_read and op == Opcode.DATA:
             negotiated = Negotiated(timeout=self.timeout)
-            session = Receiver(send, write, negotiated, self.retries, now)
+            session = Receiver(send, write, negotiated, self.retries, now, **engine)
             session.handle(view, n, now)
         elif not is_read and op == Opcode.ACK and buf[2] == 0 and buf[3] == 0:
             negotiated = Negotiated(timeout=self.timeout)
-            session = Sender(send, read, negotiated, self.retries, now)
+            session = Sender(send, read, negotiated, self.retries, now, **engine)
         else:
             send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
             raise ProtocolError("unexpected opcode %d in response to the request" % op)
@@ -318,7 +349,20 @@ class Client:
 
         # Transfer phase.
         while not session.done:
-            remaining = session.deadline - clock() if session.deadline is not None else self.timeout
+            if session.stalled:
+                # A non-blocking local source/sink had nothing ready: poll it.
+                session.resume(clock())
+                if session.stalled:
+                    remaining = 0.01
+                    if session.deadline is not None and session.deadline <= clock():
+                        session.on_timeout(clock())
+                        continue
+                else:
+                    continue
+            elif session.deadline is not None:
+                remaining = session.deadline - clock()
+            else:
+                remaining = self.timeout
             if remaining <= 0:
                 session.on_timeout(clock())
                 continue
@@ -326,9 +370,10 @@ class Client:
             try:
                 n, addr = recv_into(buf)
             except socket.timeout:
-                session.on_timeout(clock())
+                if not session.stalled:
+                    session.on_timeout(clock())
                 continue
-            except ConnectionResetError:  # pragma: no cover - see _sockets
+            except ConnectionResetError:  # pragma: no cover - connreset is off
                 continue
             if addr[1] != peer_port or addr[0] != peer_host:
                 try:

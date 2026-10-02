@@ -6,16 +6,24 @@ import io
 import struct
 from typing import Callable, Optional
 
-from ..errors import ProtocolError, RemoteError, TftpError, TransferTimeout, error_for_exception
+from ..errors import (
+    ProtocolError,
+    RemoteError,
+    TftpError,
+    TransferAborted,
+    TransferTimeout,
+    error_for_exception,
+)
 from ..netascii import NetasciiWriter
 from ..options import Negotiated
 from ..packet import encode_error
 
-__all__ = ["Transfer", "as_readinto", "as_write"]
+__all__ = ["Transfer", "WouldBlock", "as_readinto", "as_write"]
 
 _DATA = 3
 _ACK = 4
 _ERROR = 5
+_OACK = 6
 _ACK_HDR = struct.Struct("!HH")
 _pack_header = struct.Struct("!HH").pack_into
 
@@ -39,13 +47,25 @@ def as_readinto(source) -> Callable[[memoryview], int]:
             view[:n] = chunk
             return n
 
+    # Bytes already read for a block when the source raised WouldBlock
+    # part-way through it; the next call starts from them.
+    carry = bytearray()
+
     def fill(view: memoryview) -> int:
         want = len(view)
-        n = readinto(view) or 0
-        total = n
-        while n and total < want:
-            n = readinto(view[total:]) or 0
+        total = len(carry)
+        if total:
+            view[:total] = carry
+            del carry[:]
+        try:
+            n = readinto(view[total:]) or 0 if total < want else 0
             total += n
+            while n and total < want:
+                n = readinto(view[total:]) or 0
+                total += n
+        except WouldBlock:
+            carry[:] = view[:total]
+            raise
         return total
 
     return fill
@@ -67,13 +87,34 @@ def as_write(sink) -> Callable[[memoryview], object]:
     return lambda view: write(bytes(view))
 
 
+class WouldBlock(BlockingIOError):
+    """Raised by a source or sink that has nothing ready yet.
+
+    A sender whose ``read`` raises it stops after the blocks it has, and a
+    receiver whose ``write`` (or ``complete``) raises it holds the block
+    unacknowledged; both carry on when the driver calls :meth:`Transfer.resume`.
+    This is how a slow backend (an upstream server, an HTTP fetch) applies
+    backpressure without blocking the loop that serves every other transfer.
+    """
+
+
 class Transfer:
     """State shared by both directions.
+
+    :param retries: retransmissions of one packet before giving up.
+    :param backoff: each consecutive retransmission waits this much longer
+        (RFC 1123 4.2.3.2 asks for at least exponential backoff); progress
+        resets the wait to the negotiated timeout.
+    :param max_timeout: ceiling for the backed-off wait; ``None`` is eight
+        times the timeout.
+    :param expires: absolute time (driver's clock) by which the transfer must
+        finish, or ``None``.
 
     :ivar done: the transfer is finished, successfully or not.
     :ivar error: the failure, or ``None``.
     :ivar deadline: when :meth:`on_timeout` is due, in the driver's clock;
         ``None`` while nothing is outstanding.
+    :ivar stalled: waiting for the source or sink (see :class:`WouldBlock`).
     :ivar bytes: payload bytes moved so far.
     :ivar retransmits: packets sent again after loss.
     """
@@ -88,15 +129,29 @@ class Transfer:
         "_period",
         "retries",
         "_tries",
+        "_rto",
+        "backoff",
+        "max_timeout",
+        "expires",
         "done",
         "error",
         "deadline",
+        "stalled",
         "bytes",
         "blocks",
         "retransmits",
     )
 
-    def __init__(self, send: SendFn, negotiated: Negotiated, retries: int) -> None:
+    def __init__(
+        self,
+        send: SendFn,
+        negotiated: Negotiated,
+        retries: int,
+        *,
+        backoff: float = 2.0,
+        max_timeout: Optional[float] = None,
+        expires: Optional[float] = None,
+    ) -> None:
         self._send = send
         self.negotiated = negotiated
         self.blksize = negotiated.blksize
@@ -106,9 +161,14 @@ class Transfer:
         self._period = 65536 - self.rollover
         self.retries = retries
         self._tries = retries
+        self._rto = self.timeout
+        self.backoff = max(1.0, backoff)
+        self.max_timeout = max(self.timeout, max_timeout if max_timeout is not None else self.timeout * 8)
+        self.expires = expires
         self.done = False
         self.error: Optional[TftpError] = None
         self.deadline: Optional[float] = None
+        self.stalled = False
         self.bytes = 0
         self.blocks = 0
         self.retransmits = 0
@@ -117,6 +177,17 @@ class Transfer:
         if block < 65536:
             return block
         return ((block - self.rollover) % self._period) + self.rollover
+
+    def _arm(self, now: float) -> None:
+        deadline = now + self._rto
+        if self.expires is not None and deadline > self.expires:
+            deadline = self.expires
+        self.deadline = deadline
+
+    def _progress(self) -> None:
+        """The peer moved the transfer forward: fresh retries, base timeout."""
+        self._tries = self.retries
+        self._rto = self.timeout
 
     def fail(self, exc: BaseException, notify: bool = True) -> None:
         """End the transfer with ``exc``, sending the peer an ERROR if asked."""
@@ -133,11 +204,16 @@ class Transfer:
         self.error = error
         self.done = True
         self.deadline = None
+        self.stalled = False
+
+    def abort(self, message: str = "transfer aborted") -> None:
+        """Cancel locally: the peer gets ERROR 0 and ``error`` is :class:`TransferAborted`."""
+        self.fail(TransferAborted(message))
 
     def _remote_error(self, packet: memoryview, n: int) -> None:
         code = (packet[2] << 8) | packet[3] if n >= 4 else 0
         raw = bytes(packet[4:n]).split(b"\0", 1)[0]
-        self.fail(RemoteError(code, raw.decode("utf-8", "replace")), notify=False)
+        self.fail(RemoteError.from_code(code, raw.decode("utf-8", "replace")), notify=False)
 
     def _illegal(self, what: str) -> None:
         self.fail(ProtocolError(what), notify=True)
@@ -148,9 +224,18 @@ class Transfer:
     def on_timeout(self, now: float) -> None:  # pragma: no cover
         raise NotImplementedError
 
-    def _out_of_tries(self) -> bool:
+    def resume(self, now: float) -> None:  # pragma: no cover
+        """Retry what :class:`WouldBlock` interrupted."""
+        raise NotImplementedError
+
+    def _out_of_tries(self, now: float) -> bool:
+        """Account for one timeout; ``True`` (and failed) when it was the last."""
+        if self.expires is not None and now >= self.expires:
+            self.fail(TransferTimeout("transfer exceeded its time limit"), notify=True)
+            return True
         self._tries -= 1
         if self._tries < 0:
             self.fail(TransferTimeout("no response after %d retries" % self.retries), notify=False)
             return True
+        self._rto = min(self._rto * self.backoff, self.max_timeout)
         return False

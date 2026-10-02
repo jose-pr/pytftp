@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from ..options import Negotiated
-from .base import _ACK, _DATA, _ERROR, SendFn, Transfer, _pack_header
+from .base import _ACK, _DATA, _ERROR, _OACK, SendFn, Transfer, WouldBlock, _pack_header
 
 __all__ = ["Sender"]
 
@@ -13,13 +13,28 @@ __all__ = ["Sender"]
 class Sender(Transfer):
     """Sends a stream as DATA packets: a server's RRQ, a client's WRQ.
 
-    :param read: a fill-the-view callable from :func:`as_readinto`.
+    :param read: a fill-the-view callable from :func:`as_readinto`. It may
+        raise :class:`WouldBlock`; sending then pauses until :meth:`resume`.
     :param oack: when given, sent first, and DATA starts after ACK 0 (a
         server answering an RRQ that carried options). Otherwise DATA starts
         at once.
+
+    Keyword arguments are :class:`Transfer`'s (``backoff``, ``max_timeout``,
+    ``expires``).
     """
 
-    __slots__ = ("_read", "_ring", "_views", "_lens", "_base", "_hi", "_last", "_control", "_dup_base")
+    __slots__ = (
+        "_read",
+        "_ring",
+        "_views",
+        "_lens",
+        "_base",
+        "_next",
+        "_hi",
+        "_last",
+        "_control",
+        "_dup_base",
+    )
 
     def __init__(
         self,
@@ -29,23 +44,25 @@ class Sender(Transfer):
         retries: int,
         now: float,
         oack: Optional[bytes] = None,
+        **kwargs: Any,
     ) -> None:
-        super().__init__(send, negotiated, retries)
+        super().__init__(send, negotiated, retries, **kwargs)
         self._read = read
         size = 4 + self.blksize
         self._ring = [bytearray(size) for _ in range(self.windowsize)]
         self._views = [memoryview(b) for b in self._ring]
         self._lens = [0] * self.windowsize
         self._base = 1  # first block not yet acknowledged
+        self._next = 1  # next block to transmit in the current window pass
         self._hi = 0  # highest block read into the ring
         self._last: Optional[int] = None  # the final block, once read
         self._dup_base = -1
         self._control = oack
         if oack is not None:
             send(oack)
-            self.deadline = now + self.timeout
+            self._arm(now)
         else:
-            self._send_window(now)
+            self._pump(now)
 
     def _load(self, block: int) -> int:
         slot = block % self.windowsize
@@ -53,6 +70,9 @@ class Sender(Transfer):
         _pack_header(view, 0, _DATA, self._wire(block))
         try:
             n = self._read(view[4:])
+        except WouldBlock:
+            self.stalled = True
+            return -1
         except Exception as exc:  # the source failed: tell the peer why
             self.fail(exc)
             return -1
@@ -64,18 +84,19 @@ class Sender(Transfer):
         self.blocks += 1
         return slot
 
-    def _send_window(self, now: float) -> None:
+    def _pump(self, now: float) -> None:
+        """Send from ``_next`` to the end of the window starting at ``_base``."""
         send = self._send
-        block = self._base
-        end = block + self.windowsize
+        block = self._next
+        end = self._base + self.windowsize
         if self._last is not None and self._last < end:
             end = self._last + 1
-        hi = self._hi
+        self.stalled = False
         while block < end:
-            if block > hi:
+            if block > self._hi:
                 slot = self._load(block)
                 if slot < 0:
-                    return
+                    break  # stalled (resume continues here) or failed
                 if self._last is not None and self._last < end:
                     end = self._last + 1
             else:
@@ -83,19 +104,36 @@ class Sender(Transfer):
                 self.retransmits += 1
             send(self._views[slot][: self._lens[slot]])
             block += 1
-        self.deadline = now + self.timeout
+        self._next = block
+        if self.done:
+            return
+        if self.stalled and self._hi < self._base:
+            # Waiting on our own source with nothing outstanding: no peer
+            # timeout applies, only the transfer's own time limit.
+            self.deadline = self.expires
+        else:
+            self._arm(now)
+
+    def _restart(self, now: float) -> None:
+        """(Re)send the window from the first unacknowledged block (RFC 7440)."""
+        self._next = self._base
+        self._pump(now)
+
+    def resume(self, now: float) -> None:
+        if self.stalled and not self.done:
+            self._pump(now)
 
     def handle(self, packet: memoryview, n: int, now: float) -> None:
-        if self.done or n < 4 or packet[0]:
+        if self.done or n < 2 or packet[0]:
             return
         op = packet[1]
-        if op == _ACK:
+        if op == _ACK and n >= 4:
             wire = (packet[2] << 8) | packet[3]
             if self._control is not None:
                 if wire == 0:
                     self._control = None
-                    self._tries = self.retries
-                    self._send_window(now)
+                    self._progress()
+                    self._pump(now)
                 return
             ref = self._base - 1
             acked = ref + (wire - self._wire(ref)) % self._period
@@ -110,23 +148,28 @@ class Sender(Transfer):
                 self._dup_base = self._base
             else:
                 self._base = acked + 1
-                self._tries = self.retries
+                self._progress()
                 if self._last is not None and acked >= self._last:
                     self.done = True
                     self.deadline = None
                     return
-            self._send_window(now)
+            self._restart(now)
+        elif op == _OACK:
+            # A WRQ client sees the server's OACK again when DATA 1 was lost.
+            # Resending on it would be Sorcerer's Apprentice; our own timeout
+            # resends DATA 1.
+            return
         elif op == _ERROR:
             self._remote_error(packet, n)
         else:
             self._illegal("unexpected opcode %d while sending" % op)
 
     def on_timeout(self, now: float) -> None:
-        if self.done or self._out_of_tries():
+        if self.done or self._out_of_tries(now):
             return
         if self._control is not None:
             self.retransmits += 1
             self._send(self._control)
-            self.deadline = now + self.timeout
+            self._arm(now)
         else:
-            self._send_window(now)
+            self._restart(now)

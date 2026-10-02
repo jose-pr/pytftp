@@ -7,7 +7,6 @@ import socket
 import sys
 from typing import Any, NamedTuple, Optional, Tuple
 
-from .._sockets import disable_connreset, is_wildcard
 from ..packet import encode_error
 
 __all__ = ["Listener", "Arrival"]
@@ -35,7 +34,7 @@ def _bind(host: str, port: int) -> socket.socket:
     # stops another process taking the port over -- wanted. On POSIX it means
     # SO_REUSEADDR, which on a UDP socket lets a second server share the port
     # and silently take half the requests -- not wanted.
-    plain = {"reuse_address": sys.platform == "win32"}
+    plain = {"reuse_address": sys.platform == "win32", "connreset": False}
     if host in ("", "::"):
         try:
             sock = bind(
@@ -55,7 +54,6 @@ def _bind(host: str, port: int) -> socket.socket:
         host = normalize_host(host)[0]
         family = socket.getaddrinfo(host, port, 0, socket.SOCK_DGRAM, 0, socket.AI_PASSIVE)[0][0]
         sock = bind(host, port, family=family, **plain)
-    disable_connreset(sock)
     return sock
 
 
@@ -75,6 +73,8 @@ class Listener:
             )
         except (AttributeError, OSError):
             self.v6only = True
+        from netimps import is_wildcard
+
         bound = self.sock.getsockname()[0]
         #: The listening address, or ``None`` when it is a wildcard.
         self.host: Optional[str] = None if is_wildcard(bound) else bound

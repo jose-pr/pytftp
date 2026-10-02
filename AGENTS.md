@@ -22,9 +22,11 @@ src/tftp/
 │   ├── core.py        # Server: lifecycle, selectors loop, timers, completion
 │   ├── listener.py    # listening socket: bind, dual-stack, pktinfo receive
 │   ├── session.py     # one transfer: reply socket choice, handler -> engine
-│   └── handler.py     # Handler protocol, FileSystemHandler, AtomicWriter
+│   ├── handler.py     # Handler protocol, FileSystemHandler, AtomicWriter
+│   ├── policy.py      # ServerLimits
+│   └── netinfo.py     # cached interface facts (broadcast addresses, MTU)
 ├── cli/               # pytftp (duho): common.py, transfer.py (get/put), serve.py
-└── _sockets.py        # private socket helpers (Windows CONNRESET, buffers, v4-mapped)
+└── _sockets.py        # window-sized socket buffers (everything else is netimps)
 tests/                 # pytest; engine tests need no sockets
 benchmarks/            # run.py + committed results/*.json
 examples/              # runnable scripts

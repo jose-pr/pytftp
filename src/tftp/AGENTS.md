@@ -21,6 +21,8 @@ extra). Modules starting with `_` are internal.
 | --- | --- | --- |
 | RFC 1350 | RRQ, WRQ, DATA, ACK, ERROR; octet and netascii | `mail` mode is refused with ERROR 4 |
 | RFC 1123 4.2.3.1 | Sorcerer's Apprentice fix | duplicate ACKs never trigger a resend (windowsize 1) |
+| RFC 1123 4.2.3.2 | exponential backoff | each consecutive retransmission waits `backoff` times longer, capped |
+| RFC 1123 4.2.3.4 | broadcast requests ignored | server, when pktinfo reports the destination |
 | RFC 2347 | option extension, OACK, ERROR 8 | unknown options are ignored, as the RFC requires |
 | RFC 2348 | `blksize` 8..65464 | server clamps to its `max_blksize` |
 | RFC 2349 | `timeout` (1..255 s), `tsize` | `tsize` 0 is never sent in an OACK (curl rejects it) |
@@ -33,7 +35,7 @@ Not implemented: RFC 2090 multicast.
 
 ## Client
 
-**`Client(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False)`**
+**`Client(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, max_duration=None, strict_source=True)`**
 
 - `host` — name or address; `"[v6]"`, `"host:port"` and `"[v6]:port"` are
   accepted, and a port written there overrides `port`.
@@ -41,6 +43,13 @@ Not implemented: RFC 2090 multicast.
   `timeout` when whole (1..255) and as `utimeout` when fractional, unless
   `timeout_option=False`.
 - `retries` — retransmissions of one packet before `TransferTimeout`.
+- `backoff`, `max_timeout` — each consecutive retransmission (of the
+  request too) waits `backoff` times longer, up to `max_timeout` (default
+  8 × `timeout`); progress resets the wait. `backoff=1` disables it.
+- `max_duration` — seconds a whole transfer may take; `None` is unlimited.
+- `strict_source` — the first answer must come from the address the request
+  was sent to. `False` accepts a multi-homed server answering from another
+  address (the transfer then locks on to that address and port).
 - `blksize` — requested; `None` asks for nothing (512). The default 1428 fits
   one Ethernet frame on IPv4 and IPv6.
 - `windowsize` — requested RFC 7440 window; `None` asks for nothing (1).
@@ -74,6 +83,7 @@ Methods (each returns a `TransferResult` unless noted):
 - `progress(done_bytes, total_or_None)` is called after each packet that moved
   data; `total` is the negotiated `tsize`.
 - Raises `RemoteError` (the server sent ERROR), `TransferTimeout`,
+  (as the subclass for its code: `FileNotFound`, `AccessViolation`, ...),
   `ProtocolError` (the server broke the protocol, e.g. an OACK with a larger
   `blksize` than requested — the client sends ERROR 8 first), or `OSError` for
   local failures (resolution, the local file).
@@ -86,7 +96,7 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 
 ## Server
 
-**`Server(root_or_handler, host="::", port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=None, reply_from_request_address=True, dally=True, on_complete=None)`**
+**`Server(root_or_handler, host="::", port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=None, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None)`**
 
 - `root_or_handler` — a directory (wrapped in `FileSystemHandler` with
   `writable`, `create`, `overwrite`) or any handler object (see below).
@@ -110,6 +120,11 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 - `on_complete(result)` — called with a `TransferResult` after **every**
   transfer, refused and failed ones included (`result.error` set). Exceptions
   it raises are logged and swallowed.
+- `limits` — a `ServerLimits` (below).
+- `ignore_broadcast` — silently drop requests addressed to a broadcast
+  (limited or subnet) or multicast address. Needs pktinfo to see the
+  destination; without it every request looks unicast.
+- `backoff`, `max_timeout` — as for `Client`, per transfer.
 - Raises `OSError` if the port cannot be bound (port 69 needs privileges on
   POSIX).
 
@@ -118,7 +133,8 @@ Lifecycle:
 - **`serve_forever()`** — run the event loop in the calling thread until
   `shutdown()`. One thread serves every transfer.
 - **`shutdown()`** — stop `serve_forever`; safe from any thread, a handler or
-  `on_complete`. Transfers in flight get ERROR 0 `"server shutting down"`.
+  `on_complete`. Transfers in flight get ERROR 0 `"server shutting down"`
+  (their result's `error` is `TransferAborted`).
 - **`start() -> Server`** — run `serve_forever` in a daemon thread.
 - **`stop(timeout=5.0)`** — `shutdown()` and join the `start()` thread.
 - **`close()`** — stop and release every socket. Also the context-manager
@@ -140,6 +156,13 @@ Behaviour worth knowing:
 - Socket buffers are grown to hold two windows (Windows defaults to 64 KiB,
   which a large window overflows).
 
+**`ServerLimits(max_request_size=1024, max_filename_length=512, max_options=16, max_option_length=255, max_sessions_per_client=None, max_duration=None)`**
+— bounds on untrusted input. A request over a size/name/option limit gets
+ERROR 4 from the listening port; a client over `max_sessions_per_client`
+(counted per address, any port) gets ERROR 0 `"server busy"`.
+`max_duration` ends a transfer that runs longer (ERROR 0 to the peer,
+`TransferTimeout` in the result).
+
 **`ServerOptions(max_blksize=65464, max_windowsize=64, allowed=SUPPORTED_OPTIONS)`**
 — the negotiation policy. A larger request is answered with the maximum
 (which the RFCs allow). `allowed` is a subset of `SUPPORTED_OPTIONS`; options
@@ -159,6 +182,15 @@ A handler is any object with:
   called after the last block is written and before it is acknowledged**, so
   an exception there reaches the client as ERROR. If the writer has `abort()`,
   a failed transfer calls it instead of `close()`.
+
+**Slow or asynchronous streams.** A reader's `readinto`/`read`, a writer's
+`write` and its `close` may raise `tftp.WouldBlock` when nothing is ready:
+the transfer pauses (a writer's block stays unacknowledged, which is
+backpressure on the client) without blocking the loop. A stream that has
+`set_wakeup(callback)` is given a thread-safe callback to call when it can
+make progress again; without it a stalled transfer only resumes when the
+peer retransmits. A paused transfer is subject to `max_duration`, not to
+peer retries.
 
 Either may raise `TftpError(code, message)` to refuse with that ERROR, or
 `OSError`, mapped by errno (`ENOENT` → 1, `EACCES`/`EPERM` → 2, `ENOSPC` → 3,
@@ -211,10 +243,16 @@ as sent/received; empty when RFC 1350 defaults applied).
 
 Exceptions: **`TftpError(code=0, message="")`** (base; `.code` is an
 `ErrorCode` when the value is known, `.message` defaults to the code's
-standard text), **`RemoteError`** (the peer sent ERROR), **`ProtocolError`**
-(the peer broke the protocol; code 4, or 8 for option problems),
-**`TransferTimeout`** (also a `TimeoutError`). `MalformedPacket` is a
-`ValueError`.
+standard text), **`RemoteError`** (the peer sent ERROR; always raised as
+the subclass for its code — `FileNotFound` 1, `AccessViolation` 2,
+`DiskFull` 3, `IllegalOperation` 4, `UnknownTransferId` 5,
+`FileAlreadyExists` 6, `NoSuchUser` 7, `OptionNegotiationError` 8 — and
+plain `RemoteError` for 0 and unknown codes; `RemoteError.from_code(code,
+message)` builds one), **`ProtocolError`** (the peer broke the protocol;
+code 4, or 8 for option problems), **`TransferTimeout`** (also a
+`TimeoutError`; retries exhausted or `max_duration` passed),
+**`TransferAborted`** (cancelled locally: `abort()`, server shutdown).
+`MalformedPacket` is a `ValueError`.
 
 ## Wire format
 
@@ -247,12 +285,18 @@ CR on any block boundary. `tftp.netascii` also has `encode`, `decode` and
 
 ## Transfer engine
 
-**`Sender(send, read, negotiated, retries, now, oack=None)`** and
-**`Receiver(send, write, negotiated, retries, now, reply=None, complete=None)`**
+**`Sender(send, read, negotiated, retries, now, oack=None, **kw)`** and
+**`Receiver(send, write, negotiated, retries, now, reply=None, complete=None, **kw)`**
+(`kw`: `backoff=2.0`, `max_timeout=None`, `expires=None` — an absolute
+deadline in the caller's clock)
 are one side of the DATA/ACK exchange **without any I/O**: packets leave
 through `send(packet)`, arrive through `handle(buffer, n, now)`, and the caller
-calls `on_timeout(now)` once `deadline` (in the caller's clock) passes. State:
-`done`, `error`, `bytes`, `blocks`, `retransmits`, `deadline`. Build `read`
+calls `on_timeout(now)` once `deadline` (in the caller's clock) passes, and
+`resume(now)` when a stalled source/sink (`WouldBlock`) is ready again;
+`abort(message)` cancels. State: `done`, `error`, `stalled`, `bytes`,
+`blocks`, `retransmits`, `deadline`. A repeated OACK is tolerated: a
+receiver re-sends its ACK 0, a sender ignores it (its own timeout resends
+DATA 1). Build `read`
 and `write` with `tftp.transfer.as_readinto(fileobj)` / `as_write(fileobj)`.
 This is what the client and server drive; use it to run TFTP over another
 transport or event loop.
