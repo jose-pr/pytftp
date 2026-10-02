@@ -298,6 +298,47 @@ pktinfo), `interface_index` (or 0); shortcuts `filename`, `mode`, `options`.
 `path`; `close()` renames it into place (refusing with ERROR 6 if
 `overwrite=False` and `path` appeared meanwhile); `abort()` deletes it.
 
+## asyncio (`tftp.aio`)
+
+**`AsyncClient(...)`** — `Client`'s arguments and rules (options, backoff,
+fallback, `trace`, `on_negotiated`); coroutine methods `download(filename,
+dest, *, mode, progress)`, `get`, `upload(filename, source, *, mode,
+progress)`, `put`, and the async generator **`stream(filename, *, mode,
+buffer=1 MiB)`** yielding chunks as they arrive (a slow consumer holds ACKs
+back; at most `buffer` bytes are held). Name resolution runs in the
+executor. Destinations: a path, a binary file (written on the loop — fine
+for local files), or an **async writer** (`async write(data)`, or `write` +
+`async drain()` like `asyncio.StreamWriter`); `download` returns only once
+an async writer has taken every byte (the writer is not closed). Sources: a
+path, bytes, a binary file, or an **async reader** (`async read(n)`) or async
+iterable of bytes. Cancelling the task sends the server ERROR 0. Each
+attempt (including the option fallback) uses a fresh socket.
+
+**`AsyncServer(root_or_handler, host="::", port=69, *, executor=None, **server_options)`**
+— `Server`'s arguments except `open_in_thread`/`workers`. `async with
+AsyncServer(...) as server: await server.serve_forever()`, or `await
+server.start()` … `await server.stop()`; `shutdown()` is thread-safe; `await
+close()`. Handlers:
+
+- `open_read`/`open_write` may be `async def` (awaited on the loop), or
+  synchronous: those marked `_tftp_fast_open_` (file, memory) run inline,
+  others in `executor` (default: the loop's) — so `HttpHandler` and
+  `UpstreamHandler` work unchanged (their `Pipe` wake-ups are thread-safe).
+- The returned stream may be an async reader/iterable (RRQ) or async writer
+  (WRQ); a writer is closed after the last block, and the final ACK waits
+  until everything is written.
+- pktinfo is kept on every loop: the listener is read with `add_reader`, or
+  by a reader thread where the loop has none (Windows' Proactor loop).
+- On Windows the default `max_sessions` is 500 (a selector loop's
+  `select()`).
+
+**`AsyncReaderBridge(source, capacity=1 MiB, size=None)`** /
+**`AsyncWriterBridge(sink, capacity=1 MiB, close_sink=True)`** — the
+adapters doing that (engine-side `readinto`/`write`/`close` raising
+`WouldBlock`, `set_wakeup`; writer `await finish()`); create them on the
+running loop. `is_async_reader(obj)` / `is_async_writer(obj)` say which
+objects they take.
+
 ## Backends (`tftp.backends`)
 
 - **`MemoryHandler(files=None, *, writable=False, overwrite=True, max_upload=None)`**

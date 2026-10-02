@@ -333,6 +333,38 @@ class Client:
                     )
                 raise
 
+    def _first_response(self, view, n: int, options, is_read: bool, send) -> Tuple[Negotiated, bool]:
+        """Interpret the server's answer to the request: ``(negotiated, first_data)``.
+
+        ``first_data`` is true when the answer is DATA 1 itself (an RRQ whose
+        options were ignored), to be handed to the receiver. Raises for an
+        ERROR (marked as a refusal of the request, for the option fallback),
+        an OACK this client cannot accept (after sending ERROR 8), or any
+        other opcode (after sending ERROR 4).
+        """
+        op = view[1] if n >= 2 and view[0] == 0 else -1
+        if op == Opcode.ERROR:
+            packet = decode(view[:n])
+            refused = RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
+            refused._in_request = True  # type: ignore[attr-defined]
+            raise refused
+        if op == Opcode.OACK:
+            oack = decode(view[:n]).options  # type: ignore[union-attr]
+            try:
+                negotiated = accept_oack(
+                    options, oack, is_read=is_read, timeout=self.timeout, registry=self.registry
+                )
+            except ProtocolError as exc:
+                send(encode_error(exc.code, exc.message))
+                raise
+            return negotiated, False
+        if (is_read and op == Opcode.DATA) or (
+            not is_read and op == Opcode.ACK and view[2] == 0 and view[3] == 0
+        ):
+            return Negotiated(timeout=self.timeout), is_read
+        send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
+        raise ProtocolError("unexpected opcode %d in response to the request" % op)
+
     def _exchange(
         self, sock, server, opcode, filename, mode, options, write, read, progress, started
     ) -> TransferResult:
@@ -403,32 +435,8 @@ class Client:
                 emit(packet, "out", _peer)
                 return result
 
-        now = clock()
-        op = buf[1] if buf[0] == 0 else -1
         session: Transfer
-        if op == Opcode.ERROR:
-            packet = decode(view[:n])
-            refused = RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
-            refused._in_request = True  # type: ignore[attr-defined]
-            raise refused
-        if op == Opcode.OACK:
-            oack = decode(view[:n]).options  # type: ignore[union-attr]
-            try:
-                negotiated = accept_oack(
-                    options, oack, is_read=is_read, timeout=self.timeout, registry=self.registry
-                )
-            except ProtocolError as exc:
-                send(encode_error(exc.code, exc.message))
-                raise
-            first_data = False
-        elif (is_read and op == Opcode.DATA) or (
-            not is_read and op == Opcode.ACK and buf[2] == 0 and buf[3] == 0
-        ):
-            negotiated = Negotiated(timeout=self.timeout)
-            first_data = is_read
-        else:
-            send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
-            raise ProtocolError("unexpected opcode %d in response to the request" % op)
+        negotiated, first_data = self._first_response(view, n, options, is_read, send)
 
         # Before the engine exists: building a Sender already reads the first
         # block, and a caller may need to know the outcome before that.

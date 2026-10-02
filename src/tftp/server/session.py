@@ -126,6 +126,7 @@ class Session:
         "id",
         "trace",
         "_negotiated",
+        "driver",
     )
 
     def __init__(
@@ -153,6 +154,8 @@ class Session:
         #: ``trace(PacketEvent)`` for this transfer's datagrams, or ``None``.
         self.trace: Optional[Callable[[PacketEvent], Any]] = None
         self._negotiated: Optional[Negotiated] = None  # a WRQ's, from call_handler
+        #: Front-end state (the async server keeps its timer and transport here).
+        self.driver: Any = None
 
     def wakeup(self) -> Optional[float]:
         """When the loop must next look at this session, or ``None``."""

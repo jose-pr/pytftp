@@ -18,7 +18,9 @@ src/tftp/
 ├── result.py          # TransferResult
 ├── transfer/          # I/O-free engine: base.py, sender.py, receiver.py
 ├── client.py          # Client: request phase + blocking transfer loop
+├── aio/               # asyncio: client.py, server.py, bridge.py (async streams <-> engine)
 ├── server/
+│   ├── base.py        # ServerBase: config, admission, refusal, reporting (shared with aio)
 │   ├── core.py        # Server: lifecycle, selectors loop, timers, completion
 │   ├── listener.py    # listening socket: bind, dual-stack, pktinfo receive
 │   ├── session.py     # one transfer: reply socket choice, handler -> engine
