@@ -1,0 +1,60 @@
+site_name: tftp
+site_description: Pure-Python TFTP client and server for IPv4 and IPv6
+site_url: https://jose-pr.github.io/pytftp/
+repo_url: https://github.com/jose-pr/pytftp
+repo_name: jose-pr/pytftp
+edit_uri: edit/main/docs/
+
+# Constrain the scan to docs/ so pymdownx.snippets + strict nav don't trip on
+# repo-level markdown.
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Guide:
+      - Protocol coverage: protocol.md
+      - Serving files: serving.md
+  - API Reference:
+      - Client: api/client.md
+      - Server: api/server.md
+      - Options: api/options.md
+      - Packets: api/packet.md
+      - Transfer engine: api/transfer.md
+      - Netascii: api/netascii.md
+      - Errors and results: api/errors.md
+  - Changelog: changelog.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            merge_init_into_class: true
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.snippets:
+      base_path: ["."]
+  - pymdownx.superfences

@@ -1,0 +1,3 @@
+# `tftp.netascii`
+
+::: tftp.netascii

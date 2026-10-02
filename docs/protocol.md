@@ -1,0 +1,54 @@
+# Protocol coverage
+
+| Spec | What |
+| --- | --- |
+| RFC 1350 | RRQ, WRQ, DATA, ACK, ERROR; `octet` and `netascii` modes (`mail` is refused) |
+| RFC 1123 §4.2.3.1 | Sorcerer's Apprentice fix |
+| RFC 2347 | Option extension, OACK, ERROR 8 |
+| RFC 2348 | `blksize`, 8 to 65464 |
+| RFC 2349 | `timeout` (whole seconds) and `tsize` |
+| RFC 7440 | `windowsize`, 1 to 65535 |
+| tftp-hpa | `utimeout`, microseconds |
+| common practice | `rollover` (block number after 65535 wraps to 0 or 1) |
+
+RFC 2090 (multicast) is not implemented.
+
+## Negotiation
+
+The client asks; the server answers with an OACK holding only what it
+accepts. Unknown options and unusable values are ignored rather than
+refused, as RFC 2347 requires, and the transfer runs on the default for
+anything not acknowledged. The server clamps `blksize` and `windowsize` to
+its `ServerOptions` limits; the client refuses (ERROR 8) an OACK that grants
+more than it asked for, or an option it never requested.
+
+A client whose request is refused with ERROR 8 retries once with no options
+(`fallback=True`), for servers that reject what they do not understand.
+
+`tsize` is answered for any file whose size is known, except an empty one:
+curl rejects `tsize 0` in an OACK, and the transfer shows the size anyway.
+
+## Under loss
+
+- **Retransmission** is driven only by timeouts on the sending side; a
+  duplicate ACK never triggers a resend when `windowsize` is 1.
+- **Windows**: the receiver acknowledges every `windowsize` blocks. On a gap
+  it immediately acknowledges the last block it has, once per gap, and the
+  sender restarts right after it. The sender keeps the window in memory, so
+  a resend never re-reads the source.
+- **Stray packets**: anything from an address or port other than the peer's
+  gets ERROR 5 and is otherwise ignored.
+- **Dallying**: the server keeps a finished upload open for one timeout to
+  re-acknowledge a repeated last block (the client can do the same with
+  `dally=True`).
+- **Rollover**: block numbers are tracked as unbounded integers and mapped to
+  16 bits on the wire, so file size is unlimited. A receiver that did not
+  negotiate `rollover` follows a sender that wraps to 1.
+
+## Addresses
+
+The server listens on `::` with a dual-stack socket by default. Each transfer
+gets its own socket bound to the address the request was sent to, read from
+pktinfo, so on a multi-homed host or a virtual IP the client hears back from
+the address it used. A v4 client of the dual-stack listener is served from a
+plain IPv4 socket.
