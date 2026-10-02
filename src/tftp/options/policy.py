@@ -11,8 +11,9 @@ __all__ = ["ServerOptions", "STANDARD_OPTIONS", "EXTENSION_OPTIONS", "SUPPORTED_
 
 #: RFC 2348, 2349, 7440: what a server acknowledges by default.
 STANDARD_OPTIONS: FrozenSet[str] = DEFAULT_REGISTRY.standard()
-#: tftp-hpa's extensions, acknowledged only when allowed explicitly.
-EXTENSION_OPTIONS: FrozenSet[str] = frozenset({"blksize2", "utimeout", "rollover", "cookie"})
+#: Extensions (tftp-hpa's, and Microsoft's ``mstfwindow``), acknowledged only
+#: when allowed explicitly.
+EXTENSION_OPTIONS: FrozenSet[str] = frozenset({"blksize2", "utimeout", "rollover", "cookie", "mstfwindow"})
 #: Everything built in.
 SUPPORTED_OPTIONS: FrozenSet[str] = STANDARD_OPTIONS | EXTENSION_OPTIONS
 
@@ -28,7 +29,7 @@ class ServerOptions:
         memory a sender holds per transfer.
     :param allowed: option names acknowledged at all. Defaults to the RFC
         options (``blksize``, ``timeout``, ``tsize``, ``windowsize``); add
-        :data:`EXTENSION_OPTIONS` names to accept tftp-hpa's extensions.
+        :data:`EXTENSION_OPTIONS` names to accept extensions.
     :param refused: names never acknowledged even when allowed -- for
         firmware that asks for an option and then mishandles it.
     :param fit_mtu: lower ``blksize`` so a DATA packet fits the MTU of the

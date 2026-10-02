@@ -80,7 +80,7 @@ class Serve(Traced):
     ("--max-windowsize",)
 
     allow: _ty.List[str] = []
-    "Also accept this extension option (blksize2, utimeout, rollover, cookie); repeatable"
+    "Also accept this extension option (blksize2, utimeout, rollover, cookie, mstfwindow); repeatable"
     ("--allow",)
 
     refuse: _ty.List[str] = []

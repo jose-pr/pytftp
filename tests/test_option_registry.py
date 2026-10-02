@@ -16,15 +16,48 @@ ALL = tftp.ServerOptions(allowed=tftp.SUPPORTED_OPTIONS)
 def test_standard_options_are_the_default_policy():
     assert tftp.ServerOptions().allowed == {"blksize", "timeout", "tsize", "windowsize"}
     assert tftp.STANDARD_OPTIONS == {"blksize", "timeout", "tsize", "windowsize"}
-    assert tftp.EXTENSION_OPTIONS == {"blksize2", "utimeout", "rollover", "cookie"}
+    assert tftp.EXTENSION_OPTIONS == {"blksize2", "utimeout", "rollover", "cookie", "mstfwindow"}
     requested = {
         "blksize": "1024",
         "rollover": "1",
         "cookie": "abc",
         "utimeout": "500000",
         "blksize2": "3000",
+        "mstfwindow": "31416",
     }
     assert set(negotiate(requested, tftp.ServerOptions(), is_read=False, timeout=1).options) == {"blksize"}
+
+
+def test_mstfwindow_server_side():
+    result = negotiate({"mstfwindow": "31416"}, ALL, is_read=True, timeout=1, size=10)
+    assert result.options == {"mstfwindow": "27182"} and result.windowsize == 4
+    assert result.extra["mstfwindow"] is True
+    both = negotiate({"windowsize": "16", "mstfwindow": "31416"}, ALL, is_read=True, timeout=1)
+    assert both.options == {"windowsize": "16", "mstfwindow": "27182"} and both.windowsize == 16
+    small = tftp.ServerOptions(allowed={"mstfwindow"}, max_windowsize=2)
+    assert negotiate({"mstfwindow": "31416"}, small, is_read=True, timeout=1).windowsize == 2
+    assert negotiate({"mstfwindow": "1"}, ALL, is_read=True, timeout=1).options == {}
+    assert "mstfwindow" not in tftp.HPA.server.allowed
+
+
+def test_mstfwindow_client_side():
+    ok = accept_oack({"mstfwindow": "31416"}, {"mstfwindow": "27182"}, is_read=True, timeout=1)
+    assert ok.windowsize == 4 and ok.extra["mstfwindow"] is True
+    asked = {"mstfwindow": "31416", "windowsize": "8"}
+    both = accept_oack(asked, {"mstfwindow": "27182", "windowsize": "8"}, is_read=True, timeout=1)
+    assert both.windowsize == 8
+    with pytest.raises(tftp.ProtocolError):
+        accept_oack({"mstfwindow": "31416"}, {"mstfwindow": "31416"}, is_read=True, timeout=1)
+
+
+def test_mstfwindow_end_to_end(root, make_server):
+    server = make_server(root, options=tftp.ServerOptions(allowed=tftp.STANDARD_OPTIONS | {"mstfwindow"}))
+    seen = []
+    client = client_for(
+        server, extra_options={"mstfwindow": 31416}, on_negotiated=lambda n, peer: seen.append(n)
+    )
+    assert client.get("big.bin") == (root / "big.bin").read_bytes()
+    assert seen[0].windowsize == 4 and seen[0].options["mstfwindow"] == "27182"
 
 
 def test_refused_overrides_allowed():

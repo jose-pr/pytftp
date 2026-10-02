@@ -55,7 +55,9 @@ PXE = Profile(
     ServerOptions(allowed=STANDARD_OPTIONS | {"rollover", "utimeout"}, fit_mtu=True),
     {"blksize": 1428},
 )
-HPA = Profile("hpa", ServerOptions(allowed=STANDARD_OPTIONS | EXTENSION_OPTIONS), {"utimeout": True})
+#: tftp-hpa's own extensions (not Microsoft's ``mstfwindow``).
+_HPA_EXTENSIONS = EXTENSION_OPTIONS - {"mstfwindow"}
+HPA = Profile("hpa", ServerOptions(allowed=STANDARD_OPTIONS | _HPA_EXTENSIONS), {"utimeout": True})
 LEGACY = Profile(
     "legacy",
     ServerOptions(allowed=STANDARD_OPTIONS, refused={"windowsize"}),

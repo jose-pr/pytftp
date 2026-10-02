@@ -1,4 +1,4 @@
-"""The options this library knows: RFC 2348, 2349, 7440, and tftp-hpa's extensions.
+"""The options this library knows: RFC 2348, 2349, 7440, tftp-hpa's and Microsoft's extensions.
 
 =============  ===========  ====================================================
 option         defined by   meaning
@@ -11,6 +11,8 @@ option         defined by   meaning
 ``utimeout``   tftp-hpa     retransmission timeout in microseconds
 ``rollover``   tftp-hpa     block number after 65535: 0 (default) or 1
 ``cookie``     tftp-hpa     opaque value, echoed back unchanged
+``mstfwindow`` Microsoft    variable window (bootmgr/WDS): offer 31416, answer
+                            27182, window 4
 =============  ===========  ====================================================
 """
 
@@ -39,6 +41,7 @@ __all__ = [
     "Windowsize",
     "Rollover",
     "Cookie",
+    "Mstfwindow",
     "BUILTIN_OPTIONS",
 ]
 
@@ -207,5 +210,46 @@ class Cookie(OptionHandler):
         ctx.result.extra[self.name] = acked
 
 
+class Mstfwindow(OptionHandler):
+    """Microsoft's variable-window extension (Windows 8+ ``bootmgr``, WDS).
+
+    The client offers ``mstfwindow=31416``; a server that speaks it answers
+    ``27182`` and both start with a window of 4 blocks. The client may then
+    resize the window through its ACKs, in a format Microsoft has not
+    published; this library keeps the window at 4 (bytes after an ACK's
+    block number are ignored). A ``windowsize`` negotiated alongside wins.
+    """
+
+    name = "mstfwindow"
+    OFFER = "31416"
+    ANSWER = "27182"
+    WINDOW = 4
+
+    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+        if value.strip() != self.OFFER:
+            return None
+        if "windowsize" not in ctx.acked:
+            ctx.result.windowsize = min(self.WINDOW, ctx.policy.max_windowsize)
+        ctx.result.extra[self.name] = True
+        return self.ANSWER
+
+    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+        if acked.strip() != self.ANSWER:
+            raise refuse("server answered mstfwindow=%r, not %s" % (acked, self.ANSWER))
+        if "windowsize" not in ctx.result.options:
+            ctx.result.windowsize = self.WINDOW
+        ctx.result.extra[self.name] = True
+
+
 #: In negotiation order: block size first, since the window bound depends on it.
-BUILTIN_OPTIONS = (Blksize(), Blksize2(), Timeout(), Utimeout(), Tsize(), Windowsize(), Rollover(), Cookie())
+BUILTIN_OPTIONS = (
+    Blksize(),
+    Blksize2(),
+    Timeout(),
+    Utimeout(),
+    Tsize(),
+    Windowsize(),
+    Rollover(),
+    Cookie(),
+    Mstfwindow(),
+)
