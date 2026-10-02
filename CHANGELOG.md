@@ -10,24 +10,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - `Client`: download and upload over IPv4 and IPv6, to and from paths, binary
-  files or memory, with `blksize`, `windowsize`, `tsize`, `timeout`/`utimeout`
-  and `rollover` negotiation, progress callbacks, and a one-time retry without
-  options when a server refuses them (ERROR 8).
+  files or memory, with `blksize`, `windowsize`, `tsize` and `timeout`
+  negotiation (and the `utimeout`, `rollover`, `blksize2` and `cookie`
+  extensions on request), progress and `on_negotiated` callbacks, exponential
+  backoff of retransmissions, an optional time limit, and a one-time retry
+  without options when a server refuses them (ERROR 8). `blksize="mtu"` sizes
+  blocks to the route's interface MTU; hosts may carry a port
+  (`"[::1]:6969"`).
 - `Server`: one event-loop thread serving any number of transfers, each on its
-  own socket bound to the address the request was sent to (pktinfo, where
-  the platform reports it); dual-stack `::` listening by default; per-server option
-  policy (`ServerOptions`); session limit; dallying on the last ACK of an
-  upload; `on_complete` reporting for every transfer.
+  own socket bound to the address the request was sent to (pktinfo); dual-stack
+  `::` listening by default; a negotiation policy (`ServerOptions`: maximum
+  block and window size, window memory bound, allowed and refused options,
+  fitting `blksize` to the arrival interface's MTU); resource limits
+  (`ServerLimits`: request size, filename length, option count and length,
+  sessions per client, transfer duration); ignoring requests sent to broadcast
+  or multicast addresses; blocking handlers opened in worker threads;
+  dallying on the last ACK of an upload; `on_complete` for every transfer;
+  counters for metrics (`stats`, `stats_snapshot()`).
 - `FileSystemHandler`: serves a directory with containment against `..`,
   symlinks and Windows device names; backslash separators; atomic uploads;
   `create`/`overwrite` policy; `max_upload` and free-space checks from `tsize`.
-- Handler protocol (`open_read`/`open_write`) for generated content.
+- Handler protocol (`open_read`/`open_write`) for generated content; sources
+  and sinks may report "not ready yet" (`WouldBlock`) and wake the transfer
+  from another thread, so slow backends apply backpressure instead of
+  blocking the server.
+- Backends: `MemoryHandler`; `HttpHandler`, a TFTP-to-HTTP(S) gateway (GET and
+  PUT, HTTP status codes mapped to TFTP errors, `Content-Length` as `tsize`);
+  `UpstreamHandler`, a terminating proxy to another TFTP server whose two sides
+  negotiate independently; `Pipe` for writing such handlers.
+- `Relay`: a transparent relay forwarding requests byte for byte to upstream
+  servers and datagrams unchanged between the two transfer IDs, with routing
+  by client subnet, filename prefix or arrival interface, idle and lifetime
+  limits, per-transfer summaries and counters.
+- `tftp.aio`: `AsyncClient` (including `stream()`, an async generator with
+  backpressure) and `AsyncServer` (async handlers and streams, pktinfo on every
+  event loop including Windows' Proactor loop).
+- Option negotiation through a registry of option handlers, so applications can
+  add their own; compatibility profiles `STRICT`, `DEFAULT`, `PXE`, `HPA` and
+  `LEGACY`.
+- Capture and debugging: `trace=` hooks on the client, server and relay
+  reporting every datagram as a `PacketEvent`; `PcapWriter` (Wireshark-readable
+  pcap); pcap/pcapng reading from files or live pipes with IP fragment
+  reassembly; `FlowTracker`/`analyze()` reconstructing transfers and their
+  files from a capture; a filter language; live capture on Linux.
+- `tftp://` URLs (RFC 3617): `parse_url`, `format_url`, `download_url`,
+  `upload_url`.
+- Typed errors: `RemoteError` raised as `FileNotFound`, `AccessViolation`,
+  `DiskFull`, `IllegalOperation`, `UnknownTransferId`, `FileAlreadyExists`,
+  `NoSuchUser` or `OptionNegotiationError`; `TransferAborted`.
 - Transfer engine (`Sender`/`Receiver`) with RFC 7440 windowing, the
-  Sorcerer's Apprentice fix, unknown-TID handling and unlimited file size via
-  block-number rollover, usable without sockets.
-- Streaming netascii in both directions.
-- Packet encode/decode for every RFC 1350 and RFC 2347 packet.
-- `pytftp` command (`cli` extra): `get`, `put`, `serve`, with `--json`.
+  Sorcerer's Apprentice fix, unknown-TID handling, tolerance of repeated
+  OACKs and unlimited file size via block-number rollover, usable without
+  sockets.
+- Streaming netascii in both directions; packet encode/decode for every RFC
+  1350 and RFC 2347 packet, keeping a request's raw bytes for forwarding.
+- `pytftp` command (`cli` extra): `get` and `put` (also by URL), `serve` (a
+  directory, `--http` gateway or `--upstream` proxy), `relay`, `capture`;
+  `--compat` profiles, `--trace` and `--pcap` on every command that moves
+  packets, `--json` output.
 - Loopback throughput benchmark (`benchmarks/run.py`).
 
 [Unreleased]: https://github.com/jose-pr/pytftp/commits/main

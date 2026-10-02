@@ -31,6 +31,10 @@ nav:
   - Guide:
       - Protocol coverage: protocol.md
       - Serving files: serving.md
+      - Backends: backends.md
+      - Relaying: relay.md
+      - Capture and debugging: capture.md
+      - asyncio: async.md
   - API Reference:
       - Client: api/client.md
       - asyncio: api/aio.md

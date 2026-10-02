@@ -4,11 +4,13 @@
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://jose-pr.github.io/pytftp/)
 [![CI](https://img.shields.io/github/actions/workflow/status/jose-pr/pytftp/test.yml)](https://github.com/jose-pr/pytftp/actions/workflows/test.yml)
 
-A **pure-Python TFTP client and server for IPv4 and IPv6** that implements the
-whole of modern TFTP: RFC 1350, the option extension (RFC 2347) with
-`blksize`, `timeout`, `tsize` and `windowsize` (RFC 2348, 2349, 7440), plus
-`utimeout`, block-number rollover and netascii. One event-loop thread serves
-any number of transfers, each answered from the address the client used.
+A **pure-Python TFTP client, server, relay and capture decoder for IPv4 and
+IPv6** that implements the whole of modern TFTP: RFC 1350, the option
+extension (RFC 2347) with `blksize`, `timeout`, `tsize` and `windowsize`
+(RFC 2348, 2349, 7440), tftp-hpa's extensions, block-number rollover and
+netascii. Built as infrastructure for network boot: it interoperates with
+iPXE, tftp-hpa, BusyBox, dnsmasq and curl, serves files, HTTP or another TFTP
+server, and shows you what crossed the wire.
 
 ```python
 import tftp
@@ -22,13 +24,16 @@ with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 ## Features
 
 - **Complete option support** — `blksize` up to 65464, RFC 7440 windows,
-  `tsize` both ways, `timeout`/`utimeout`, `rollover`. Unlimited file size.
+  `tsize` both ways, `timeout`, and tftp-hpa's `utimeout`, `rollover`,
+  `blksize2`, `cookie`. Unlimited file size. A registry for your own options,
+  and profiles (`pxe`, `hpa`, `legacy`, `strict`) for quirky peers.
 - **Fast** — windowed transfers move hundreds of MiB/s over loopback in pure
   Python (see [benchmarks](benchmarks/README.md)); the hot path reads into
   preallocated buffers and keeps a sent window in memory instead of re-reading.
-- **Correct under loss** — Sorcerer's Apprentice fix, gap detection inside a
-  window, ERROR 5 for stray packets without disturbing the transfer, dallying
-  on the last ACK. The engine is tested over a simulated lossy link.
+- **Correct under loss** — Sorcerer's Apprentice fix, exponential backoff,
+  gap detection inside a window, repeated OACKs tolerated, ERROR 5 for stray
+  packets without disturbing the transfer, dallying on the last ACK. The
+  engine is tested over a simulated lossy link and fuzzed.
 - **IPv4 and IPv6** — dual-stack listening by default; v4 clients are served
   from plain v4 sockets.
 - **Replies from the request's address** — on a multi-homed host or a VIP,
@@ -38,10 +43,20 @@ with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 - **Safe file serving** — no path escapes `root` (`..`, symlinks, Windows
   device names), uploads are atomic (a failed upload leaves nothing), quotas
   and disk-space checks from `tsize`.
-- **Pluggable** — a handler is two methods, so boot menus or images can be
-  generated per client; the I/O-free `Sender`/`Receiver` engine can be driven
-  by any transport.
-- **CLI** — `pytftp get|put|serve` with `--json` output (optional extra).
+- **Pluggable backends** — a handler is two methods, so boot menus or images
+  can be generated per client; built in: a directory, memory, an HTTP(S)
+  gateway, and a terminating proxy to another TFTP server. Slow backends apply
+  backpressure instead of blocking other transfers.
+- **Transparent relay** — forwards requests byte for byte to upstream servers
+  (routed by subnet, filename or interface), so unknown extensions still work.
+- **Capture and debugging** — trace every datagram from the client, server or
+  relay; write Wireshark-readable pcaps; read pcap/pcapng files or a live
+  `tcpdump` pipe, reconstruct each transfer and extract its file.
+- **asyncio** — `AsyncClient` and `AsyncServer` with async handlers and streams.
+- **Bounded** — limits on requests, sessions per client, window memory and
+  transfer time; counters for metrics.
+- **CLI** — `pytftp get|put|serve|relay|capture` with `--json`, `--trace` and
+  `--pcap` (optional extra).
 
 ## Installation
 
@@ -111,17 +126,50 @@ pytftp put 192.0.2.1 firmware.bin
 pytftp serve /srv/tftp --port 6969 --write --json
 ```
 
+Relay, capture and asyncio:
+
+```python
+import tftp
+from tftp.relay import Relay, RouteTable, by_subnet
+from tftp.capture import PcapWriter, analyze
+
+# Forward requests to per-subnet boot servers, recording everything.
+with PcapWriter("relay.pcap") as pcap:
+    route = RouteTable([by_subnet({"10.1.0.0/16": "10.1.0.5"})], default="10.0.0.20")
+    Relay(route, trace=pcap).serve_forever()
+
+# What happened in a capture (yours, or tcpdump's)?
+for transfer in analyze("boot.pcapng").transfers:
+    print(transfer, transfer.missing_blocks)
+
+# asyncio
+async def fetch():
+    async for chunk in tftp.aio.AsyncClient("192.0.2.1").stream("vmlinuz"):
+        ...
+```
+
+```bash
+pytftp serve --http https://images.example.com/pxe/ --compat pxe
+pytftp relay 10.0.0.20 --route-prefix windows/=wds.lan --trace
+tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
+```
+
 ## API overview
 
 | Module | Purpose |
 | --- | --- |
 | `tftp.client` | `Client`, `download`, `upload` |
-| `tftp.server` | `Server`, `FileSystemHandler`, `AtomicWriter`, `RequestContext` |
-| `tftp.options` | `ServerOptions`, `Negotiated`, negotiation rules |
+| `tftp.server` | `Server`, `ServerLimits`, `FileSystemHandler`, `AtomicWriter`, `RequestContext` |
+| `tftp.backends` | `MemoryHandler`, `HttpHandler`, `UpstreamHandler` (proxy), `Pipe` |
+| `tftp.relay` | `Relay` and routing helpers |
+| `tftp.aio` | `AsyncClient`, `AsyncServer` |
+| `tftp.capture` | trace events, `PcapWriter`, pcap/pcapng reading, `analyze`, filters |
+| `tftp.options` | `ServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `Opcode`, `ErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |
+| `tftp.uri` | `tftp://` URLs |
 | `tftp.netascii` | streaming netascii translation |
-| `tftp.errors` | `TftpError`, `RemoteError`, `ProtocolError`, `TransferTimeout` |
+| `tftp.errors` | `TftpError` and the typed `RemoteError` subclasses |
 | `tftp.cli` | the `pytftp` command (`cli` extra) |
 
 Everything is also importable from `tftp` directly. The complete reference,
@@ -139,7 +187,9 @@ python benchmarks/run.py
 ```
 
 `pytest -m "not slow"` skips the rollover tests; tests marked `interop` run
-against curl's TFTP client when curl is on `PATH`. See
+against curl, tftp-hpa, BusyBox and dnsmasq where installed (their servers need
+passwordless `sudo`). `sudo python tests/firmware_boot.py` boots iPXE and
+UEFI firmware in QEMU against the server. See
 [AGENTS.md](AGENTS.md) for the layout and conventions.
 
 ### Releasing

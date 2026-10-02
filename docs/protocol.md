@@ -4,14 +4,19 @@
 | --- | --- |
 | RFC 1350 | RRQ, WRQ, DATA, ACK, ERROR; `octet` and `netascii` modes (`mail` is refused) |
 | RFC 1123 §4.2.3.1 | Sorcerer's Apprentice fix |
+| RFC 1123 §4.2.3.2 | Exponential backoff of retransmissions |
+| RFC 1123 §4.2.3.4 | Requests sent to broadcast or multicast addresses ignored |
 | RFC 2347 | Option extension, OACK, ERROR 8 |
 | RFC 2348 | `blksize`, 8 to 65464 |
 | RFC 2349 | `timeout` (whole seconds) and `tsize` |
 | RFC 7440 | `windowsize`, 1 to 65535 |
-| tftp-hpa | `utimeout`, microseconds |
-| common practice | `rollover` (block number after 65535 wraps to 0 or 1) |
+| tftp-hpa | `utimeout`, `rollover`, `blksize2`, `cookie` -- off unless a server allows them |
+| RFC 3617 | `tftp://` URLs |
 
-RFC 2090 (multicast) is not implemented.
+RFC 2090 (multicast) and PXE MTFTP are not implemented.
+
+Tested against: iPXE (booting in QEMU), tftp-hpa 5.3 (server and client),
+BusyBox 1.37 (server and client), dnsmasq 2.92, curl.
 
 ## Negotiation
 
@@ -28,10 +33,24 @@ A client whose request is refused with ERROR 8 retries once with no options
 `tsize` is answered for any file whose size is known, except an empty one:
 curl rejects `tsize 0` in an OACK, and the transfer shows the size anyway.
 
+## Extensions and profiles
+
+Options are handlers in a registry, so an application can add its own. A
+server acknowledges the RFC options by default; tftp-hpa's extensions only
+when allowed (`ServerOptions(allowed=...)`), and any option can be refused
+outright for firmware that asks for it and then mishandles it
+(`refused={"windowsize"}`). Profiles bundle coherent settings: `pxe` (fit
+`blksize` to the interface MTU so boot ROMs never see IP fragments), `hpa`,
+`legacy`, `strict`.
+
 ## Under loss
 
-- **Retransmission** is driven only by timeouts on the sending side; a
-  duplicate ACK never triggers a resend when `windowsize` is 1.
+- **Retransmission** is driven only by timeouts on the sending side, backing
+  off exponentially; a duplicate ACK never triggers a resend when
+  `windowsize` is 1.
+- **Repeated OACKs** (the server's answer when ACK 0 or DATA 1 was lost) are
+  tolerated: a downloading client re-acknowledges, an uploading one waits for
+  its own timeout.
 - **Windows**: the receiver acknowledges every `windowsize` blocks. On a gap
   it immediately acknowledges the last block it has, once per gap, and the
   sender restarts right after it. The sender keeps the window in memory, so

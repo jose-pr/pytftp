@@ -1,6 +1,6 @@
 # tftp
 
-A **pure-Python TFTP client and server for IPv4 and IPv6** that implements the
+A **pure-Python TFTP client, server, relay and capture decoder for IPv4 and IPv6** that implements the
 whole of modern TFTP: RFC 1350, the option extension (RFC 2347) with
 `blksize`, `timeout`, `tsize` and `windowsize`, plus `utimeout`, block-number
 rollover and netascii. One event-loop thread serves any number of transfers,
@@ -44,6 +44,10 @@ pytftp serve /srv/tftp --write --json
   behaviour under loss.
 - [Serving files](serving.md) — handlers, containment, uploads, generated
   content.
+- [Backends](backends.md) — memory, an HTTP(S) gateway, a terminating proxy.
+- [Relaying](relay.md) — forwarding to upstream servers, packets unchanged.
+- [Capture and debugging](capture.md) — tracing, pcaps, reconstructing transfers.
+- [asyncio](async.md) — `AsyncClient`, `AsyncServer`, async handlers.
 - API reference: [Client](api/client.md), [Server](api/server.md),
   [Options](api/options.md), [Packets](api/packet.md),
   [Transfer engine](api/transfer.md).
