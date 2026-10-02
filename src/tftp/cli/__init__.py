@@ -1,8 +1,12 @@
 """The ``pytftp`` command line, built on the duho declarative CLI framework::
 
     pytftp get 192.0.2.1 pxelinux.0
+    pytftp get tftp://192.0.2.1/boot/pxelinux.0 --trace
     pytftp put 192.0.2.1 firmware.bin --blksize 1428 --windowsize 16
     pytftp serve /srv/tftp --port 6969 --write
+    pytftp serve --http https://images.example.com/pxe/ --compat pxe
+    pytftp relay 10.0.0.20 --route-subnet 10.1.0.0/16=10.1.0.5 --pcap relay.pcap
+    pytftp capture boot.pcapng --transfers --extract recovered/
 
 Installed by the ``cli`` extra (``pip install tftp[cli]``). Importing this
 module does not require duho: the console script is installed either way,
@@ -14,21 +18,23 @@ from __future__ import annotations
 import typing as _ty
 
 from .common import AUTO, Args, error
+from .capture import CaptureCmd
+from .relay import RelayCmd
 from .serve import Serve
 from .transfer import Get, Put
 
-__all__ = ["run", "Pytftp", "Get", "Put", "Serve"]
+__all__ = ["run", "Pytftp", "Get", "Put", "Serve", "RelayCmd", "CaptureCmd"]
 
 _NEEDS_EXTRA = "pytftp: the CLI needs the 'cli' extra -- pip install 'tftp[cli]'"
 
 
 class Pytftp(Args):
-    """TFTP client and server (RFC 1350, 2347-2349, 7440) for IPv4 and IPv6."""
+    """TFTP client, server, relay and capture decoder (RFC 1350, 2347-2349, 7440) for IPv4 and IPv6."""
 
     _parsername_ = "pytftp"
     _version_ = AUTO
     _distribution_ = "tftp"
-    _subcommands_ = [Get, Put, Serve]
+    _subcommands_ = [Get, Put, Serve, RelayCmd, CaptureCmd]
 
 
 def run(argv: "_ty.Sequence[str] | None" = None) -> "int | None":

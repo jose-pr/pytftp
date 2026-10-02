@@ -229,6 +229,7 @@ class AsyncServer(ServerBase):
             self._refuse(session, exc)
             return
         session.transfer = transfer
+        self.stats.add("started")
         if transfer.done:
             self._done(session, time.monotonic())
         else:

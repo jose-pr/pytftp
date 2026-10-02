@@ -242,3 +242,20 @@ def test_ipv6_client_ipv4_upstream(root, make_server, make_relay):
     server = make_server(root)
     relay = make_relay(upstream_of(server), host="::1")
     assert client_for(relay, host="::1").get("513.bin") == (root / "513.bin").read_bytes()
+
+
+def test_relay_stats(root, make_server, make_relay):
+    server = make_server(root)
+    relay = make_relay(upstream_of(server), linger=0.05)
+    client_for(relay).get("513.bin")
+    with pytest.raises(tftp.FileNotFound):
+        client_for(relay).get("missing")
+    assert wait_for(lambda: relay.stats["completed"] + relay.stats["failed"] == 2)
+    snapshot = relay.stats_snapshot()
+    assert (snapshot["requests"], snapshot["started"], snapshot["completed"], snapshot["failed"]) == (
+        2,
+        2,
+        1,
+        1,
+    )
+    assert snapshot["bytes_to_clients"] == 513 and snapshot["active"] == 0

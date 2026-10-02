@@ -26,11 +26,12 @@ src/tftp/
 │   ├── session.py     # one transfer: reply socket choice, handler -> engine
 │   ├── handler.py     # Handler protocol, FileSystemHandler, AtomicWriter
 │   ├── policy.py      # ServerLimits
+│   ├── stats.py       # Stats counters (server and relay)
 │   └── netinfo.py     # cached interface facts (broadcast addresses, MTU)
 ├── backends/          # memory.py, http.py (urllib gateway), proxy.py (upstream TFTP), pipe.py
 ├── relay/             # transparent relay: core.py (loop), session.py (per transfer), routing.py
 ├── capture/           # packet events, trace hooks, pcap decoding
-├── cli/               # pytftp (duho): common.py, transfer.py (get/put), serve.py
+├── cli/               # pytftp (duho): common.py, transfer.py (get/put), serve.py, relay.py, capture.py
 └── _sockets.py        # window-sized socket buffers (everything else is netimps)
 tests/                 # pytest; engine tests need no sockets
 benchmarks/            # run.py + committed results/*.json

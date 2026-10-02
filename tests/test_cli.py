@@ -96,3 +96,118 @@ def test_serve_end_to_end(root, tmp_path):
 def test_version():
     out = subprocess.run([sys.executable, "-m", "tftp", "--version"], capture_output=True, text=True)
     assert out.returncode == 0 and re.search(r"\d+\.\d+", out.stdout + out.stderr)
+
+
+def test_get_and_put_by_url_with_trace_and_pcap(root, make_server, tmp_path_factory, capsys):
+    server = make_server(root, writable=True)
+    out = tmp_path_factory.mktemp("url")
+    url = "tftp://127.0.0.1:%d/" % server.server_address[1]
+    pcap = out / "client.pcap"
+    assert run(["get", url + "sub/nested.bin", str(out / "n.bin"), "--trace", "--pcap", str(pcap)]) in (
+        None,
+        0,
+    )
+    assert (out / "n.bin").read_bytes() == b"nested"
+    trace = capsys.readouterr().err
+    assert "RRQ 'sub/nested.bin' octet" in trace and "DATA 1 (6 bytes)" in trace
+    from tftp.capture import analyze
+
+    (transfer,) = analyze(pcap, ports=[server.server_address[1]]).transfers
+    assert transfer.complete and transfer.data() == b"nested"
+    (out / "up.txt").write_bytes(b"a\nb\n")
+    assert run(["put", url + "up-url.txt;mode=netascii", str(out / "up.txt")]) in (None, 0)
+    assert (root / "up-url.txt").read_bytes() == b"a\nb\n"
+    assert run(["get", "127.0.0.1"]) == 2  # no file named
+
+
+def test_compat_profile(root, make_server, tmp_path_factory, capsys):
+    server = make_server(root)
+    target = tmp_path_factory.mktemp("compat") / "513.bin"
+    assert run(["get", "127.0.0.1", "513.bin", str(target), "-p", _port(server), "--compat", "legacy"]) in (
+        None,
+        0,
+    )
+    assert target.read_bytes() == (root / "513.bin").read_bytes()
+    assert "blksize 512" in capsys.readouterr().err  # legacy sends a plain RFC 1350 request
+
+
+def _serve_subprocess(args):
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "tftp", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    port = None
+    deadline = time.monotonic() + 15
+    while port is None and time.monotonic() < deadline:
+        match = re.search(r"port (\d+)", proc.stderr.readline())
+        if match:
+            port = int(match.group(1))
+    assert port, "never reported its port"
+    return proc, port
+
+
+def _stop(proc):
+    proc.terminate()
+    proc.wait(10)
+    proc.stdout.close()
+    proc.stderr.close()
+
+
+def test_relay_and_proxy_commands(root, make_server):
+    import tftp
+
+    upstream = make_server(root)
+    target = "127.0.0.1:%d" % upstream.server_address[1]
+    relay, relay_port = _serve_subprocess(["relay", target, "-l", "127.0.0.1", "-p", "0", "--json"])
+    try:
+        assert tftp.Client("127.0.0.1", relay_port).get("513.bin") == (root / "513.bin").read_bytes()
+        summary = json.loads(relay.stdout.readline())
+        assert summary["filename"] == "513.bin" and summary["reason"] == "complete"
+    finally:
+        _stop(relay)
+    proxy, proxy_port = _serve_subprocess(["serve", "--upstream", target, "-l", "127.0.0.1", "-p", "0"])
+    try:
+        client = tftp.Client("127.0.0.1", proxy_port, blksize=None)
+        assert client.get("big.bin") == (root / "big.bin").read_bytes()
+    finally:
+        _stop(proxy)
+
+
+def test_relay_needs_a_destination():
+    assert run(["relay"]) == 2
+    assert run(["relay", "--route-subnet", "nonsense"]) == 2
+
+
+def test_capture_command(root, make_server, tmp_path_factory, capsys):
+    from tftp.capture import PcapWriter
+
+    out = tmp_path_factory.mktemp("cap")
+    pcap = out / "server.pcap"
+    with PcapWriter(pcap) as writer:
+        server = make_server(root, trace=writer)
+        port = _port(server)
+        client_for_cli = __import__("tftp").Client("127.0.0.1", int(port))
+        client_for_cli.get("1428x3.bin")
+        try:
+            client_for_cli.get("missing")
+        except Exception:
+            pass
+        server.stop()
+    assert run(["capture", str(pcap), "-p", port, "--filter", "op=RRQ,ERROR"]) in (None, 0)
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 3 and "RRQ '1428x3.bin'" in lines[0] and "ERROR 1" in lines[-1]
+    assert run(["capture", str(pcap), "-p", port, "--json", "--no-packets", "--transfers"]) in (None, 0)
+    records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [r["transfer"]["filename"] for r in records] == ["1428x3.bin", "missing"]
+    assert records[0]["transfer"]["complete"] and records[1]["transfer"]["error"]["code"] == 1
+    target = out / "extracted"
+    assert run(["capture", str(pcap), "-p", port, "--no-packets", "--extract", str(target)]) in (None, 0)
+    (written,) = list(target.iterdir())
+    assert written.name.endswith("-1428x3.bin") and written.read_bytes() == (root / "1428x3.bin").read_bytes()
+
+
+def test_capture_errors(tmp_path):
+    assert run(["capture"]) == 2
+    assert run(["capture", str(tmp_path / "missing.pcap")]) == 2
+    (tmp_path / "junk.pcap").write_bytes(b"not a capture at all")
+    assert run(["capture", str(tmp_path / "junk.pcap")]) == 2
+    assert run(["capture", str(tmp_path / "junk.pcap"), "--filter", "colour=red"]) == 2

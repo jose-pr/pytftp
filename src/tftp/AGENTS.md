@@ -156,6 +156,13 @@ Lifecycle:
 - **`close()`** — stop and release every socket. Also the context-manager
   exit. A closed server cannot serve again.
 
+Statistics: **`stats`** (a `Stats`: `stats["completed"]`, `snapshot()`)
+counts `requests`, `refused` (refused before a transfer, including limits
+and `server busy`), `started`, `completed`, `failed`, `bytes_sent`,
+`bytes_received`, `retransmits`; **`stats_snapshot()`** returns them plus
+`active`. Thread-safe; meant for a metrics exporter. A `Relay` has the same,
+with `bytes_to_clients`/`bytes_from_clients`.
+
 Properties: `server_address` (the bound `(host, port, ...)`, valid after
 close), `supports_pktinfo`, `dual_stack`, `active_sessions`.
 
@@ -563,21 +570,47 @@ either way; without the extra it prints one line naming the extra and exits 1.
 `python -m tftp` is equivalent.
 
 ```
-pytftp get HOST REMOTE [LOCAL|-]   [-p PORT] [-m octet|netascii] [-b BLKSIZE] [-w WINDOW]
-                                   [-t TIMEOUT] [-r RETRIES] [--no-tsize] [--no-options] [-4|-6] [--json]
-pytftp put HOST LOCAL|- [REMOTE]   (same options)
-pytftp serve [ROOT] [-l ADDRESS] [-p PORT] [-W/--write] [--overwrite] [--no-create]
-                    [--max-blksize N] [--max-windowsize N] [--max-sessions N] [--json]
+pytftp get HOST REMOTE [LOCAL|-]       [-p PORT] [-m octet|netascii] [-b BLKSIZE] [-w WINDOW]
+pytftp get tftp://HOST[:PORT]/FILE [LOCAL|-]      [-t TIMEOUT] [-r RETRIES] [--no-tsize] [--no-options]
+                                       [--compat PROFILE] [-4|-6] [--json] [--trace] [--pcap FILE]
+pytftp put HOST LOCAL|- [REMOTE]       (same options; or put tftp://HOST/FILE LOCAL|-)
+pytftp serve [ROOT] [--http URL | --upstream HOST[:PORT]] [-l ADDRESS] [-p PORT] [-W/--write]
+             [--overwrite] [--no-create] [--compat PROFILE | --max-blksize N --max-windowsize N
+             --allow OPTION... --refuse OPTION... --fit-mtu] [--max-sessions N] [--max-per-client N]
+             [--json] [--trace] [--pcap FILE]
+pytftp relay [UPSTREAM] [--route-subnet CIDR=HOST[:PORT]]... [--route-prefix PREFIX=HOST[:PORT]]...
+             [-l ADDRESS] [-p PORT] [--idle-timeout S] [--max-sessions N] [--json] [--trace] [--pcap FILE]
+pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--transfers]
+             [--extract DIR] [--json] [--payload]
 ```
 
 - `-b 0` / `-w 0` request no `blksize` / `windowsize`; defaults are 1428 and 0.
+  `--compat PROFILE` (`strict`, `default`, `pxe`, `hpa`, `legacy`) replaces the
+  option flags with the profile's settings (client and server alike).
 - `get` writes to the remote file's basename by default; `-` is stdout.
-  `put` from `-` (stdin) needs a remote name.
-- Exit codes: 0 success, 1 the transfer failed (error text on stderr), 2 a
-  caller error (bad argument, missing local file).
-- `--json`: one JSON object on stdout per transfer (`serve` prints one line per
-  completed transfer); diagnostics always go to stderr.
-- `serve` logs each transfer at INFO on stderr; `-v`/`-q` adjust.
+  `put` from `-` (stdin) needs a remote name. A `tftp://` URL replaces HOST and
+  the remote name (and sets the mode with `;mode=netascii`).
+- `--trace` prints every datagram on stderr; `--pcap FILE` writes them as a
+  capture (Wireshark-readable).
+- `serve --http URL` is the HTTP gateway, `serve --upstream` the terminating
+  proxy; `--write` enables uploads for both. `--allow` adds extension options
+  to the standard four; `--refuse` removes any.
+- `relay` needs an UPSTREAM (the default route) or routes; prefix routes are
+  tried before subnet routes. `--json` prints one line per finished transfer
+  (its `RelaySummary`).
+- `capture` reads a pcap/pcapng file, a live pipe on stdin (`tcpdump -i eth0 -U
+  -w - udp | pytftp capture -`), or (Linux) an interface. Packets print as they
+  are decoded; `--transfers` adds a summary per transfer at the end;
+  `--extract DIR` writes each transfer's file as `<session>-<name>`
+  (`.partial` when incomplete). Ctrl-C ends a live capture and still prints
+  the summaries.
+- Exit codes: 0 success, 1 the transfer failed or the port could not be
+  bound (error text on stderr), 2 a caller error (bad argument, missing file,
+  unreadable capture, bad filter).
+- `--json`: one JSON object on stdout per transfer, session or packet;
+  diagnostics always go to stderr.
+- `serve` and `relay` log each transfer at INFO on stderr (`-v`/`-q` adjust)
+  and their final counters when stopped.
 
 ## Dependencies
 

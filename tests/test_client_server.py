@@ -310,3 +310,20 @@ def test_server_lifecycle(root):
     with pytest.raises(RuntimeError):
         server.serve_forever()
     assert "active" in repr(server)
+
+
+def test_server_stats(root, make_server):
+    server = make_server(root, writable=True)
+    client = client_for(server)
+    client.get("513.bin")
+    client.put("stats-up.bin", b"x" * 100)
+    with pytest.raises(tftp.FileNotFound):
+        client.get("missing")
+    deadline = time.monotonic() + 3
+    while server.stats["completed"] < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    snapshot = server.stats_snapshot()
+    assert snapshot["requests"] == 3 and snapshot["refused"] == 1
+    assert (snapshot["started"], snapshot["completed"], snapshot["failed"]) == (2, 2, 0)
+    assert snapshot["bytes_sent"] == 513 and snapshot["bytes_received"] == 100
+    assert "active" in snapshot

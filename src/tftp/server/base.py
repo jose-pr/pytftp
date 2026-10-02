@@ -25,6 +25,7 @@ from .listener import Arrival, Listener
 from .netinfo import InterfaceInfo
 from .policy import ServerLimits
 from .session import Session, reply_socket
+from .stats import SERVER_COUNTERS, Stats
 
 __all__ = ["ServerBase"]
 
@@ -86,6 +87,8 @@ class ServerBase:
         self._interfaces = InterfaceInfo()
         self._sessions: Dict[Tuple[str, int], Session] = {}
         self._per_client: Dict[str, int] = {}
+        #: Counters since start (:class:`Stats`); ``stats_snapshot()`` adds ``active``.
+        self.stats = Stats(*SERVER_COUNTERS)
         self._listener = Listener(host, port, pktinfo=reply_from_request_address)
         self._address: Tuple[Any, ...] = self._listener.sock.getsockname()
 
@@ -110,6 +113,12 @@ class ServerBase:
     def active_sessions(self) -> int:
         return len(self._sessions)
 
+    def stats_snapshot(self) -> Dict[str, int]:
+        """Every counter plus ``active`` (transfers in progress), for metrics."""
+        snapshot = self.stats.snapshot()
+        snapshot["active"] = len(self._sessions)
+        return snapshot
+
     # -- admission -------------------------------------------------------------------
 
     def _admit(self, arrival: Arrival, now: float) -> Optional[Session]:
@@ -124,7 +133,9 @@ class ServerBase:
         if self.ignore_broadcast and local is not None and self._interfaces.is_broadcast(local, ifindex):
             log.debug("ignoring broadcast request from %s to %s", sender[:2], local)
             return None
+        self.stats.add("requests")
         if len(data) > self.limits.max_request_size:
+            self.stats.add("refused")
             self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, "request too large")
             return None
         from netimps import unmap
@@ -135,19 +146,21 @@ class ServerBase:
         try:
             request = decode(data)
         except MalformedPacket as exc:
+            self.stats.add("refused")
             self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, str(exc))
             return None
         assert isinstance(request, Request)
         try:
             self.limits.check(request)
         except TftpError as exc:
+            self.stats.add("refused")
             self._listener.reply_error(sender, exc.code, exc.message)
             return None
-        if self.max_sessions is not None and len(self._sessions) >= self.max_sessions:
-            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
-            return None
         per_client = self.limits.max_sessions_per_client
-        if per_client is not None and self._per_client.get(key[0], 0) >= per_client:
+        if (self.max_sessions is not None and len(self._sessions) >= self.max_sessions) or (
+            per_client is not None and self._per_client.get(key[0], 0) >= per_client
+        ):
+            self.stats.add("refused")
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
             return None
 
@@ -200,6 +213,7 @@ class ServerBase:
         if not isinstance(exc, (TftpError, OSError)):
             log.error("handler failed for %r", session.context, exc_info=exc)
         log.info("%s refused: %s", session.context, error)
+        self.stats.add("refused")
         session.send(encode_error(error.code, error.message))
         session.close_stream(ok=False)
         self._release(session)
@@ -251,6 +265,11 @@ class ServerBase:
             transfer.negotiated if transfer else Negotiated(timeout=self.timeout),
             error,
         )
+        stats = self.stats
+        if transfer is not None:
+            stats.add("completed" if error is None else "failed")
+            stats.add("bytes_sent" if request.is_read else "bytes_received", transfer.bytes)
+            stats.add("retransmits", transfer.retransmits)
         if error is None:
             log.info(
                 "%s %r %s %s: %d bytes in %.3fs",

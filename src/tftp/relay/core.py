@@ -33,6 +33,7 @@ from ..server.netinfo import InterfaceInfo
 from ..server.policy import ServerLimits
 from ..server.session import reply_socket
 from .routing import Route, Upstream, upstream as to_upstream
+from ..server.stats import RELAY_COUNTERS, Stats
 from .session import RelaySession, RelaySummary
 
 __all__ = ["Relay"]
@@ -101,6 +102,8 @@ class Relay:
         self.ignore_broadcast = ignore_broadcast
         self.trace = trace
         self.on_session_end = on_session_end
+        #: Counters since start (:class:`Stats`).
+        self.stats = Stats(*RELAY_COUNTERS)
         self._listener = Listener(host, port, pktinfo=reply_from_request_address)
         self._address = self._listener.sock.getsockname()
         self._interfaces = InterfaceInfo()
@@ -130,6 +133,12 @@ class Relay:
     @property
     def active_sessions(self) -> int:
         return len(self._sessions)
+
+    def stats_snapshot(self) -> Dict[str, int]:
+        """Every counter plus ``active``, for metrics."""
+        snapshot = self.stats.snapshot()
+        snapshot["active"] = len(self._sessions)
+        return snapshot
 
     def serve_forever(self) -> None:
         if self._closed:
@@ -269,22 +278,29 @@ class Relay:
                 log.exception("relaying a request from %s failed", sender[:2])
 
     def _open(self, data: bytes, sender, local, ifindex: int, key, now: float) -> None:
+        self.stats.add("requests")
+        if not self._open_session(data, sender, local, ifindex, key, now):
+            self.stats.add("refused")
+        else:
+            self.stats.add("started")
+
+    def _open_session(self, data: bytes, sender, local, ifindex: int, key, now: float) -> bool:
         if len(data) > self.limits.max_request_size:
             self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, "request too large")
-            return
+            return False
         try:
             request = decode(data)
             assert isinstance(request, Request)
             self.limits.check(request)
         except MalformedPacket as exc:
             self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, str(exc))
-            return
+            return False
         except TftpError as exc:
             self._listener.reply_error(sender, exc.code, exc.message)
-            return
+            return False
         if self.max_sessions is not None and len(self._sessions) >= self.max_sessions:
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay busy")
-            return
+            return False
         context = RequestContext(request, sender, local, ifindex)
         try:
             target = self.route(request, context)
@@ -294,11 +310,11 @@ class Relay:
         except TftpError as exc:
             log.info("%r refused: %s", context, exc)
             self._listener.reply_error(sender, exc.code, exc.message)
-            return
+            return False
         except Exception:
             log.exception("route failed for %r", context)
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay error")
-            return
+            return False
 
         from netimps import bind
 
@@ -310,7 +326,7 @@ class Relay:
         except OSError:
             down.close()
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay error")
-            return
+            return False
         session = RelaySession(new_session_id("r"), client, key, down, up, upstream, request, context, now)
         self._sessions[key] = session
         self._selector.register(down, selectors.EVENT_READ, (session, "down"))
@@ -325,6 +341,7 @@ class Relay:
         )
         self._emit(session, self._listener.sock, data, sender, "in", "client")
         self._send(session, up, data, upstream)  # the request, byte for byte
+        return True
 
     def _on_datagram(self, session: RelaySession, leg: str, now: float) -> None:
         if session.closed:
@@ -378,6 +395,9 @@ class Relay:
                 pass
             sock.close()
         summary = session.summary(now)
+        self.stats.add("completed" if reason == "complete" else "failed")
+        self.stats.add("bytes_to_clients", summary.bytes_to_client)
+        self.stats.add("bytes_from_clients", summary.bytes_from_client)
         log.info(
             "[%s] %s %r %s <-> %s: %s, %d/%d bytes",
             session.id,

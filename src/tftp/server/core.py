@@ -384,6 +384,7 @@ class Server(ServerBase):
             self._refuse(session, outcome)
             return
         session.transfer = outcome
+        self.stats.add("started")
         self._selector.register(session.sock, selectors.EVENT_READ, session)
         if outcome.done:  # e.g. the first read failed
             self._done(session, now)

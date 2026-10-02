@@ -1,4 +1,12 @@
-"""``pytftp get`` and ``pytftp put``."""
+"""``pytftp get`` and ``pytftp put``.
+
+``HOST`` may also be a ``tftp://host[:port]/file[;mode=netascii]`` URL, which
+then names the remote file too::
+
+    pytftp get 192.0.2.1 boot/pxelinux.0 pxelinux.0
+    pytftp get tftp://192.0.2.1/boot/pxelinux.0 pxelinux.0
+    pytftp put tftp://192.0.2.1/incoming/log.txt log.txt
+"""
 
 from __future__ import annotations
 
@@ -7,6 +15,7 @@ import sys as _sys
 import typing as _ty
 
 from ..errors import TftpError
+from ..uri import parse_url
 from .common import ClientCmd, error
 
 __all__ = ["Get", "Put"]
@@ -16,6 +25,10 @@ def _basename(remote: str) -> str:
     return remote.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] or "download"
 
 
+def _is_url(text: str) -> bool:
+    return text.lower().startswith("tftp://")
+
+
 class Get(ClientCmd):
     """Download a file (RRQ)."""
 
@@ -23,11 +36,11 @@ class Get(ClientCmd):
     _parseraliases_ = ["download"]
 
     host: str
-    "Server name or address"
+    "Server name or address, or a tftp:// URL naming the file"
     ("host",)
 
-    remote: str
-    "File to request"
+    remote: _ty.Optional[str] = None
+    "File to request (with a URL: where to write it)"
     ("remote",)
 
     local: _ty.Optional[str] = None
@@ -35,19 +48,31 @@ class Get(ClientCmd):
     ("local",)
 
     def __call__(self) -> "int | None":
-        client = self._client(self.host)
-        target = self.local or _basename(self.remote)
+        mode = self.mode
+        if _is_url(self.host):
+            url = parse_url(self.host)
+            client = self._client(url.host, url.port)
+            remote, target = url.filename, self.remote or _basename(url.filename)
+            if mode == "octet":
+                mode = url.mode
+        else:
+            if not self.remote:
+                error("error: name the file to download (or give a tftp:// URL)")
+                return 2
+            client = self._client(self.host)
+            remote, target = self.remote, self.local or _basename(self.remote)
         try:
             if target == "-":
-                result = client.download(self.remote, _sys.stdout.buffer, mode=self.mode)
+                result = client.download(remote, _sys.stdout.buffer, mode=mode)
                 _sys.stdout.buffer.flush()
+                self.json_out = False  # stdout holds the file
             else:
-                result = client.download(self.remote, target, mode=self.mode)
+                result = client.download(remote, target, mode=mode)
         except TftpError as exc:
             error("error: %s" % exc)
             return 1
-        if target == "-" and self.json_out:
-            self.json_out = False  # stdout holds the file
+        finally:
+            self._close_trace()
         self._report(result)
         return None
 
@@ -59,7 +84,7 @@ class Put(ClientCmd):
     _parseraliases_ = ["upload"]
 
     host: str
-    "Server name or address"
+    "Server name or address, or a tftp:// URL naming the remote file"
     ("host",)
 
     local: str
@@ -71,23 +96,33 @@ class Put(ClientCmd):
     ("remote",)
 
     def __call__(self) -> "int | None":
-        client = self._client(self.host)
+        mode = self.mode
+        if _is_url(self.host):
+            url = parse_url(self.host)
+            client = self._client(url.host, url.port)
+            remote: _ty.Optional[str] = url.filename
+            if mode == "octet":
+                mode = url.mode
+        else:
+            client = self._client(self.host)
+            remote = self.remote
         if self.local == "-":
-            if not self.remote:
+            if not remote:
                 error("error: a remote name is required when reading stdin")
                 return 2
             source: _ty.Any = _sys.stdin.buffer
-            remote = self.remote
         else:
             if not _os.path.isfile(self.local):
                 error("error: no such file: %s" % self.local)
                 return 2
             source = self.local
-            remote = self.remote or _os.path.basename(self.local)
+            remote = remote or _os.path.basename(self.local)
         try:
-            result = client.upload(remote, source, mode=self.mode)
+            result = client.upload(remote, source, mode=mode)
         except TftpError as exc:
             error("error: %s" % exc)
             return 1
+        finally:
+            self._close_trace()
         self._report(result)
         return None

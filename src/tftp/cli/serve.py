@@ -1,4 +1,9 @@
-"""``pytftp serve``."""
+"""``pytftp serve``: a directory, an HTTP(S) gateway, or a terminating proxy.
+
+pytftp serve /srv/tftp --write
+pytftp serve --http https://images.example.com/pxe/
+pytftp serve --upstream 10.0.0.20 --compat pxe
+"""
 
 from __future__ import annotations
 
@@ -7,23 +12,31 @@ import logging as _logging
 import os as _os
 import typing as _ty
 
-from ..options import ServerOptions
+from ..options import PROFILES, STANDARD_OPTIONS, ServerOptions
 from ..result import TransferResult
-from ..server import Server
-from .common import Base, error, result_json
+from ..server import Server, ServerLimits
+from .common import PROFILE_NAMES, Choice, Traced, bind_failure, error, result_json
 
 __all__ = ["Serve"]
 
 
-class Serve(Base):
-    """Serve a directory until interrupted."""
+class Serve(Traced):
+    """Serve files until interrupted."""
 
     _parsername_ = "serve"
     _parseraliases_ = ["server"]
 
     root: str = "."
-    "Directory to serve"
+    "Directory to serve (ignored with --http or --upstream)"
     ("root",)
+
+    http: _ty.Optional[str] = None
+    "Serve from this HTTP(S) base URL instead of a directory"
+    ("--http",)
+
+    upstream: _ty.Optional[str] = None
+    "Serve from this TFTP server (host[:port]): a terminating proxy"
+    ("--upstream",)
 
     listen: str = "::"
     "Address to listen on; '::' is IPv6 and IPv4 where dual-stack works"
@@ -53,6 +66,10 @@ class Serve(Base):
     "Retransmissions before abandoning a transfer"
     ("--retries", "-r")
 
+    compat: _ty.Annotated[_ty.Optional[str], Choice(*PROFILE_NAMES)] = None
+    "Negotiate as this compatibility profile (replaces the option flags below)"
+    ("--compat",)
+
     max_blksize: int = 65464
     "Largest blksize granted"
     ("--max-blksize",)
@@ -61,21 +78,65 @@ class Serve(Base):
     "Largest windowsize granted"
     ("--max-windowsize",)
 
+    allow: _ty.List[str] = []
+    "Also accept this extension option (blksize2, utimeout, rollover, cookie); repeatable"
+    ("--allow",)
+
+    refuse: _ty.List[str] = []
+    "Never acknowledge this option, e.g. windowsize for broken firmware; repeatable"
+    ("--refuse",)
+
+    fit_mtu: bool = False
+    "Lower blksize to fit the arrival interface's MTU (no IP fragments)"
+    ("--fit-mtu",)
+
     max_sessions: int = 0
     "Concurrent transfers; 0 is unlimited"
     ("--max-sessions",)
 
-    def __call__(self) -> "int | None":
+    max_per_client: int = 0
+    "Concurrent transfers per client address; 0 is unlimited"
+    ("--max-per-client",)
+
+    def _handler(self) -> _ty.Any:
+        if self.http and self.upstream:
+            raise ValueError("give --http or --upstream, not both")
+        if self.http:
+            from ..backends import HttpHandler
+
+            return HttpHandler(self.http, writable=self.write)
+        if self.upstream:
+            from ..backends import UpstreamHandler
+
+            return UpstreamHandler(self.upstream, writable=self.write)
         if not _os.path.isdir(self.root):
-            error("error: not a directory: %s" % self.root)
+            raise ValueError("not a directory: %s" % self.root)
+        return self.root
+
+    def _options(self) -> ServerOptions:
+        if self.compat:
+            return PROFILES[self.compat].server
+        return ServerOptions(
+            max_blksize=self.max_blksize,
+            max_windowsize=self.max_windowsize,
+            allowed=STANDARD_OPTIONS | set(self.allow),
+            refused=self.refuse,
+            fit_mtu=self.fit_mtu,
+        )
+
+    def __call__(self) -> "int | None":
+        try:
+            handler = self._handler()
+            options = self._options()
+        except ValueError as exc:
+            error("error: %s" % exc)
             return 2
         on_complete: _ty.Optional[_ty.Callable[[TransferResult], None]] = None
         if self.json_out:
             on_complete = _print_json
-
         try:
             server = Server(
-                self.root,
+                handler,
                 self.listen,
                 self.port,
                 writable=self.write,
@@ -83,25 +144,20 @@ class Serve(Base):
                 overwrite=self.overwrite,
                 timeout=self.timeout,
                 retries=self.retries,
-                options=ServerOptions(max_blksize=self.max_blksize, max_windowsize=self.max_windowsize),
+                options=options,
                 max_sessions=self.max_sessions or None,
+                limits=ServerLimits(max_sessions_per_client=self.max_per_client or None),
                 on_complete=on_complete,
+                trace=self._tracer(),
             )
         except OSError as exc:
-            hint = None
-            try:
-                from netimps import bind_error_hint
-
-                hint = bind_error_hint(exc, self.port)
-            except ImportError:  # pragma: no cover
-                pass
-            error("error: cannot listen on %s port %d: %s" % (self.listen, self.port, hint or exc))
-            return 1
+            return bind_failure(exc, self.listen, self.port)
         logger = _logging.getLogger("tftp")
         address = server.server_address
+        source = self.http or (self.upstream and "upstream " + self.upstream) or _os.path.abspath(self.root)
         logger.info(
             "serving %s on %s port %d%s%s",
-            _os.path.abspath(self.root),
+            source,
             address[0],
             address[1],
             " (dual-stack)" if server.dual_stack else "",
@@ -113,6 +169,8 @@ class Serve(Base):
             pass
         finally:
             server.close()
+            self._close_trace()
+            logger.info("served: %s", server.stats_snapshot())
         return None
 
 

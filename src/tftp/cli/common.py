@@ -33,11 +33,40 @@ else:
 
 
 from ..client import Client
+from ..options import PROFILES
 from ..result import TransferResult
+
+__all__ = [
+    "AUTO",
+    "Args",
+    "Base",
+    "Traced",
+    "ClientCmd",
+    "error",
+    "result_json",
+    "PROFILE_NAMES",
+    "bind_failure",
+]
+
+#: ``--compat`` choices.
+PROFILE_NAMES = tuple(PROFILES)
 
 
 def error(text: str) -> None:
     print(text, file=_sys.stderr)
+
+
+def bind_failure(exc: OSError, address: str, port: int) -> int:
+    """Report a listening socket that could not be bound; exit status 1."""
+    hint = None
+    try:
+        from netimps import bind_error_hint
+
+        hint = bind_error_hint(exc, port)
+    except ImportError:  # pragma: no cover
+        pass
+    error("error: cannot listen on %s port %d: %s" % (address, port, hint or exc))
+    return 1
 
 
 def result_json(result: TransferResult) -> dict:
@@ -70,7 +99,43 @@ class Base(LoggingArgs, Cmd):
     ("--json",)
 
 
-class ClientCmd(Base):
+class Traced(Base):
+    """Commands that move packets can show them."""
+
+    trace: bool = False
+    "Print every datagram sent and received on stderr"
+    ("--trace",)
+
+    pcap: _ty.Optional[str] = None
+    "Also write every datagram to this pcap file (opens in Wireshark)"
+    ("--pcap",)
+
+    def _tracer(self) -> _ty.Optional[_ty.Callable[[_ty.Any], None]]:
+        hooks: _ty.List[_ty.Callable[[_ty.Any], None]] = []
+        if self.trace:
+
+            def show(event: _ty.Any) -> None:
+                print(event.format(), file=_sys.stderr, flush=True)
+
+            hooks.append(show)
+        if self.pcap:
+            from ..capture import PcapWriter
+
+            self._writer = PcapWriter(self.pcap)
+            hooks.append(self._writer)
+        if not hooks:
+            return None
+        if len(hooks) == 1:
+            return hooks[0]
+        return lambda event: [hook(event) for hook in hooks] and None
+
+    def _close_trace(self) -> None:
+        writer = getattr(self, "_writer", None)
+        if writer is not None:
+            writer.close()
+
+
+class ClientCmd(Traced):
     """Options every client command takes."""
 
     port: int = 69
@@ -105,6 +170,10 @@ class ClientCmd(Base):
     "Send a plain RFC 1350 request with no options at all"
     ("--no-options",)
 
+    compat: _ty.Annotated[_ty.Optional[str], Choice(*PROFILE_NAMES)] = None
+    "Use a compatibility profile's option settings (replaces the option flags)"
+    ("--compat",)
+
     ipv4: bool = False
     "Use IPv4"
     ("-4",)
@@ -113,24 +182,29 @@ class ClientCmd(Base):
     "Use IPv6"
     ("-6",)
 
-    def _client(self, host: str) -> Client:
+    def _client(self, host: str, port: _ty.Optional[int] = None) -> Client:
         family = 0
         if self.ipv4:
             family = _socket.AF_INET
         elif self.ipv6:
             family = _socket.AF_INET6
-        plain = self.no_options
-        return Client(
-            host,
-            self.port,
-            timeout=self.timeout,
-            retries=self.retries,
-            blksize=None if plain or not self.blksize else self.blksize,
-            windowsize=None if plain or not self.windowsize else self.windowsize,
-            tsize=not (plain or self.no_tsize),
-            timeout_option=not plain,
-            family=family,
-        )
+        settings: _ty.Dict[str, _ty.Any] = {
+            "timeout": self.timeout,
+            "retries": self.retries,
+            "family": family,
+            "trace": self._tracer(),
+        }
+        if self.compat:
+            settings.update(PROFILES[self.compat].client)
+        else:
+            plain = self.no_options
+            settings.update(
+                blksize=None if plain or not self.blksize else self.blksize,
+                windowsize=None if plain or not self.windowsize else self.windowsize,
+                tsize=not (plain or self.no_tsize),
+                timeout_option=not plain,
+            )
+        return Client(host, self.port if port is None else port, **settings)
 
     def _report(self, result: TransferResult) -> None:
         if self.json_out:
@@ -149,6 +223,3 @@ class ClientCmd(Base):
                 result.retransmits,
             )
         )
-
-
-__all__ = ["AUTO", "Args", "Base", "ClientCmd", "error", "result_json"]
