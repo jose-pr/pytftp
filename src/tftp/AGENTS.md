@@ -28,17 +28,21 @@ extra). Modules starting with `_` are internal.
 | RFC 2349 | `timeout` (1..255 s), `tsize` | `tsize` 0 is never sent in an OACK (curl rejects it) |
 | RFC 7440 | `windowsize` 1..65535 | server clamps to its `max_windowsize` (default 64) |
 | tftp-hpa | `blksize2`, `utimeout`, `rollover`, `cookie` | **off unless a server allows them** (`ServerOptions(allowed=...)`, a profile) |
+| Microsoft | `mstfwindow` (bootmgr/WDS variable window) | off unless allowed; runs a fixed window of 4 (the in-transfer resize is unpublished) |
+| pytftp | `x-list` (directory listing), `x-mtime` (modification time) | off unless allowed (`LISTING_OPTIONS`); other servers ignore them |
 | — | block-number rollover | blocks wrap after 65535 (to 0, or 1 with `rollover`); file size is unlimited |
 | RFC 1350 §6 | dallying | server re-ACKs a repeated last DATA for one timeout |
 
-Not implemented: RFC 2090 multicast.
+Not implemented: RFC 2090 multicast, PXE MTFTP.
 
 ## Client
 
 **`Client(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, max_duration=None, strict_source=True, utimeout=False, extra_options=None, registry=None, on_negotiated=None)`**
 
-- `host` — name or address; `"[v6]"`, `"host:port"` and `"[v6]:port"` are
-  accepted, and a port written there overrides `port`.
+- `host` — a string (name or address; `"[v6]"`, `"host:port"` and
+  `"[v6]:port"` are accepted, and a port written there overrides `port`), an
+  `ipaddress` address or interface (its address), or a `netimps.Host`. Kept
+  as given in `client.host`.
 - `timeout` — seconds before a retransmission. Requested from the server as
   `timeout` when whole (1..255); a fractional one is requested as
   `utimeout` only with `utimeout=True`, otherwise not at all. Nothing is
@@ -56,7 +60,8 @@ Not implemented: RFC 2090 multicast.
   interface the route to the server uses (1428 when unknown).
 - `on_negotiated(negotiated, peer)` — called once the server has answered
   the request (OACK, first DATA or ACK 0) and **before any data moves**;
-  `peer` is the server's transfer address.
+  `peer` is the server's transfer address. If it raises, the server is sent
+  an ERROR (the `TftpError`'s code, else 0) and the exception propagates.
 - `extra_options` — further options to request verbatim (`{"blksize2": 4096}`,
   `{"cookie": "x"}`, custom ones). A known option's answer is validated by
   its handler (`registry`, default `DEFAULT_REGISTRY`); an unknown one's
@@ -69,7 +74,8 @@ Not implemented: RFC 2090 multicast.
   and follows a server that wraps to 1.
 - `family` — `socket.AF_INET`/`AF_INET6` to force one; `0` is whatever the host
   resolves to first.
-- `local_address` — `(host, port)` to send from.
+- `local_address` — `(address, port)` to send from (the address as a string;
+  objects need a netimps whose `bind()` accepts them).
 - `fallback` — if the server answers the *request* with ERROR 8 (options
   refused), ask again once without options.
 - `dally` — after the last ACK of a download, keep re-ACKing a repeated last
@@ -93,6 +99,18 @@ Methods (each returns a `TransferResult` unless noted):
   ERROR 8 once the server answers (a server counts that as `declined`, not
   failed). `None` when the server reports no sizes, unless the file fits in
   the first 512-byte block. Raises like a download (`FileNotFound`...).
+- **`stat(filename, *, mode="octet") -> RemoteStat(size, mtime, is_dir)`** —
+  one probe like `size()`, also asking for `x-mtime` and `x-list`: a server
+  allowing them reports the modification time (seconds since the epoch) and
+  recognises a directory (`size` is then `None`); others leave `mtime`
+  `None` and report a directory as `FileNotFound`. A request refused with
+  ERROR 8 is retried as a plain size probe (with `fallback`). `filename`
+  `""` is the root.
+- **`listdir(dirname="") -> list[ListEntry(name, is_dir, size, mtime)]`** —
+  a directory listing from a server speaking `x-list`. `NotADirectoryError`
+  when the name is a file (the transfer is abandoned at once);
+  `FileNotFound` when it does not exist — which is also what a server
+  without listing support answers for a directory.
 - **`path(*segments, mode="octet") -> TftpPath`** — see Paths (needs the
   `path` extra).
 - `mode` is `"octet"` or `"netascii"`; `"binary"`/`"ascii"` are aliases. Any
@@ -113,14 +131,15 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 
 ## Server
 
-**`Server(root_or_handler, host="::", port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=None, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8)`**
+**`Server(root_or_handler, host="::", port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=None, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None)`**
 
 - `root_or_handler` — a directory (wrapped in `FileSystemHandler` with
   `writable`, `create`, `overwrite`) or any handler object (see below).
 - `host` — `"::"` (default) listens on IPv6 **and IPv4** with a dual-stack
   socket, falling back to `"0.0.0.0"` on a host without IPv6. `"0.0.0.0"` is
   IPv4 only; a specific address (`"192.0.2.10"`, `"[fe80::1%eth0]"`) listens
-  there alone.
+  there alone. An `ipaddress` address or `netimps.Host` is passed to netimps
+  as is (needs a netimps whose `bind()` accepts it).
 - `port` — `0` picks a free port; read it from `server_address`.
 - `timeout`, `retries` — per transfer, unless the client negotiates `timeout`.
 - `options` — a `ServerOptions` policy.
@@ -148,6 +167,11 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
   with `_tftp_fast_open_ = True` (`FileSystemHandler`, `MemoryHandler`)
   opens inline on the loop, anything else in a worker. A retransmitted
   request is still recognised while its open is pending.
+- `port_range` — `(low, high)` inclusive, a `range`, or a `PortRange`:
+  transfer sockets take their ports from it (round-robin, so a just-released
+  port is reused last), for a firewall to allow. With every port taken a
+  request gets ERROR 0 `"server busy"` (counted `refused`). `None` lets the
+  OS choose.
 - Raises `OSError` if the port cannot be bound (port 69 needs privileges on
   POSIX).
 
@@ -186,6 +210,10 @@ Behaviour worth knowing:
 - Socket buffers are grown to hold two windows (Windows defaults to 64 KiB,
   which a large window overflows).
 
+**`PortRange(low, high)`** — `PortRange.of(value)` takes `None`, a pair, a
+`range` or a `PortRange`; `len()`, iteration (every port once, from the
+round-robin cursor). `ValueError` outside 1..65535 or with `low > high`.
+
 **`ServerLimits(max_request_size=1024, max_filename_length=512, max_options=16, max_option_length=255, max_sessions_per_client=None, max_duration=None)`**
 — bounds on untrusted input. A request over a size/name/option limit gets
 ERROR 4 from the listening port; a client over `max_sessions_per_client`
@@ -201,8 +229,10 @@ ERROR 4 from the listening port; a client over `max_sessions_per_client`
   negotiated block size fits `max_window_bytes` — the memory a sender holds.
 - `allowed` — option names ever acknowledged; `None` is `STANDARD_OPTIONS`
   (`blksize`, `timeout`, `tsize`, `windowsize`). Add `EXTENSION_OPTIONS`
-  names (`blksize2`, `utimeout`, `rollover`, `cookie`) to accept tftp-hpa's
-  extensions. A name not in `registry` raises `ValueError`.
+  names to accept extensions: tftp-hpa's `blksize2`, `utimeout`,
+  `rollover`, `cookie`; Microsoft's `mstfwindow`; pytftp's `x-list`,
+  `x-mtime` (`LISTING_OPTIONS`). A name not in `registry` raises
+  `ValueError`.
 - `refused` — never acknowledged even if allowed: for firmware that asks for
   an option and then mishandles it (`refused={"windowsize"}`).
 - `fit_mtu` — lower `blksize` so a DATA packet fits the MTU of the interface
@@ -218,8 +248,9 @@ Every option is an **`OptionHandler`** (`name`, `standard`) with
 `None` to leave it out — RFC 2347's refusal; set fields on `ctx.result`) and
 `accept(requested, acked, ctx)` (client: validate and apply; raise
 `tftp.options.refuse(msg)` for ERROR 8). `ServerContext` carries `result`,
-`requested`, `acked`, `policy`, `is_read`, `size`, `mtu`, `ipv6` and
-`max_blksize` (policy limit after `fit_mtu`); `ClientContext` carries
+`requested`, `acked`, `policy`, `is_read`, `size`, `mtu`, `ipv6`, `stream`
+(what the handler opened for an RRQ, else `None`) and `max_blksize` (policy
+limit after `fit_mtu`); `ClientContext` carries
 `result`, `requested`, `is_read`. Custom values go in `ctx.result.extra`.
 
 **`OptionRegistry(handlers=BUILTIN_OPTIONS)`** — `register(handler,
@@ -234,7 +265,12 @@ Built-ins: `blksize`, `timeout`, `tsize`, `windowsize` (standard), and
 `blksize2` (largest power of two ≤ the request and the limit; ignored when
 `blksize` was acknowledged), `utimeout` (10 000..255 000 000 µs),
 `rollover` (0/1), `cookie` (echoed unchanged; a client refuses a changed
-one).
+one), `mstfwindow` (`Mstfwindow`: answers `31416` with `27182` and runs a
+window of 4 unless `windowsize` was also acknowledged; a client refuses any
+other answer), `x-list` (`XList`: acknowledged `1` only when the RRQ's stream
+is a listing, `_tftp_listing_`), `x-mtime` (`XMtime`: an RRQ's OACK carries
+the stream's `mtime` attribute or `fstat` time, whole seconds; omitted when
+unknown). `stream_mtime(stream)` is that lookup.
 
 **Profiles** — `Profile(name, server, client)`: `.server` is a
 `ServerOptions`, `.client` a fresh dict of `Client` keyword arguments.
@@ -245,7 +281,7 @@ one).
 | `STRICT` | standard options | `fallback=False` |
 | `DEFAULT` | standard options | library defaults |
 | `PXE` | standard + `rollover`, `utimeout`; `fit_mtu=True` | `blksize=1428` |
-| `HPA` | every extension | `utimeout=True` |
+| `HPA` | tftp-hpa's extensions | `utimeout=True` |
 | `LEGACY` | standard, `windowsize` refused | no options at all, `strict_source=False` |
 
 ```python
@@ -287,7 +323,8 @@ standard file object (`io.IOBase`) or declares `_tftp_copies_ = True`, and
 
 **`RequestContext`** — `request` (the `Request`), `peer` (client address
 tuple), `local_address` (the destination address as text, or `None` without
-pktinfo), `interface_index` (or 0); shortcuts `filename`, `mode`, `options`.
+pktinfo), `interface_index` (or 0), `listing` (the RRQ asks for `x-list=1`
+and the server allows it); shortcuts `filename`, `mode`, `options`.
 
 **`FileSystemHandler(root, *, writable=False, create=True, overwrite=False, backslash=True, max_upload=None)`**
 
@@ -298,7 +335,9 @@ pktinfo), `interface_index` (or 0); shortcuts `filename`, `mode`, `options`.
   path, symlinks included, must stay inside `root` (ERROR 2). On Windows,
   drive letters, `:` streams and reserved device names (`CON`, `NUL`, ...) are
   refused too.
-- Reads: a missing file or a directory is ERROR 1.
+- Reads: a missing file is ERROR 1, and so is a directory — unless
+  `context.listing`, when a directory (`""`, `.` or `/` for the root) is
+  answered with a `DirectoryListing`.
 - Writes: refused unless `writable` (ERROR 2); an existing file needs
   `overwrite` (else ERROR 6); a new file needs `create` (else ERROR 1); the
   directory must exist (directories are never created). An announced `tsize`
@@ -307,6 +346,15 @@ pktinfo), `interface_index` (or 0); shortcuts `filename`, `mode`, `options`.
 - Uploads go through `AtomicWriter`: **a failed or partial upload never
   appears or replaces anything**.
 - `resolve(filename) -> str` exposes the mapping (raises `TftpError`).
+
+**`tftp.listing`** — the `x-list` format: UTF-8 lines `<f|d> <size> <mtime|-> <name>`
+(`%`, CR, LF in names as `%25`, `%0D`, `%0A`). **`ListEntry(name, is_dir,
+size, mtime=None)`**, **`format_listing(entries) -> bytes`**,
+**`parse_listing(data) -> list`** (malformed lines skipped),
+**`DirectoryListing(directory, root=None)`** (a `BytesIO` with `size`,
+`mtime`, `_tftp_listing_`; sorted by name; leaves out symlinks resolving
+outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
+`MTIME_OPTION`.
 
 **`AtomicWriter(path, overwrite=True)`** — writes to a hidden temp file beside
 `path`; `close()` renames it into place (refusing with ERROR 6 if
@@ -317,7 +365,7 @@ pktinfo), `interface_index` (or 0); shortcuts `filename`, `mode`, `options`.
 **`AsyncClient(...)`** — `Client`'s arguments and rules (options, backoff,
 fallback, `trace`, `on_negotiated`); coroutine methods `download(filename,
 dest, *, mode, progress)`, `get`, `upload(filename, source, *, mode,
-progress)`, `put`, and the async generator **`stream(filename, *, mode,
+progress)`, `put`, `size`, `stat` (both in the executor), `listdir`, and the async generator **`stream(filename, *, mode,
 buffer=1 MiB)`** yielding chunks as they arrive (a slow consumer holds ACKs
 back; at most `buffer` bytes are held). Name resolution runs in the
 executor. Destinations: a path, a binary file (written on the loop — fine
@@ -374,7 +422,8 @@ without importing `tftp`. `filename`, `transfer_mode`;
 `Client` (default: the URI's host and port, library defaults). The URI host
 may be an address object; `Client` accepts one.
 
-Both support exactly what TFTP can do:
+Both support what TFTP can do, plus listing against a server speaking
+`x-list`:
 
 - `open("r")` streams a download; `open("w")` streams an upload that
   completes (and raises the server's error) on `close()`; `open("x")`
@@ -385,9 +434,15 @@ Both support exactly what TFTP can do:
   read sends the server an ERROR.
 - `read_bytes`, `read_text`, `write_bytes`, `write_text` (text newline
   handling is pathlib's), `copy()`/`move()` to and from any pathlib_next path.
-- `stat()` is a size probe (`FileStat`, `st_size` 0 when unknown);
-  `exists()`, `is_file()`; `is_dir()` is always `False`.
-- Listing, deleting, renaming, directories and permissions raise
+- `stat()` is one `Client.stat()` probe (`FileStat`: `st_size` and
+  `st_mtime` 0 when unknown, directory mode for a listed directory);
+  `exists()`, `is_file()`, `is_dir()`.
+- `iterdir()`, `walk()`, `glob()`/`rglob()` and `copy(..., recursive=True)`
+  need a server allowing `x-list` (one listing per directory, with each
+  entry's type, size and time, so no per-entry probe). Against other servers
+  a directory raises `FileNotFoundError`; listing a file raises
+  `NotADirectoryError`.
+- Deleting, renaming, creating directories and permissions raise
   `NotImplementedError`.
 - TFTP errors become pathlib's: `FileNotFoundError`, `PermissionError`,
   `FileExistsError`, `OSError(ENOSPC)`, `TimeoutError`, else `OSError(EIO)`.
@@ -404,8 +459,9 @@ Both support exactly what TFTP can do:
   waits for the PUT's response. HTTP 404/410 → ERROR 1, 401/403 → 2,
   409 → 6, 413/507 → 3, other → 0. `..` in a name → ERROR 2.
 - **`UpstreamHandler(upstream, *, client_options=None, buffer=1 MiB, stall_timeout=30.0, writable=False)`**
-  — terminating proxy: `upstream` is `"host"`, `"host:port"`,
-  `(host, port)`, or `upstream(context)` returning one. Each side
+  — terminating proxy: `upstream` is `"host"`, `"host:port"`, an address
+  object or `netimps.Host`, `(host, port)`, or `upstream(context)` returning
+  one. Each side
   negotiates independently (`client_options` for the upstream `Client`);
   only bytes cross, through a bounded pipe, so a slow client slows the
   upstream. The RRQ is answered after the upstream answers: its ERROR
@@ -421,7 +477,7 @@ Both support exactly what TFTP can do:
 
 ## Relay (`tftp.relay`)
 
-**`Relay(route, host="::", port=69, *, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None)`**
+**`Relay(route, host="::", port=69, *, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None)`**
 — a transparent application relay (there is no standard TFTP relay). The
 request is forwarded **byte for byte** from a fresh upstream-side socket; the
 upstream's TID is learned from its first answer (from the address asked);
@@ -431,8 +487,10 @@ library does not know work end to end. Each side negotiates nothing with the
 relay — the client sees the upstream's OACK. For different settings per side
 use `UpstreamHandler` (a terminating proxy) instead.
 
-- `route` — an upstream (`"host"`, `"host:port"`, `"[v6]:port"`,
-  `(host, port)`, `Upstream`) or `route(request, context) -> upstream | None`;
+- `port_range` — as for `Server`, for both sockets of each relayed transfer
+  (client side and upstream side).
+- `route` — an upstream (`"host"`, `"host:port"`, `"[v6]:port"`, an address
+  object or `netimps.Host`, `(host, port)`, `Upstream`) or `route(request, context) -> upstream | None`;
   `None` refuses with ERROR 2 `"no route"`. Hostnames are resolved per
   request (cached 60 s). Routes run on the relay's loop: keep them fast.
 - A transfer ends on: an ERROR either way (after ≤1 s), the final DATA/ACK
@@ -452,12 +510,17 @@ use `UpstreamHandler` (a terminating proxy) instead.
   `start`, `stop`, `close`, context manager; `server_address`,
   `supports_pktinfo`, `active_sessions`.
 
-Routing helpers (`tftp.relay`): **`upstream(value) -> Upstream(host, port)`**;
-**`by_subnet({cidr: upstream})`** (client address, longest prefix; mapped v4
-matches v4 networks); **`by_prefix({prefix: upstream})`** (filename, longest
-prefix, `\` = `/`, leading separators ignored); **`by_interface({ifindex or
-local address: upstream})`** (needs pktinfo); **`RouteTable(routes,
-default=None)`** (first match wins).
+Routing helpers (`tftp.relay`): **`upstream(value) -> Upstream(host, port)`**
+(`host` kept as given; only a string is split for a port);
+**`by_subnet({network: upstream})`** (keys: anything `netimps.parse(...,
+IPNetwork)` takes — CIDR strings, `ipaddress` networks, interfaces, addresses
+as /32 or /128, `(address, prefix)`; client address, longest prefix; mapped
+v4 matches v4 networks); **`by_prefix({prefix: upstream})`** (filename,
+longest prefix, `\` = `/`, leading separators ignored); **`by_interface({key:
+upstream})`** (keys: an interface index, a `netimps.Interface`, or the local
+address the request was sent to — string, `ipaddress` address or interface,
+`netimps.Host`; needs pktinfo); **`RouteTable(routes, default=None)`** (first
+match wins).
 
 ## Packet events (`tftp.capture`)
 
@@ -567,7 +630,8 @@ relay forwards unknown options untouched), `Data(block, data)`, `Ack(block)`,
   and real UTF-8 names decode naturally.
 - Constants: `DEFAULT_BLKSIZE` 512, `MIN_BLKSIZE` 8, `MAX_BLKSIZE` 65464,
   `MAX_WINDOWSIZE` 65535, `STANDARD_OPTIONS`, `EXTENSION_OPTIONS`,
-  `SUPPORTED_OPTIONS` (their union).
+  `LISTING_OPTIONS` (`x-list`, `x-mtime`), `SUPPORTED_OPTIONS` (standard and
+  extensions).
 
 ## URIs (RFC 3617)
 
@@ -577,7 +641,8 @@ relay forwards unknown options untouched), `Data(block, data)`, `Ack(block)`,
   (another scheme, no host or file, an unknown parameter, `mode=mail`) raises
   `ValueError`.
 - **`format_url(host, filename, port=69, mode="octet")`** — the inverse
-  (`str(TftpURL)` too); IPv6 hosts are bracketed.
+  (`str(TftpURL)` too); `host` may be an address or interface object or a
+  `netimps.Host`; IPv6 hosts are bracketed.
 - **`download_url(url, dest, *, progress=None, **client_options)`**,
   **`upload_url(url, source, ...)`** — one-shot transfers by URL.
 
@@ -620,12 +685,15 @@ pytftp get HOST REMOTE [LOCAL|-]       [-p PORT] [-m octet|netascii] [-b BLKSIZE
 pytftp get tftp://HOST[:PORT]/FILE [LOCAL|-]      [-t TIMEOUT] [-r RETRIES] [--no-tsize] [--no-options]
                                        [--compat PROFILE] [-4|-6] [--json] [--trace] [--pcap FILE]
 pytftp put HOST LOCAL|- [REMOTE]       (same options; or put tftp://HOST/FILE LOCAL|-)
+pytftp ls HOST [DIR] | tftp://HOST/DIR (same options) [--json]
 pytftp serve [ROOT] [--http URL | --upstream HOST[:PORT]] [-l ADDRESS] [-p PORT] [-W/--write]
              [--overwrite] [--no-create] [--compat PROFILE | --max-blksize N --max-windowsize N
-             --allow OPTION... --refuse OPTION... --fit-mtu] [--max-sessions N] [--max-per-client N]
-             [--json] [--trace] [--pcap FILE]
+             --allow OPTION... --refuse OPTION... --fit-mtu] [--listing] [--max-sessions N]
+             [--max-per-client N] [--port-range LOW:HIGH] [--per-client] [--ignore-case]
+             [--remap REGEX=REPLACEMENT]... [--json] [--trace] [--pcap FILE]
 pytftp relay [UPSTREAM] [--route-subnet CIDR=HOST[:PORT]]... [--route-prefix PREFIX=HOST[:PORT]]...
-             [-l ADDRESS] [-p PORT] [--idle-timeout S] [--max-sessions N] [--json] [--trace] [--pcap FILE]
+             [-l ADDRESS] [-p PORT] [--idle-timeout S] [--max-sessions N] [--port-range LOW:HIGH]
+             [--json] [--trace] [--pcap FILE]
 pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--transfers]
              [--extract DIR] [--json] [--payload]
 ```
@@ -641,6 +709,16 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
 - `serve --http URL` is the HTTP gateway, `serve --upstream` the terminating
   proxy; `--write` enables uploads for both. `--allow` adds extension options
   to the standard four; `--refuse` removes any.
+- `serve --listing` allows `x-list`/`x-mtime` (with `--compat` too), which
+  `pytftp ls` and `TftpPath.iterdir()` need. `--port-range` pins transfer
+  ports. Directory serving only: `--per-client` serves `ROOT/<client
+  address>/` when it exists (IPv6 `:` written `-`), else `ROOT`;
+  `--ignore-case` finds names whatever their case (the exact name wins).
+  `--remap REGEX=REPLACEMENT` (repeatable, split at the first `=`) rewrites
+  requested names with the first matching rule, for any source. These are
+  CLI conveniences, not library API.
+- `ls` prints `type size time name` per entry (`--json`: a list of entries);
+  exit 1 for a file, a missing name, or a server without listing.
 - `relay` needs an UPSTREAM (the default route) or routes; prefix routes are
   tried before subnet routes. `--json` prints one line per finished transfer
   (its `RelaySummary`).
@@ -662,6 +740,8 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
 
 `netimps` (required, no dependencies of its own; imported lazily, on the
 first transfer or server): pktinfo receive (`UdpEndpoint`), socket binding,
-host:port parsing, bind-error hints. Importing netimps installs its additive `recvmsg`/`sendmsg`
+host:port parsing, address/network types (`AddressLike`, `IPNetworkLike`,
+`Host`, `Interface`: what the address-taking parameters accept), bind-error
+hints. Importing netimps installs its additive `recvmsg`/`sendmsg`
 socket patch on Windows unless `NETIMPS_NO_SOCKET_PATCH=1` is set first.
 `duho` (optional, `cli` extra).

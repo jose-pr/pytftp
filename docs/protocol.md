@@ -11,6 +11,8 @@
 | RFC 2349 | `timeout` (whole seconds) and `tsize` |
 | RFC 7440 | `windowsize`, 1 to 65535 |
 | tftp-hpa | `utimeout`, `rollover`, `blksize2`, `cookie` -- off unless a server allows them |
+| Microsoft | `mstfwindow`, Windows bootmgr's variable window -- off unless allowed |
+| pytftp | `x-list` and `x-mtime`: directory listings and modification times -- off unless allowed |
 | RFC 3617 | `tftp://` URLs |
 
 RFC 2090 (multicast) and PXE MTFTP are not implemented.
@@ -42,6 +44,27 @@ outright for firmware that asks for it and then mishandles it
 (`refused={"windowsize"}`). Profiles bundle coherent settings: `pxe` (fit
 `blksize` to the interface MTU so boot ROMs never see IP fragments), `hpa`,
 `legacy`, `strict`.
+
+### `mstfwindow`
+
+Windows Boot Manager (Windows 8 and later) offers `mstfwindow=31416`; a WDS
+server answers `27182` and both start with a window of 4 blocks. The client
+can then resize the window through its ACKs, in a format Microsoft has not
+published, so this library keeps the window at 4 (bytes after an ACK's block
+number are ignored). Allow it with `--allow mstfwindow` or
+`ServerOptions(allowed=STANDARD_OPTIONS | {"mstfwindow"})`. Recent bootmgr
+also negotiates the standard `windowsize`, which wins when both are
+acknowledged.
+
+### Listing and modification times
+
+TFTP has no way to list a directory or learn a file's time. A pytftp server
+that allows `LISTING_OPTIONS` (`pytftp serve --listing`) answers an RRQ for a
+directory carrying `x-list=1` with a text listing, acknowledging `x-list` in
+its OACK, and puts a file's modification time in the OACK when asked for
+`x-mtime`. A server that does not know them ignores them (RFC 2347): a
+directory then reads as "file not found". `Client.stat()`, `Client.listdir()`,
+`pytftp ls` and `TftpPath.iterdir()`/`walk()`/`glob()` build on this.
 
 ## Under loss
 

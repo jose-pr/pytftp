@@ -46,6 +46,52 @@ mapped by errno.
 Handlers run on the server's single event-loop thread, so they should return
 quickly.
 
+## Composing handlers
+
+Handlers wrap each other: one that serves each client its own directory is
+a few lines (`pytftp serve --per-client` does the same):
+
+```python
+import os
+import tftp
+
+class PerClientRoot:
+    def __init__(self, root, **options):
+        self.root, self.options = root, options
+
+    def _pick(self, context):
+        own = os.path.join(self.root, context.peer[0].replace(":", "-"))
+        return tftp.FileSystemHandler(own if os.path.isdir(own) else self.root, **self.options)
+
+    def open_read(self, context):
+        return self._pick(context).open_read(context)
+
+    def open_write(self, context, size):
+        return self._pick(context).open_write(context, size)
+```
+
+Renaming requests (`pytftp serve --remap`) or matching names whatever their
+case (`--ignore-case`) follow the same pattern: rewrite the request, or
+override `FileSystemHandler.resolve`.
+
+## Behind a firewall
+
+Every transfer runs on its own UDP port. Pin them to a range a firewall can
+allow:
+
+```python
+tftp.Server("/srv/tftp", port_range=(50000, 50100))
+```
+
+(`pytftp serve --port-range 50000:50100`; the relay takes the same.) A
+request arriving with every port in use is answered "server busy".
+
+## Directory listings
+
+`ServerOptions(allowed=tftp.STANDARD_OPTIONS | tftp.LISTING_OPTIONS)` (or
+`pytftp serve --listing`) lets pytftp clients list directories and see
+modification times; see [Paths](paths.md).
+
 ## Watching transfers
 
 ```python

@@ -74,6 +74,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   directory, `--http` gateway or `--upstream` proxy), `relay`, `capture`;
   `--compat` profiles, `--trace` and `--pcap` on every command that moves
   packets, `--json` output.
+- `port_range=` on `Server`, `AsyncServer` and `Relay` (`PortRange`):
+  transfer sockets take their ports from a range a firewall can allow;
+  `--port-range` on `pytftp serve` and `relay`.
+- `pytftp serve --per-client`, `--ignore-case` and `--remap REGEX=REPLACEMENT`
+  (handler wrappers private to the CLI).
+- `mstfwindow`, Windows bootmgr's variable-window option, as an extension a
+  server may allow (fixed window of 4).
+- pytftp's `x-list` and `x-mtime` extensions (`LISTING_OPTIONS`): directory
+  listings (`tftp.listing`) and modification times. `Client.stat()`,
+  `Client.listdir()` (async too), `pytftp ls`, `pytftp serve --listing`, and
+  `iterdir`/`walk`/`glob`/`is_dir`/`st_mtime` on `TftpPath` and `TftpUriPath`.
+- Hosts, networks and interfaces accepted as objects (`ipaddress` types,
+  `netimps.Host`, `netimps.Interface`) wherever an address is taken, typed
+  with netimps' aliases.
 - Loopback throughput benchmark (`benchmarks/run.py`).
 
 [Unreleased]: https://github.com/jose-pr/pytftp/commits/main

@@ -24,8 +24,8 @@ with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 ## Features
 
 - **Complete option support** — `blksize` up to 65464, RFC 7440 windows,
-  `tsize` both ways, `timeout`, and tftp-hpa's `utimeout`, `rollover`,
-  `blksize2`, `cookie`. Unlimited file size. A registry for your own options,
+  `tsize` both ways, `timeout`, tftp-hpa's `utimeout`, `rollover`,
+  `blksize2`, `cookie`, and Windows bootmgr's `mstfwindow`. Unlimited file size. A registry for your own options,
   and profiles (`pxe`, `hpa`, `legacy`, `strict`) for quirky peers.
 - **Fast** — windowed transfers move hundreds of MiB/s over loopback in pure
   Python (see [benchmarks](benchmarks/README.md)); the hot path reads into
@@ -52,6 +52,11 @@ with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 - **Capture and debugging** — trace every datagram from the client, server or
   relay; write Wireshark-readable pcaps; read pcap/pcapng files or a live
   `tcpdump` pipe, reconstruct each transfer and extract its file.
+- **Directory listings** — an opt-in extension between pytftp peers: `pytftp ls`,
+  `Client.listdir()`, and `iterdir`/`walk`/`glob` on paths; other servers
+  simply ignore it.
+- **Deployment** — transfer ports pinned to a range for firewalls; per-client
+  roots, case-insensitive names and filename remapping in `pytftp serve`.
 - **asyncio** — `AsyncClient` and `AsyncServer` with async handlers and streams.
 - **pathlib** — `client.path("boot/x").read_bytes()`, and `tftp://` URLs in
   [pathlib-next](https://github.com/jose-pr/pathlib-next), so
