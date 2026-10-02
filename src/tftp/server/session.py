@@ -160,7 +160,14 @@ class Session:
             pass
 
     def open(
-        self, handler: Any, policy: ServerOptions, timeout: float, retries: int, now: float, **engine: Any
+        self,
+        handler: Any,
+        policy: ServerOptions,
+        timeout: float,
+        retries: int,
+        now: float,
+        mtu: Optional[int] = None,
+        **engine: Any,
     ) -> Transfer:
         """Ask ``handler`` for the stream, negotiate, and build the transfer.
 
@@ -175,7 +182,8 @@ class Session:
             raise TftpError(ErrorCode.ILLEGAL_OPERATION, "mail mode is not supported")
         if mode not in ("octet", "netascii"):
             raise TftpError(ErrorCode.ILLEGAL_OPERATION, "unknown mode %r" % mode)
-        wants_size = "tsize" in request.options and "tsize" in policy.allowed
+        wants_size = "tsize" in request.options and policy.accepts("tsize")
+        ipv6 = self.sock.family == socket.AF_INET6
 
         if request.is_read:
             stream = handler.open_read(self.context)
@@ -187,13 +195,15 @@ class Session:
             else:
                 size = stream_size(stream) if wants_size else None
                 reader = stream
-            negotiated = negotiate(request.options, policy, is_read=True, timeout=timeout, size=size)
+            negotiated = negotiate(
+                request.options, policy, is_read=True, timeout=timeout, size=size, mtu=mtu, ipv6=ipv6
+            )
             fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
             oack = encode_oack(negotiated.options) if negotiated.options else None
             log.debug("%r: %r", self.context, negotiated)
             return Sender(self.send, as_readinto(reader), negotiated, retries, now, oack=oack, **engine)
 
-        negotiated = negotiate(request.options, policy, is_read=False, timeout=timeout)
+        negotiated = negotiate(request.options, policy, is_read=False, timeout=timeout, mtu=mtu, ipv6=ipv6)
         fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
         stream = handler.open_write(self.context, negotiated.tsize)
         self._hook_wakeup(stream)

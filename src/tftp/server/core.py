@@ -399,6 +399,7 @@ class Server:
                 self.timeout,
                 self.retries,
                 now,
+                mtu=self._interfaces.mtu(ifindex) if self.options.fit_mtu else None,
                 backoff=self.backoff,
                 max_timeout=self.max_timeout,
                 expires=None if max_duration is None else now + max_duration,

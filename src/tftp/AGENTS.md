@@ -27,21 +27,22 @@ extra). Modules starting with `_` are internal.
 | RFC 2348 | `blksize` 8..65464 | server clamps to its `max_blksize` |
 | RFC 2349 | `timeout` (1..255 s), `tsize` | `tsize` 0 is never sent in an OACK (curl rejects it) |
 | RFC 7440 | `windowsize` 1..65535 | server clamps to its `max_windowsize` (default 64) |
-| tftp-hpa | `utimeout` (microseconds) | sent by the client for a fractional `timeout` |
-| common | `rollover` 0/1 | block numbers wrap after 65535; file size is unlimited |
+| tftp-hpa | `blksize2`, `utimeout`, `rollover`, `cookie` | **off unless a server allows them** (`ServerOptions(allowed=...)`, a profile) |
+| — | block-number rollover | blocks wrap after 65535 (to 0, or 1 with `rollover`); file size is unlimited |
 | RFC 1350 §6 | dallying | server re-ACKs a repeated last DATA for one timeout |
 
 Not implemented: RFC 2090 multicast.
 
 ## Client
 
-**`Client(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, max_duration=None, strict_source=True)`**
+**`Client(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, max_duration=None, strict_source=True, utimeout=False, extra_options=None, registry=None)`**
 
 - `host` — name or address; `"[v6]"`, `"host:port"` and `"[v6]:port"` are
   accepted, and a port written there overrides `port`.
 - `timeout` — seconds before a retransmission. Requested from the server as
-  `timeout` when whole (1..255) and as `utimeout` when fractional, unless
-  `timeout_option=False`.
+  `timeout` when whole (1..255); a fractional one is requested as
+  `utimeout` only with `utimeout=True`, otherwise not at all. Nothing is
+  requested with `timeout_option=False`.
 - `retries` — retransmissions of one packet before `TransferTimeout`.
 - `backoff`, `max_timeout` — each consecutive retransmission (of the
   request too) waits `backoff` times longer, up to `max_timeout` (default
@@ -51,7 +52,13 @@ Not implemented: RFC 2090 multicast.
   was sent to. `False` accepts a multi-homed server answering from another
   address (the transfer then locks on to that address and port).
 - `blksize` — requested; `None` asks for nothing (512). The default 1428 fits
-  one Ethernet frame on IPv4 and IPv6.
+  one Ethernet frame on IPv4 and IPv6. `"mtu"` sizes it to the MTU of the
+  interface the route to the server uses (1428 when unknown).
+- `extra_options` — further options to request verbatim (`{"blksize2": 4096}`,
+  `{"cookie": "x"}`, custom ones). A known option's answer is validated by
+  its handler (`registry`, default `DEFAULT_REGISTRY`); an unknown one's
+  answer lands in `result.negotiated.extra`. Naming a built-in twice (here
+  and as a keyword) raises `ValueError`.
 - `windowsize` — requested RFC 7440 window; `None` asks for nothing (1).
 - `tsize` — ask for the size (RRQ) or announce it (WRQ, when the source size
   can be determined).
@@ -163,12 +170,65 @@ ERROR 4 from the listening port; a client over `max_sessions_per_client`
 `max_duration` ends a transfer that runs longer (ERROR 0 to the peer,
 `TransferTimeout` in the result).
 
-**`ServerOptions(max_blksize=65464, max_windowsize=64, allowed=SUPPORTED_OPTIONS)`**
-— the negotiation policy. A larger request is answered with the maximum
-(which the RFCs allow). `allowed` is a subset of `SUPPORTED_OPTIONS`; options
-outside it are never acknowledged. A sender holds a whole window in memory, so
-`max_windowsize * max_blksize` bounds memory per transfer. Invalid values raise
-`ValueError`.
+**`ServerOptions(max_blksize=65464, max_windowsize=64, max_window_bytes=4 MiB, allowed=None, refused=(), fit_mtu=False, registry=None)`**
+— the negotiation policy.
+
+- A larger `blksize`/`windowsize` request is answered with the maximum
+  (which the RFCs allow). `windowsize` is also lowered so one window of the
+  negotiated block size fits `max_window_bytes` — the memory a sender holds.
+- `allowed` — option names ever acknowledged; `None` is `STANDARD_OPTIONS`
+  (`blksize`, `timeout`, `tsize`, `windowsize`). Add `EXTENSION_OPTIONS`
+  names (`blksize2`, `utimeout`, `rollover`, `cookie`) to accept tftp-hpa's
+  extensions. A name not in `registry` raises `ValueError`.
+- `refused` — never acknowledged even if allowed: for firmware that asks for
+  an option and then mishandles it (`refused={"windowsize"}`).
+- `fit_mtu` — lower `blksize` so a DATA packet fits the MTU of the interface
+  the request arrived on (IP + UDP + 4-byte header): 1468 on IPv4 and 1448
+  on IPv6 for a 1500 MTU. Needs pktinfo for the interface; boot ROMs often
+  cannot reassemble fragments. Interface facts are cached for 30 s.
+- `accepts(name)` — `name` in `allowed` and not in `refused`.
+
+## Options, registry and profiles
+
+Every option is an **`OptionHandler`** (`name`, `standard`) with
+`negotiate(value, ctx) -> str | None` (server: the value to acknowledge, or
+`None` to leave it out — RFC 2347's refusal; set fields on `ctx.result`) and
+`accept(requested, acked, ctx)` (client: validate and apply; raise
+`tftp.options.refuse(msg)` for ERROR 8). `ServerContext` carries `result`,
+`requested`, `acked`, `policy`, `is_read`, `size`, `mtu`, `ipv6` and
+`max_blksize` (policy limit after `fit_mtu`); `ClientContext` carries
+`result`, `requested`, `is_read`. Custom values go in `ctx.result.extra`.
+
+**`OptionRegistry(handlers=BUILTIN_OPTIONS)`** — `register(handler,
+replace=False)` (a duplicate name raises), `unregister(name)`, `get(name)`,
+`in`, iteration, `names()`, `standard()`, `copy()`. **Registration order is
+negotiation order** (`windowsize` after the block size it depends on).
+`DEFAULT_REGISTRY` is what servers and clients use unless given another;
+`register_option(handler)` adds to it. A custom option must also be in a
+server's `allowed`.
+
+Built-ins: `blksize`, `timeout`, `tsize`, `windowsize` (standard), and
+`blksize2` (largest power of two ≤ the request and the limit; ignored when
+`blksize` was acknowledged), `utimeout` (10 000..255 000 000 µs),
+`rollover` (0/1), `cookie` (echoed unchanged; a client refuses a changed
+one).
+
+**Profiles** — `Profile(name, server, client)`: `.server` is a
+`ServerOptions`, `.client` a fresh dict of `Client` keyword arguments.
+`PROFILES` maps names to the five presets:
+
+| profile | server | client |
+| --- | --- | --- |
+| `STRICT` | standard options | `fallback=False` |
+| `DEFAULT` | standard options | library defaults |
+| `PXE` | standard + `rollover`, `utimeout`; `fit_mtu=True` | `blksize=1428` |
+| `HPA` | every extension | `utimeout=True` |
+| `LEGACY` | standard, `windowsize` refused | no options at all, `strict_source=False` |
+
+```python
+tftp.Server("/srv/tftp", options=tftp.PXE.server)
+tftp.Client("192.0.2.1", **tftp.LEGACY.client)
+```
 
 ## Handlers
 
@@ -271,7 +331,8 @@ lower-cased, first occurrence wins, mode lower-cased), `Data(block, data)`,
 - Strings are UTF-8 with `surrogateescape`, so any byte sequence round-trips
   and real UTF-8 names decode naturally.
 - Constants: `DEFAULT_BLKSIZE` 512, `MIN_BLKSIZE` 8, `MAX_BLKSIZE` 65464,
-  `MAX_WINDOWSIZE` 65535, `SUPPORTED_OPTIONS`.
+  `MAX_WINDOWSIZE` 65535, `STANDARD_OPTIONS`, `EXTENSION_OPTIONS`,
+  `SUPPORTED_OPTIONS` (their union).
 
 ## Netascii
 

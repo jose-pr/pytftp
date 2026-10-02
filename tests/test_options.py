@@ -3,7 +3,7 @@ import pytest
 import tftp
 from tftp.options import accept_oack, negotiate, request_options
 
-POLICY = tftp.ServerOptions(max_blksize=8192, max_windowsize=16)
+POLICY = tftp.ServerOptions(max_blksize=8192, max_windowsize=16, allowed=tftp.SUPPORTED_OPTIONS)
 
 
 def test_negotiate_accepts_and_clamps():
@@ -55,6 +55,7 @@ def test_negotiate_write_tsize_echoes():
 def test_negotiate_utimeout_and_allowed():
     result = negotiate({"utimeout": "250000"}, POLICY, is_read=True, timeout=1)
     assert result.timeout == 0.25
+    assert negotiate({"utimeout": "250000"}, tftp.ServerOptions(), is_read=True, timeout=1).options == {}
     narrow = tftp.ServerOptions(allowed=frozenset({"blksize"}))
     assert negotiate({"tsize": "0", "blksize": "1024"}, narrow, is_read=True, timeout=1, size=5).options == {
         "blksize": "1024"
@@ -78,8 +79,9 @@ def test_request_options():
         "tsize": "0",
         "rollover": "0",
     }
-    assert request_options(timeout=0.25) == {"utimeout": "250000"}
-    assert request_options(timeout=300) == {"utimeout": "255000000"}
+    assert request_options(timeout=0.25) == {}  # utimeout is an extension: opt in
+    assert request_options(timeout=0.25, utimeout=True) == {"utimeout": "250000"}
+    assert request_options(timeout=300, utimeout=True) == {"utimeout": "255000000"}
     for bad in ({"blksize": 7}, {"windowsize": 0}, {"rollover": 2}, {"timeout": 0}, {"tsize": -1}):
         with pytest.raises(ValueError):
             request_options(**bad)

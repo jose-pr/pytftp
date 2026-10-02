@@ -125,9 +125,12 @@ def test_negotiation_is_clamped_by_server_policy(root, make_server):
 
 
 def test_fractional_timeout_negotiates_utimeout(root, make_server):
-    server = make_server(root)
-    result = client_for(server, timeout=0.25).download("one.bin", io.BytesIO())
+    server = make_server(root, options=tftp.HPA.server)
+    result = client_for(server, timeout=0.25, utimeout=True).download("one.bin", io.BytesIO())
     assert result.negotiated.options.get("utimeout") == "250000"
+    plain = make_server(root)  # extension not allowed by default: left out
+    result = client_for(plain, timeout=0.25, utimeout=True).download("one.bin", io.BytesIO())
+    assert "utimeout" not in result.negotiated.options
 
 
 def test_progress_reports_bytes_and_total(root, make_server):

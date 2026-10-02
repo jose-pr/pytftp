@@ -6,11 +6,19 @@ import io
 import os
 import socket
 import time
-from typing import Any, BinaryIO, Callable, Dict, Optional, Tuple, Union
+from typing import Any, BinaryIO, Callable, Dict, Mapping, Optional, Tuple, Union
 
 from .errors import ProtocolError, RemoteError, TransferTimeout
 from .netascii import NetasciiReader, NetasciiWriter, encoded_size
-from .options import DEFAULT_BLKSIZE, Negotiated, accept_oack, request_options
+from .options import (
+    DEFAULT_BLKSIZE,
+    MAX_BLKSIZE,
+    MIN_BLKSIZE,
+    Negotiated,
+    OptionRegistry,
+    accept_oack,
+    request_options,
+)
 from .packet import ErrorCode, Opcode, encode_ack, encode_error, encode_request, decode
 from .result import TransferResult
 from ._sockets import fit_window
@@ -52,6 +60,22 @@ def _source_size(source: Any) -> Optional[int]:
         return None
 
 
+def _mtu_blksize(server: Any) -> int:
+    """The largest blksize that fits the MTU toward ``server``, or 1428."""
+    from netimps import get_source_ip, interface_for
+
+    try:
+        source = get_source_ip(str(server), ipv6=server.version == 6)
+        iface = interface_for(source) if source is not None else None
+    except (OSError, ValueError):
+        iface = None
+    if iface is None or not iface.mtu:
+        return 1428
+    # IP header, UDP header (8), TFTP DATA header (4).
+    fits = iface.mtu - (40 if server.version == 6 else 20) - 8 - 4
+    return max(MIN_BLKSIZE, min(fits, MAX_BLKSIZE))
+
+
 class Client:
     """A TFTP client bound to one server.
 
@@ -63,7 +87,8 @@ class Client:
     :param retries: retransmissions of one packet before giving up.
     :param blksize: requested DATA size, 8..65464. ``None`` asks for nothing,
         leaving RFC 1350's 512. The default 1428 fits an Ethernet frame on
-        IPv4 and IPv6 without fragmenting.
+        IPv4 and IPv6 without fragmenting. ``"mtu"`` sizes it to the MTU of
+        the interface the route to the server uses (falling back to 1428).
     :param windowsize: requested RFC 7440 window. ``None`` asks for nothing
         (one packet per ACK).
     :param tsize: request the transfer size (RRQ) or announce it (WRQ).
@@ -83,6 +108,12 @@ class Client:
     :param max_timeout: ceiling for the backed-off wait; ``None`` is eight
         times ``timeout``.
     :param max_duration: seconds a whole transfer may take, or ``None``.
+    :param utimeout: send a fractional ``timeout`` as tftp-hpa's ``utimeout``
+        (otherwise a fractional timeout is not requested at all).
+    :param extra_options: further options to request, verbatim (extensions
+        such as ``blksize2``/``cookie``, or custom ones). Built-in ones are
+        validated in the OACK; custom ones land in ``negotiated.extra``.
+    :param registry: the :class:`OptionRegistry` used to validate the OACK.
     :param strict_source: the first answer must come from the address the
         request was sent to. ``False`` accepts any address, for multi-homed
         servers that answer from another one (the transfer then locks on to
@@ -98,7 +129,7 @@ class Client:
         *,
         timeout: float = 1.0,
         retries: int = 5,
-        blksize: Optional[int] = 1428,
+        blksize: Union[int, str, None] = 1428,
         windowsize: Optional[int] = None,
         tsize: bool = True,
         rollover: Optional[int] = None,
@@ -111,13 +142,25 @@ class Client:
         max_timeout: Optional[float] = None,
         max_duration: Optional[float] = None,
         strict_source: bool = True,
+        utimeout: bool = False,
+        extra_options: Optional[Mapping[str, object]] = None,
+        registry: Optional[OptionRegistry] = None,
     ) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         if retries < 0:
             raise ValueError("retries cannot be negative")
         # Validate the options now rather than on the first transfer.
-        request_options(blksize=blksize, windowsize=windowsize, rollover=rollover)
+        if blksize == "mtu":
+            pass
+        elif isinstance(blksize, str):
+            raise ValueError("blksize must be an int, None or 'mtu'")
+        request_options(
+            blksize=blksize if blksize != "mtu" else None,  # type: ignore[arg-type]
+            windowsize=windowsize,
+            rollover=rollover,
+            extra=extra_options,
+        )
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -135,6 +178,9 @@ class Client:
         self.max_timeout = max_timeout if max_timeout is not None else timeout * 8
         self.max_duration = max_duration
         self.strict_source = strict_source
+        self.utimeout = utimeout
+        self.extra_options = dict(extra_options or {})
+        self.registry = registry
 
     # -- public API -------------------------------------------------------
 
@@ -198,16 +244,21 @@ class Client:
 
     # -- internals --------------------------------------------------------
 
-    def _options(self, is_read: bool, size: Optional[int]) -> Dict[str, str]:
+    def _options(self, is_read: bool, size: Optional[int], server: Any = None) -> Dict[str, str]:
         tsize = None
         if self.tsize:
             tsize = 0 if is_read else size
+        blksize = self.blksize
+        if blksize == "mtu":
+            blksize = _mtu_blksize(server)
         return request_options(
-            blksize=self.blksize,
+            blksize=blksize,  # type: ignore[arg-type]
             windowsize=self.windowsize,
             timeout=self.timeout if self.timeout_option else None,
             tsize=tsize,
             rollover=self.rollover,
+            utimeout=self.utimeout,
+            extra=self.extra_options,
         )
 
     def _download(
@@ -215,7 +266,7 @@ class Client:
     ) -> TransferResult:
         writer: Any = NetasciiWriter(sink) if mode == "netascii" else sink
         write = as_write(writer)
-        result = self._run(Opcode.RRQ, filename, mode, self._options(True, None), write, None, progress)
+        result = self._run(Opcode.RRQ, filename, mode, None, write, None, progress)
         if mode == "netascii":
             writer.flush()
         return result
@@ -231,9 +282,9 @@ class Client:
             size = _source_size(source)
             reader = source
         read = as_readinto(reader)
-        return self._run(Opcode.WRQ, filename, mode, self._options(False, size), None, read, progress)
+        return self._run(Opcode.WRQ, filename, mode, size, None, read, progress)
 
-    def _run(self, opcode, filename, mode, options, write, read, progress) -> TransferResult:
+    def _run(self, opcode, filename, mode, size, write, read, progress) -> TransferResult:
         from netimps import bind, get_ip, normalize_host
 
         host, port = normalize_host(self.host, self.port)
@@ -242,6 +293,7 @@ class Client:
             raise socket.gaierror("cannot resolve %r" % host)
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
         server = (str(address), port)
+        options = self._options(opcode == Opcode.RRQ, size, address)
         local_host, local_port = self.local_address or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
         # connreset=False: Windows would otherwise report an ICMP
         # port-unreachable as ConnectionResetError on our next receive.
@@ -321,7 +373,9 @@ class Client:
         if op == Opcode.OACK:
             oack = decode(view[:n]).options  # type: ignore[union-attr]
             try:
-                negotiated = accept_oack(options, oack, is_read=is_read, timeout=self.timeout)
+                negotiated = accept_oack(
+                    options, oack, is_read=is_read, timeout=self.timeout, registry=self.registry
+                )
             except ProtocolError as exc:
                 send(encode_error(exc.code, exc.message))
                 raise

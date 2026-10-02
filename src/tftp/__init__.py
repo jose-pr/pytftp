@@ -41,13 +41,26 @@ from .errors import (
 from .server import AtomicWriter, FileSystemHandler, Handler, RequestContext, Server, ServerLimits
 from .netascii import NetasciiReader, NetasciiWriter
 from .options import (
+    DEFAULT,
     DEFAULT_BLKSIZE,
+    DEFAULT_REGISTRY,
+    EXTENSION_OPTIONS,
+    HPA,
+    LEGACY,
     MAX_BLKSIZE,
     MAX_WINDOWSIZE,
     MIN_BLKSIZE,
+    PROFILES,
+    PXE,
+    STANDARD_OPTIONS,
+    STRICT,
     SUPPORTED_OPTIONS,
     Negotiated,
+    OptionHandler,
+    OptionRegistry,
+    Profile,
     ServerOptions,
+    register_option,
 )
 from .packet import (
     Ack,
@@ -119,6 +132,20 @@ __all__ = [
     "MAX_BLKSIZE",
     "MAX_WINDOWSIZE",
     "SUPPORTED_OPTIONS",
+    "STANDARD_OPTIONS",
+    "EXTENSION_OPTIONS",
+    # Options and profiles
+    "OptionHandler",
+    "OptionRegistry",
+    "DEFAULT_REGISTRY",
+    "register_option",
+    "Profile",
+    "PROFILES",
+    "STRICT",
+    "DEFAULT",
+    "PXE",
+    "HPA",
+    "LEGACY",
     # Building blocks
     "Sender",
     "Receiver",

@@ -12,7 +12,7 @@ src/tftp/
 ├── __init__.py        # flat public surface (re-exports)
 ├── AGENTS.md          # shipped API header -- update it with any API change
 ├── packet/            # wire format: enums.py (Opcode, ErrorCode), codec.py (types, encode/decode)
-├── options.py         # RFC 2347-2349/7440 negotiation: ServerOptions, Negotiated
+├── options/           # negotiation: base, builtin handlers, registry, policy, negotiate, profiles
 ├── netascii.py        # streaming netascii reader/writer
 ├── errors.py          # exceptions, OSError -> ERROR code mapping
 ├── result.py          # TransferResult

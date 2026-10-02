@@ -18,7 +18,9 @@ def main() -> int:
     import tftp
 
     location = os.path.dirname(tftp.__file__)
-    assert "site-packages" in location or "dist-packages" in location, "imported from a checkout: %s" % location
+    assert "site-packages" in location or "dist-packages" in location, (
+        "imported from a checkout: %s" % location
+    )
     files = importlib.resources.files("tftp")
     for name in ("AGENTS.md", "README.md", "py.typed"):
         assert files.joinpath(name).is_file(), "missing shipped file %s" % name
