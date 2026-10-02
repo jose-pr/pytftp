@@ -318,9 +318,12 @@ code 4, or 8 for option problems), **`TransferTimeout`** (also a
 
 `Opcode` (`RRQ`=1 … `OACK`=6) and `ErrorCode` (`NOT_DEFINED`=0 …
 `OPTION_REFUSED`=8) are `IntEnum`s. Packet types are `NamedTuple`s:
-`Request(opcode, filename, mode, options)` (`.is_read`; option names
-lower-cased, first occurrence wins, mode lower-cased), `Data(block, data)`,
-`Ack(block)`, `Error(code, message)`, `OptionAck(options)`.
+`Request(opcode, filename, mode, options, raw=b"")` (`.is_read`; option
+names lower-cased, first occurrence wins, mode lower-cased; `raw` is the
+datagram as received, `.raw_options` every pair as sent — original case,
+order, duplicates — and `.encode()` returns `raw` or a fresh encoding, so a
+relay forwards unknown options untouched), `Data(block, data)`, `Ack(block)`,
+`Error(code, message)`, `OptionAck(options)`.
 
 - **`decode(bytes) -> Packet`** — raises `MalformedPacket`. Tolerates a
   missing final NUL and drops a dangling option name.
@@ -333,6 +336,18 @@ lower-cased, first occurrence wins, mode lower-cased), `Data(block, data)`,
 - Constants: `DEFAULT_BLKSIZE` 512, `MIN_BLKSIZE` 8, `MAX_BLKSIZE` 65464,
   `MAX_WINDOWSIZE` 65535, `STANDARD_OPTIONS`, `EXTENSION_OPTIONS`,
   `SUPPORTED_OPTIONS` (their union).
+
+## URIs (RFC 3617)
+
+- **`parse_url(url) -> TftpURL(host, port, filename, mode)`** — the file name
+  is the percent-decoded path after the authority's `/`; `;mode=netascii`
+  selects the mode (default `octet`); the port defaults to 69. Anything else
+  (another scheme, no host or file, an unknown parameter, `mode=mail`) raises
+  `ValueError`.
+- **`format_url(host, filename, port=69, mode="octet")`** — the inverse
+  (`str(TftpURL)` too); IPv6 hosts are bracketed.
+- **`download_url(url, dest, *, progress=None, **client_options)`**,
+  **`upload_url(url, source, ...)`** — one-shot transfers by URL.
 
 ## Netascii
 

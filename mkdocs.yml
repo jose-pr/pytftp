@@ -38,6 +38,7 @@ nav:
       - Packets: api/packet.md
       - Transfer engine: api/transfer.md
       - Netascii: api/netascii.md
+      - URIs: api/uri.md
       - Errors and results: api/errors.md
   - Changelog: changelog.md
 

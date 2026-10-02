@@ -16,7 +16,8 @@ rollover::
 Everything public is importable from ``tftp`` directly. The subpackages
 group it for reading: :mod:`tftp.packet` (wire format), :mod:`tftp.options`
 (negotiation), :mod:`tftp.transfer` (the I/O-free engine),
-:mod:`tftp.client`, :mod:`tftp.server`, :mod:`tftp.netascii`, and
+:mod:`tftp.client`, :mod:`tftp.server`, :mod:`tftp.netascii`,
+:mod:`tftp.uri` (``tftp://`` URLs), and
 :mod:`tftp.cli` (needs the ``cli`` extra).
 """
 
@@ -80,6 +81,7 @@ from .packet import (
 )
 from .result import TransferResult
 from .transfer import Receiver, Sender, WouldBlock
+from .uri import TftpURL, download_url, format_url, parse_url, upload_url
 
 __all__ = [
     "__version__",
@@ -88,6 +90,11 @@ __all__ = [
     "download",
     "upload",
     "MODES",
+    "TftpURL",
+    "parse_url",
+    "format_url",
+    "download_url",
+    "upload_url",
     # Server
     "Server",
     "ServerOptions",

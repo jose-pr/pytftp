@@ -10,7 +10,7 @@ acknowledgements and for callers inspecting traffic.
 from __future__ import annotations
 
 import struct
-from typing import Dict, Mapping, NamedTuple, Optional, Union
+from typing import Dict, List, Mapping, NamedTuple, Optional, Tuple, Union
 
 from .enums import Opcode
 
@@ -49,17 +49,33 @@ class Request(NamedTuple):
     """A read (RRQ) or write (WRQ) request.
 
     ``options`` keys are lower-cased, as RFC 2347 makes option names
-    case-insensitive; values are kept as sent.
+    case-insensitive; values are kept as sent, in request order. ``raw`` is
+    the datagram exactly as received (empty for a request built in code), so
+    a relay can forward it untouched -- option spelling, order, duplicates and
+    options this library does not know all survive.
     """
 
     opcode: Opcode
     filename: str
     mode: str
     options: Dict[str, str]
+    raw: bytes = b""
 
     @property
     def is_read(self) -> bool:
         return self.opcode == Opcode.RRQ
+
+    @property
+    def raw_options(self) -> List[Tuple[str, str]]:
+        """Every option pair as sent: original case, order and duplicates."""
+        if not self.raw:
+            return list(self.options.items())
+        fields = _strings(self.raw[2:])[2:]
+        return [(fields[i], fields[i + 1]) for i in range(0, len(fields) - 1, 2)]
+
+    def encode(self) -> bytes:
+        """``raw`` when there is one, else a fresh encoding."""
+        return self.raw or encode_request(self.opcode, self.filename, self.mode, self.options)
 
 
 class Data(NamedTuple):
@@ -158,7 +174,7 @@ def decode(packet: Union[bytes, bytearray, memoryview]) -> Packet:
         fields = _strings(buf[2:])
         if len(fields) < 2 or not fields[0]:
             raise MalformedPacket("request without a filename and mode")
-        return Request(Opcode(op), fields[0], fields[1].lower(), _parse_options(fields[2:]))
+        return Request(Opcode(op), fields[0], fields[1].lower(), _parse_options(fields[2:]), buf)
     if op == Opcode.DATA:
         if len(buf) < 4:
             raise MalformedPacket("DATA shorter than its header")

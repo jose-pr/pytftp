@@ -8,8 +8,22 @@ def test_request_roundtrip_with_options():
     raw = tftp.encode_request(Opcode.RRQ, "boot/pxelinux.0", "octet", {"blksize": 1428, "tsize": 0})
     assert raw == b"\x00\x01boot/pxelinux.0\x00octet\x00blksize\x001428\x00tsize\x000\x00"
     packet = tftp.decode(raw)
-    assert packet == tftp.Request(Opcode.RRQ, "boot/pxelinux.0", "octet", {"blksize": "1428", "tsize": "0"})
+    assert packet == tftp.Request(
+        Opcode.RRQ, "boot/pxelinux.0", "octet", {"blksize": "1428", "tsize": "0"}, raw
+    )
     assert packet.is_read
+    assert packet.encode() == raw
+
+
+def test_request_keeps_raw_bytes_and_original_options():
+    raw = b"\x00\x01f\x00OcTeT\x00BlkSize\x00100\x00blksize\x00200\x00X-Vendor\x00v\x00"
+    packet = tftp.decode(raw)
+    assert packet.raw == raw and packet.encode() == raw
+    assert packet.mode == "octet" and packet.options == {"blksize": "100", "x-vendor": "v"}
+    assert packet.raw_options == [("BlkSize", "100"), ("blksize", "200"), ("X-Vendor", "v")]
+    built = tftp.Request(Opcode.WRQ, "f", "octet", {"tsize": "5"})
+    assert built.raw == b"" and built.raw_options == [("tsize", "5")]
+    assert tftp.decode(built.encode()).options == {"tsize": "5"}
 
 
 def test_request_option_names_are_case_insensitive_and_first_wins():
