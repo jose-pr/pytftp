@@ -131,11 +131,11 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 
 ## Server
 
-**`Server(root_or_handler, host="::", port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=None, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None)`**
+**`Server(root_or_handler, host=None, port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=None, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None, interface=None)`**
 
 - `root_or_handler` — a directory (wrapped in `FileSystemHandler` with
   `writable`, `create`, `overwrite`) or any handler object (see below).
-- `host` — `"::"` (default) listens on IPv6 **and IPv4** with a dual-stack
+- `host` — `None` (default) or `"::"` listens on IPv6 **and IPv4** with a dual-stack
   socket, falling back to `"0.0.0.0"` on a host without IPv6. `"0.0.0.0"` is
   IPv4 only; a specific address (`"192.0.2.10"`, `"[fe80::1%eth0]"`) listens
   there alone. An `ipaddress` address or `netimps.Host` works too.
@@ -166,6 +166,13 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
   with `_tftp_fast_open_ = True` (`FileSystemHandler`, `MemoryHandler`)
   opens inline on the loop, anything else in a worker. A retransmitted
   request is still recognised while its open is pending.
+- `interface` — listen on one network adapter: a name (`"eth0"`), a
+  `netimps.Interface`, its MAC, or one of its addresses. The listener binds
+  **one address** of it: the one named, else the adapter's primary IPv4
+  address (non-loopback preferred), else its IPv6 one; `host="0.0.0.0"` or
+  `"::"` picks the family. Another `host`, or an adapter netimps cannot
+  resolve, is a `ValueError`. Requests to the adapter's other addresses are
+  not received; run one server per family or address as needed.
 - `port_range` — `(low, high)` inclusive, a `range`, or a `PortRange`:
   transfer sockets take their ports from it (round-robin, so a just-released
   port is reused last), for a firewall to allow. With every port taken a
@@ -376,7 +383,7 @@ path, bytes, a binary file, or an **async reader** (`async read(n)`) or async
 iterable of bytes. Cancelling the task sends the server ERROR 0. Each
 attempt (including the option fallback) uses a fresh socket.
 
-**`AsyncServer(root_or_handler, host="::", port=69, *, executor=None, **server_options)`**
+**`AsyncServer(root_or_handler, host=None, port=69, *, executor=None, **server_options)`**
 — `Server`'s arguments except `open_in_thread`/`workers`. `async with
 AsyncServer(...) as server: await server.serve_forever()`, or `await
 server.start()` … `await server.stop()`; `shutdown()` is thread-safe; `await
@@ -478,7 +485,7 @@ Both support what TFTP can do, plus listing against a server speaking
 
 ## Relay (`tftp.relay`)
 
-**`Relay(route, host="::", port=69, *, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None)`**
+**`Relay(route, host=None, port=69, *, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None, interface=None)`**
 — a transparent application relay (there is no standard TFTP relay). The
 request is forwarded **byte for byte** from a fresh upstream-side socket; the
 upstream's TID is learned from its first answer (from the address asked);
@@ -488,6 +495,7 @@ library does not know work end to end. Each side negotiates nothing with the
 relay — the client sees the upstream's OACK. For different settings per side
 use `UpstreamHandler` (a terminating proxy) instead.
 
+- `interface` — listen on one adapter, as for `Server`.
 - `port_range` — as for `Server`, for both sockets of each relayed transfer
   (client side and upstream side).
 - `route` — an upstream (`"host"`, `"host:port"`, `"[v6]:port"`, an address
@@ -688,13 +696,13 @@ pytftp get tftp://HOST[:PORT]/FILE [LOCAL|-]      [-t TIMEOUT] [-r RETRIES] [--n
                                        [--compat PROFILE] [-4|-6] [--json] [--trace] [--pcap FILE]
 pytftp put HOST LOCAL|- [REMOTE]       (same options; or put tftp://HOST/FILE LOCAL|-)
 pytftp ls HOST [DIR] | tftp://HOST/DIR (same options) [--json]
-pytftp serve [ROOT] [--http URL | --upstream HOST[:PORT]] [-l ADDRESS] [-p PORT] [-W/--write]
+pytftp serve [ROOT] [--http URL | --upstream HOST[:PORT]] [-l ADDRESS | --interface NIC] [-p PORT] [-W/--write]
              [--overwrite] [--no-create] [--compat PROFILE | --max-blksize N --max-windowsize N
              --allow OPTION... --refuse OPTION... --fit-mtu] [--listing] [--max-sessions N]
              [--max-per-client N] [--port-range LOW:HIGH] [--per-client] [--ignore-case]
              [--remap REGEX=REPLACEMENT]... [--json] [--trace] [--pcap FILE]
 pytftp relay [UPSTREAM] [--route-subnet CIDR=HOST[:PORT]]... [--route-prefix PREFIX=HOST[:PORT]]...
-             [-l ADDRESS] [-p PORT] [--idle-timeout S] [--max-sessions N] [--port-range LOW:HIGH]
+             [-l ADDRESS | --interface NIC] [-p PORT] [--idle-timeout S] [--max-sessions N] [--port-range LOW:HIGH]
              [--json] [--trace] [--pcap FILE]
 pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--transfers]
              [--extract DIR] [--json] [--payload]
@@ -711,6 +719,8 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
 - `serve --http URL` is the HTTP gateway, `serve --upstream` the terminating
   proxy; `--write` enables uploads for both. `--allow` adds extension options
   to the standard four; `--refuse` removes any.
+- `--interface NIC` (serve, relay) listens on that adapter's IPv4 address
+  (`-l ::` for its IPv6 one).
 - `serve --listing` allows `x-list`/`x-mtime` (with `--compat` too), which
   `pytftp ls` and `TftpPath.iterdir()` need. `--port-range` pins transfer
   ports. Directory serving only: `--per-client` serves `ROOT/<client

@@ -39,8 +39,12 @@ class Serve(Traced):
     "Serve from this TFTP server (host[:port]): a terminating proxy"
     ("--upstream",)
 
-    listen: str = "::"
-    "Address to listen on; '::' is IPv6 and IPv4 where dual-stack works"
+    interface: _ty.Optional[str] = None
+    "Listen on this network adapter (name, MAC or address); IPv4 unless --listen is '::'"
+    ("--interface",)
+
+    listen: _ty.Optional[str] = None
+    "Address to listen on; default '::', IPv6 and IPv4 where dual-stack works"
     ("--listen", "-l")
 
     port: int = 69
@@ -203,9 +207,10 @@ class Serve(Traced):
                 on_complete=on_complete,
                 trace=self._tracer(),
                 port_range=ports,
+                interface=self.interface,
             )
         except OSError as exc:
-            return bind_failure(exc, self.listen, self.port)
+            return bind_failure(exc, self.listen or self.interface or "::", self.port)
         logger = _logging.getLogger("tftp")
         address = server.server_address
         source = self.http or (self.upstream and "upstream " + self.upstream) or _os.path.abspath(self.root)

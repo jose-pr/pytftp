@@ -69,7 +69,7 @@ class AsyncServer(ServerBase):
     def __init__(
         self,
         root_or_handler: Any,
-        host: "IPAddressLike | Host | None" = "::",
+        host: "IPAddressLike | Host | None" = None,
         port: int = 69,
         *,
         executor: Any = None,

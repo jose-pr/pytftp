@@ -7,7 +7,7 @@ import socket
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Tuple
 
 if TYPE_CHECKING:
-    from netimps import Host, IPAddressLike
+    from netimps import Host, IPAddressLike, InterfaceSpec
 
 from ..packet import encode_error
 from .session import PortRange
@@ -34,9 +34,32 @@ class Arrival(NamedTuple):
     interface: Any = None
 
 
-def _bind(host: "IPAddressLike | Host | None", port: int) -> socket.socket:
+def _bind_interface(
+    host: "IPAddressLike | Host | None", port: int, interface: "InterfaceSpec"
+) -> socket.socket:
+    """Listen on ``interface``'s address: IPv4 when it has one, unless ``host`` is a
+    wildcard naming the family (``"0.0.0.0"`` or ``"::"``)."""
+    from netimps import bind, get_ip, is_wildcard
+
+    plain = {"connreset": False, "interface": interface}
+    if not host:
+        try:
+            return bind("", port, family=socket.AF_INET, **plain)
+        except ValueError:  # no IPv4 address on that adapter
+            return bind("", port, family=socket.AF_INET6, **plain)
+    address = get_ip(host)
+    if address is None or not is_wildcard(host):
+        raise ValueError(
+            "give host or interface, not both (host may be '0.0.0.0' or '::' to pick the family)"
+        )
+    return bind("", port, family=socket.AF_INET6 if address.version == 6 else socket.AF_INET, **plain)
+
+
+def _bind(host: "IPAddressLike | Host | None", port: int, interface: "InterfaceSpec" = None) -> socket.socket:
     from netimps import bind, get_ip, is_wildcard, normalize_host
 
+    if interface is not None:
+        return _bind_interface(host, port, interface)
     # netimps' defaults keep the port exclusive for a datagram socket on every
     # platform (no SO_REUSEADDR on POSIX, SO_EXCLUSIVEADDRUSE on Windows).
     plain = {"connreset": False}
@@ -72,10 +95,17 @@ class Listener:
     :param pktinfo: report each request's destination address, through
         :class:`netimps.UdpEndpoint`, where the platform allows it; replies
         then leave from that address.
+    :param interface: listen on this adapter's address (see ``Server``).
     """
 
-    def __init__(self, host: "IPAddressLike | Host | None", port: int, pktinfo: bool = True) -> None:
-        self.sock = _bind(host, port)
+    def __init__(
+        self,
+        host: "IPAddressLike | Host | None",
+        port: int,
+        pktinfo: bool = True,
+        interface: "InterfaceSpec" = None,
+    ) -> None:
+        self.sock = _bind(host, port, interface)
         self.family = self.sock.family
         try:
             self.v6only = self.family == socket.AF_INET6 and bool(

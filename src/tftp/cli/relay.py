@@ -43,8 +43,12 @@ class RelayCmd(Traced):
     "PREFIX=HOST[:PORT]: filenames starting with PREFIX go to HOST; repeatable"
     ("--route-prefix",)
 
-    listen: str = "::"
-    "Address to listen on"
+    interface: _ty.Optional[str] = None
+    "Listen on this network adapter (name, MAC or address); IPv4 unless --listen is '::'"
+    ("--interface",)
+
+    listen: _ty.Optional[str] = None
+    "Address to listen on (default '::')"
     ("--listen", "-l")
 
     port: int = 69
@@ -88,9 +92,10 @@ class RelayCmd(Traced):
                 trace=self._tracer(),
                 on_session_end=on_end,
                 port_range=ports,
+                interface=self.interface,
             )
         except OSError as exc:
-            return bind_failure(exc, self.listen, self.port)
+            return bind_failure(exc, self.listen or self.interface or "::", self.port)
         logger = _logging.getLogger("tftp")
         address = relay.server_address
         logger.info("relaying on %s port %d", address[0], address[1])

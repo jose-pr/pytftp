@@ -72,12 +72,13 @@ class Relay:
         transfer ends.
     :param port_range: ports for both sockets of each relayed transfer (the
         client side and the upstream side), as for ``Server``.
+    :param interface: listen on one network adapter, as for ``Server``.
     """
 
     def __init__(
         self,
         route: Any,
-        host: "IPAddressLike | Host | None" = "::",
+        host: "IPAddressLike | Host | None" = None,
         port: int = 69,
         *,
         idle_timeout: float = 30.0,
@@ -91,6 +92,7 @@ class Relay:
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         on_session_end: Optional[Callable[[RelaySummary], Any]] = None,
         port_range: Any = None,
+        interface: Any = None,
     ) -> None:
         if callable(route):
             self.route: Route = route
@@ -112,7 +114,7 @@ class Relay:
         self.port_range = PortRange.of(port_range)
         #: Counters since start (:class:`Stats`).
         self.stats = Stats(*RELAY_COUNTERS)
-        self._listener = Listener(host, port, pktinfo=reply_from_request_address)
+        self._listener = Listener(host, port, pktinfo=reply_from_request_address, interface=interface)
         self._address = self._listener.sock.getsockname()
         self._selector = selectors.DefaultSelector()
         self._wake_r, self._wake_w = socket.socketpair()

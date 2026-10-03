@@ -49,9 +49,9 @@ class Server(ServerBase):
         :class:`FileSystemHandler` with ``writable``, ``create`` and
         ``overwrite``), or a handler object.
     :param host: address to listen on: a string, an ``ipaddress`` address or a
-        ``netimps.Host``. ``"::"`` (the default) listens on IPv6 and IPv4 at
-        once where the platform allows dual-stack sockets, else falls back to
-        ``"0.0.0.0"``. ``"0.0.0.0"`` is IPv4 only.
+        ``netimps.Host``. ``None`` (the default) or ``"::"`` listens on IPv6
+        and IPv4 at once where the platform allows dual-stack sockets, else
+        falls back to ``"0.0.0.0"``. ``"0.0.0.0"`` is IPv4 only.
     :param port: UDP port; ``0`` picks a free one (see :attr:`server_address`).
     :param timeout: retransmission timeout, unless a client negotiates its own.
     :param retries: retransmissions of one packet before abandoning a transfer.
@@ -91,12 +91,18 @@ class Server(ServerBase):
         :class:`PortRange`: transfer sockets take their ports from it, so a
         firewall can allow them. A request arriving while every port is in
         use gets ERROR 0 "server busy". ``None`` lets the OS choose.
+    :param interface: listen on one network adapter: a name (``"eth0"``), a
+        ``netimps.Interface``, its MAC or one of its addresses. The listener
+        binds that adapter's IPv4 address when it has one, else its IPv6
+        address; ``host="0.0.0.0"`` or ``"::"`` picks the family instead. Any
+        other ``host`` with an interface is a ``ValueError``. One family per
+        server: run two servers to serve both on one adapter.
     """
 
     def __init__(
         self,
         root_or_handler: Any,
-        host: "IPAddressLike | Host | None" = "::",
+        host: "IPAddressLike | Host | None" = None,
         port: int = 69,
         *,
         writable: bool = False,
@@ -117,6 +123,7 @@ class Server(ServerBase):
         open_in_thread: Optional[bool] = None,
         workers: int = 8,
         port_range: Any = None,
+        interface: Any = None,
     ) -> None:
         super().__init__(
             root_or_handler,
@@ -138,6 +145,7 @@ class Server(ServerBase):
             max_timeout=max_timeout,
             trace=trace,
             port_range=port_range,
+            interface=interface,
             session_cap=WINDOWS_SESSION_CAP if sys.platform == "win32" else None,
         )
         self._ready: "collections.deque[Session]" = collections.deque()

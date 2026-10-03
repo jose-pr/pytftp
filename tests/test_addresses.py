@@ -108,3 +108,55 @@ def test_client_local_address_typed(root, make_server):
     server = make_server(root)
     client = client_for(server, local_address=(LOOPBACK, 0))
     assert client.get("one.bin") == b"x"
+
+
+# -- listening on one adapter ------------------------------------------------------
+
+
+def _loopback():
+    iface = netimps.interface_for("127.0.0.1")
+    if iface is None:
+        pytest.skip("no loopback interface reported")
+    return iface
+
+
+@pytest.mark.parametrize("form", ["Interface", "name", "address"])
+def test_server_on_one_interface(root, form):
+    iface = _loopback()
+    spec = {"Interface": iface, "name": iface.name, "address": "127.0.0.1"}[form]
+    # IPv4 by default: the adapter's primary address, or the one named.
+    expected = "127.0.0.1" if form == "address" else str(iface.primary_ip(ipv6=False).ip)
+    with tftp.Server(root, port=0, interface=spec, timeout=0.5).start() as server:
+        host, port = server.server_address[:2]
+        assert host == expected
+        assert tftp.Client(host, port, timeout=0.5).get("one.bin") == b"x"
+
+
+def test_interface_family_follows_a_wildcard_host(root):
+    iface = _loopback()
+    with tftp.Server(root, "0.0.0.0", 0, interface=iface).start() as server:
+        assert server.server_address[0] == str(iface.primary_ip(ipv6=False).ip)
+    v6 = iface.primary_ip(ipv6=True)
+    if v6 is None:
+        pytest.skip("loopback has no IPv6 address here")
+    with tftp.Server(root, "::", 0, interface=iface, timeout=0.5).start() as server:
+        host, port = server.server_address[:2]
+        assert ipaddress.ip_address(host.split("%")[0]) == v6.ip
+        assert tftp.Client(host, port, timeout=0.5).get("one.bin") == b"x"
+
+
+def test_interface_errors(root):
+    with pytest.raises(ValueError):
+        tftp.Server(root, "127.0.0.1", 0, interface=_loopback())  # host or interface
+    with pytest.raises(ValueError):
+        tftp.Server(root, port=0, interface="no-such-adapter-xyz")
+
+
+def test_relay_on_one_interface(root, make_server):
+    upstream_server = make_server(root)
+    relay = Relay((LOOPBACK, upstream_server.server_address[1]), port=0, interface=_loopback()).start()
+    try:
+        assert relay.server_address[0] == str(_loopback().primary_ip(ipv6=False).ip)
+        assert client_for(relay).get("one.bin") == b"x"
+    finally:
+        relay.close()

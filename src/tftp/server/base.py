@@ -44,7 +44,7 @@ class ServerBase:
     def __init__(
         self,
         root_or_handler: Any,
-        host: "IPAddressLike | Host | None" = "::",
+        host: "IPAddressLike | Host | None" = None,
         port: int = 69,
         *,
         writable: bool = False,
@@ -64,6 +64,7 @@ class ServerBase:
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         session_cap: Optional[int] = None,
         port_range: Any = None,
+        interface: Any = None,
     ) -> None:
         if isinstance(root_or_handler, (str, os.PathLike)):
             handler: Any = FileSystemHandler(
@@ -93,7 +94,7 @@ class ServerBase:
         self._per_client: Dict[str, int] = {}
         #: Counters since start (:class:`Stats`); ``stats_snapshot()`` adds ``active``.
         self.stats = Stats(*SERVER_COUNTERS)
-        self._listener = Listener(host, port, pktinfo=reply_from_request_address)
+        self._listener = Listener(host, port, pktinfo=reply_from_request_address, interface=interface)
         self._address: Tuple[Any, ...] = self._listener.sock.getsockname()
 
     # -- properties -----------------------------------------------------------------

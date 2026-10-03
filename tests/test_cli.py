@@ -256,3 +256,18 @@ def test_ls_against_serve_listing(root, capsys):
         assert "not a directory" in capsys.readouterr().err
     finally:
         _stop(proc)
+
+
+def test_serve_on_interface(root):
+    import netimps
+
+    import tftp
+
+    iface = netimps.interface_for("127.0.0.1")
+    if iface is None:
+        pytest.skip("no loopback interface reported")
+    proc, port = _serve_subprocess(["serve", str(root), "--interface", iface.name, "-p", "0"])
+    try:
+        assert tftp.Client(str(iface.primary_ip(ipv6=False).ip), port).get("one.bin") == b"x"
+    finally:
+        _stop(proc)
