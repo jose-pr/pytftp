@@ -88,6 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Hosts, networks and interfaces accepted as objects (`ipaddress` types,
   `netimps.Host`, `netimps.Interface`) wherever an address is taken, typed
   with netimps' aliases.
+- `interface=` on `Server`, `AsyncServer` and `Relay` (and `--interface` on
+  `pytftp serve`/`relay`): listen on one network adapter, by name,
+  `netimps.Interface`, MAC or address.
 - `RequestContext.interface`: the arrival interface as a `netimps.Interface`.
 - Reply sockets, broadcast checks, MTU sizing and the asyncio listener use
   netimps' `UdpEndpoint` helpers rather than pytftp's own.

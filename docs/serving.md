@@ -86,6 +86,17 @@ tftp.Server("/srv/tftp", port_range=(50000, 50100))
 (`pytftp serve --port-range 50000:50100`; the relay takes the same.) A
 request arriving with every port in use is answered "server busy".
 
+## One network adapter
+
+```python
+tftp.Server("/srv/tftp", interface="eth0")   # eth0's IPv4 address
+```
+
+`interface` takes a name, a `netimps.Interface`, a MAC or one of the
+adapter's addresses (`pytftp serve --interface eth0`). It binds one address
+of that adapter, IPv4 unless `host="::"`; requests to its other addresses are
+not received.
+
 ## Directory listings
 
 `ServerOptions(allowed=tftp.STANDARD_OPTIONS | tftp.LISTING_OPTIONS)` (or
