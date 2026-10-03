@@ -28,9 +28,11 @@ classifiers = [
     "Typing :: Typed",
 ]
 # netimps supplies pktinfo (replying from the address a request was sent to),
-# host:port parsing, socket binding and bind-error hints, and has no
-# dependencies of its own. Floor 0.3.3: UdpEndpoint pktinfo on Windows (its
-# WSARecvMsg backend) and v4-mapped local addresses on dual-stack sockets.
+# reply sockets, host:port parsing, socket binding and bind-error hints, and has
+# no dependencies of its own. Floor 0.3.3, for APIs added in that patch:
+# UdpEndpoint.reply_socket (port ranges) / Datagram.reply_address / arecv,
+# is_broadcast, max_udp_payload, Backoff, AddressInUseError, and bind() /
+# normalize_host() taking address objects.
 dependencies = ["netimps>=0.3.3,<0.4"]
 
 [project.optional-dependencies]

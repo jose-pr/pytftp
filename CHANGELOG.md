@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `path` extra: `TftpPath`, a pathlib-next `Path` bound to a client
   (`client.path(...)`), and `TftpUriPath`, the `tftp://` scheme for
   pathlib-next's `UriPath`; whole-file streaming reads and writes, `stat()`
-  by size probe, `copy()`/`move()` across schemes.
+  without a transfer, `copy()`/`move()` across schemes.
 - Typed errors: `RemoteError` raised as `FileNotFound`, `AccessViolation`,
   `DiskFull`, `IllegalOperation`, `UnknownTransferId`, `FileAlreadyExists`,
   `NoSuchUser` or `OptionNegotiationError`; `TransferAborted`.
@@ -77,8 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `port_range=` on `Server`, `AsyncServer` and `Relay` (`PortRange`):
   transfer sockets take their ports from a range a firewall can allow;
   `--port-range` on `pytftp serve` and `relay`.
-- `pytftp serve --per-client`, `--ignore-case` and `--remap REGEX=REPLACEMENT`
-  (handler wrappers private to the CLI).
+- `pytftp serve --per-client` (serve `ROOT/<client address>/` when it exists),
+  `--ignore-case` and `--remap REGEX=REPLACEMENT`.
 - `mstfwindow`, Windows bootmgr's variable-window option, as an extension a
   server may allow (fixed window of 4).
 - pytftp's `x-list` and `x-mtime` extensions (`LISTING_OPTIONS`): directory
@@ -92,9 +92,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `pytftp serve`/`relay`): listen on one network adapter, by name,
   `netimps.Interface`, MAC or address.
 - `RequestContext.interface`: the arrival interface as a `netimps.Interface`.
-- Reply sockets, broadcast checks, MTU sizing, the asyncio listener and the
-  retransmission backoff use netimps' helpers (`UdpEndpoint`, `Backoff`)
-  rather than pytftp's own.
 - Loopback throughput benchmark (`benchmarks/run.py`).
 - Licensed under MIT.
 

@@ -1,6 +1,7 @@
 # tftp
 
-[![Python versions](https://img.shields.io/badge/python-3.9%20%7C%203.14-blue.svg)](https://github.com/jose-pr/pytftp)
+[![Version](https://img.shields.io/pypi/v/tftp.svg)](https://pypi.org/project/tftp/)
+[![Python versions](https://img.shields.io/pypi/pyversions/tftp.svg)](https://pypi.org/project/tftp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jose-pr/pytftp/blob/main/LICENSE)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://jose-pr.github.io/pytftp/)
 [![CI](https://img.shields.io/github/actions/workflow/status/jose-pr/pytftp/test.yml)](https://github.com/jose-pr/pytftp/actions/workflows/test.yml)
@@ -29,7 +30,7 @@ with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
   `blksize2`, `cookie`, and Windows bootmgr's `mstfwindow`. Unlimited file size. A registry for your own options,
   and profiles (`pxe`, `hpa`, `legacy`, `strict`) for quirky peers.
 - **Fast** — windowed transfers move hundreds of MiB/s over loopback in pure
-  Python (see [benchmarks](benchmarks/README.md)); the hot path reads into
+  Python (see [benchmarks](https://github.com/jose-pr/pytftp/blob/main/benchmarks/README.md)); the hot path reads into
   preallocated buffers and keeps a sent window in memory instead of re-reading.
 - **Correct under loss** — Sorcerer's Apprentice fix, exponential backoff,
   gap detection inside a window, repeated OACKs tolerated, ERROR 5 for stray
@@ -184,7 +185,7 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.cli` | the `pytftp` command (`cli` extra) |
 
 Everything is also importable from `tftp` directly. The complete reference,
-with every signature and gotcha, is [`src/tftp/AGENTS.md`](src/tftp/AGENTS.md),
+with every signature and gotcha, is [`src/tftp/AGENTS.md`](https://github.com/jose-pr/pytftp/blob/main/src/tftp/AGENTS.md),
 which ships inside the package.
 
 ## Development
@@ -199,14 +200,14 @@ python benchmarks/run.py
 
 `pytest -m "not slow"` skips the rollover tests; tests marked `interop` run
 against curl, tftp-hpa, BusyBox and dnsmasq where installed (their servers need
-passwordless `sudo`). `sudo python tests/firmware_boot.py` boots iPXE and
-UEFI firmware in QEMU against the server. See
-[AGENTS.md](AGENTS.md) for the layout and conventions.
+passwordless `sudo`). `sudo python tests/firmware_boot.py ipxe` network-boots
+iPXE in QEMU against the server (its `uefi` scenario does not pass yet). See
+[AGENTS.md](https://github.com/jose-pr/pytftp/blob/main/AGENTS.md) for the layout and conventions.
 
 ### Releasing
 
 This project follows [Semantic Versioning](https://semver.org/) and keeps a
-[`CHANGELOG.md`](CHANGELOG.md). Pushing a tag matching `v*` triggers the release
+[`CHANGELOG.md`](https://github.com/jose-pr/pytftp/blob/main/CHANGELOG.md). Pushing a tag matching `v*` triggers the release
 workflow: test gate → build (checking the tag names the version built) → a strict
 docs build as a gate → GitHub release → publish. The release workflow never deploys
 the docs site itself: for a final release its last job dispatches the docs workflow

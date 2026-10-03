@@ -14,6 +14,8 @@ src/tftp/
 ├── packet/            # wire format: enums.py (Opcode, ErrorCode), codec.py (types, encode/decode)
 ├── options/           # negotiation: base, builtin handlers, registry, policy, negotiate, profiles
 ├── netascii.py        # streaming netascii reader/writer
+├── listing.py         # x-list directory listing format (DirectoryListing, parse/format)
+├── uri.py             # tftp:// URLs (RFC 3617)
 ├── errors.py          # exceptions, OSError -> ERROR code mapping
 ├── result.py          # TransferResult
 ├── transfer/          # I/O-free engine: base.py, sender.py, receiver.py
@@ -23,19 +25,19 @@ src/tftp/
 ├── server/
 │   ├── base.py        # ServerBase: config, admission, refusal, reporting (shared with aio)
 │   ├── core.py        # Server: lifecycle, selectors loop, timers, completion
-│   ├── listener.py    # listening socket: bind, dual-stack, pktinfo receive
-│   ├── session.py     # one transfer: reply socket choice, handler -> engine
+│   ├── listener.py    # listening socket: bind (host or interface), netimps UdpEndpoint, reply sockets
+│   ├── session.py     # one transfer: PortRange, handler -> engine
 │   ├── handler.py     # Handler protocol, FileSystemHandler, AtomicWriter
 │   ├── policy.py      # ServerLimits
-│   ├── stats.py       # Stats counters (server and relay)
-│   └── netinfo.py     # cached interface facts (broadcast addresses, MTU)
+│   └── stats.py       # Stats counters (server and relay)
 ├── backends/          # memory.py, http.py (urllib gateway), proxy.py (upstream TFTP), pipe.py
 ├── relay/             # transparent relay: core.py (loop), session.py (per transfer), routing.py
 ├── capture/           # packet events, trace hooks, pcap decoding
-├── cli/               # pytftp (duho): common.py, transfer.py (get/put), serve.py, relay.py, capture.py
+├── cli/               # pytftp (duho): common.py, transfer.py (get/put/ls), serve.py, relay.py,
+│                      # capture.py, handlers.py (serve's --per-client/--ignore-case/--remap)
 └── _sockets.py        # window-sized socket buffers (everything else is netimps)
 tests/                 # pytest; engine tests need no sockets
-benchmarks/            # run.py + committed results/*.json
+benchmarks/            # run.py, compare_tftpy.py + committed results/*.json
 examples/              # runnable scripts
 docs/                  # mkdocs site (hand-written index + mkdocstrings API pages)
 ```
@@ -65,7 +67,7 @@ latest Python, and run the 3.9 floor before a release.
 ```bash
 py -3.14 -m venv .venv/3.14-nt-arm64
 .venv/3.14-nt-arm64/Scripts/pip install -e ".[dev]"
-.venv/3.14-nt-arm64/Scripts/python -m pytest -q          # ~280 tests, a few seconds
+.venv/3.14-nt-arm64/Scripts/python -m pytest -q          # ~500 tests, under 30 s
 .venv/3.14-nt-arm64/Scripts/python -m black src tests benchmarks examples
 ```
 
