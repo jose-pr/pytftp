@@ -340,7 +340,9 @@ class Server(ServerBase):
         host = session.host
         port = session.port
         trace = session.trace
-        for _ in range(_DRAIN):
+        # Lock-step (windowsize 1) brings one packet per wakeup: a second read
+        # would only find the socket empty and raise, every block.
+        for _ in range(_DRAIN if transfer.windowsize > 1 else 1):
             try:
                 n, addr = recv(buf)
             except (BlockingIOError, InterruptedError):
