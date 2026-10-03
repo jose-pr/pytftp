@@ -165,7 +165,9 @@ class Listener:
             return False  # without pktinfo every request looks unicast
         from netimps import is_broadcast, is_multicast
 
-        return is_multicast(local) or is_broadcast(local, arrival.interface)
+        # cache=True only matters when the arrival interface did not resolve:
+        # then at most one adapter listing per second, not one per request.
+        return is_multicast(local) or is_broadcast(local, arrival.interface, cache=True)
 
     def reply_socket(
         self, arrival: Arrival, ports: "Optional[PortRange]" = None

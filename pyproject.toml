@@ -31,8 +31,8 @@ classifiers = [
 # reply sockets, host:port parsing, socket binding and bind-error hints, and has
 # no dependencies of its own. Floor 0.3.3, for APIs added in that patch:
 # UdpEndpoint.reply_socket (port ranges) / Datagram.reply_address / arecv,
-# is_broadcast, max_udp_payload, Backoff, AddressInUseError, and bind() /
-# normalize_host() taking address objects.
+# is_broadcast (with cache=), max_udp_payload, Backoff, AddressInUseError,
+# interface_for(cache=), and bind() / normalize_host() taking address objects.
 dependencies = ["netimps>=0.3.3,<0.4"]
 
 [project.optional-dependencies]

@@ -113,7 +113,9 @@ def _mtu_blksize(server: Any) -> int:
 
     try:
         source = get_source_ip(str(server), ipv6=server.version == 6)
-        iface = interface_for(source) if source is not None else None
+        # cache=True: netimps reuses an adapter listing up to 1 s old, so a run of
+        # transfers lists adapters at most once a second.
+        iface = interface_for(source, cache=True) if source is not None else None
     except (OSError, ValueError):
         iface = None
     if iface is None or not iface.mtu:
