@@ -111,6 +111,11 @@ class Listener:
         except OSError:
             # Something unreadable (an ICMP error surfacing): skip it.
             return Arrival(b"", ("", 0), None, 0)
+        return self.arrival(datagram)
+
+    @staticmethod
+    def arrival(datagram: Any) -> Arrival:
+        """An :class:`Arrival` from a netimps ``Datagram``."""
         local = datagram.local_address
         return Arrival(
             datagram.data,
@@ -171,4 +176,4 @@ class Listener:
             pass
 
     def close(self) -> None:
-        self.sock.close()
+        self.endpoint.close()  # stops netimps' async notifier too, then the socket

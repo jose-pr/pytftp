@@ -6,9 +6,9 @@ they return an awaitable, and the streams they return may be asynchronous
 engine is driven around them with backpressure. Blocking handlers still work:
 those not marked ``_tftp_fast_open_`` are opened in the loop's executor.
 
-The listening socket keeps pktinfo (replies from the request's address): it
-is read with ``loop.add_reader`` where the loop has it, and by a small reader
-thread where it does not (Windows' default Proactor loop).
+The listening socket keeps pktinfo (replies from the request's address) on
+every loop, Windows' default Proactor loop included: it is read with netimps'
+``UdpEndpoint.arecv``.
 """
 
 from __future__ import annotations
@@ -16,10 +16,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-import select
 import socket
 import sys
-import threading
 import time
 from typing import TYPE_CHECKING, Any, Optional, Tuple
 
@@ -28,7 +26,7 @@ if TYPE_CHECKING:
 
 from ..packet import ErrorCode, encode_error
 from ..server.base import WINDOWS_SESSION_CAP, ServerBase
-from ..server.listener import Arrival
+from ..server.listener import _RECV_SIZE, Arrival
 from ..server.session import Session
 from .bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
 
@@ -84,10 +82,6 @@ class AsyncServer(ServerBase):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stopped: Optional[asyncio.Event] = None
         self._task: Optional["asyncio.Task[None]"] = None
-        self._reader_thread: Optional[threading.Thread] = None
-        self._reader_stop = threading.Event()
-        self._using_add_reader = False
-        self._reader_wake: Optional[Tuple[socket.socket, socket.socket]] = None
         self._closed = False
 
     # -- lifecycle --------------------------------------------------------------------
@@ -98,30 +92,21 @@ class AsyncServer(ServerBase):
             raise RuntimeError("server is closed")
         loop = self._loop = asyncio.get_running_loop()
         self._stopped = asyncio.Event()
-        try:
-            loop.add_reader(self._listener.sock, self._on_listener_ready)
-            self._using_add_reader = True
-        except NotImplementedError:  # Proactor: read the listener from a thread
-            self._reader_stop.clear()
-            self._reader_wake = socket.socketpair()
-            self._reader_thread = threading.Thread(target=self._reader, name="tftp-listen", daemon=True)
-            self._reader_thread.start()
+        listening = loop.create_task(self._listen())
         try:
             await self._stopped.wait()
         finally:
-            if self._using_add_reader:
+            listening.cancel()
+            try:
+                await listening
+            except asyncio.CancelledError:
+                pass
+            # A cancelled arecv leaves its add_reader registration behind
+            # (netimps finding 2026-10-03_arecv_cancellation_leaves_reader).
+            try:
                 loop.remove_reader(self._listener.sock)
-                self._using_add_reader = False
-            self._reader_stop.set()
-            if self._reader_thread is not None:
-                try:
-                    self._reader_wake[1].send(bytes(1))  # type: ignore[index]
-                except OSError:
-                    pass
-                await loop.run_in_executor(None, self._reader_thread.join, 2.0)
-                self._reader_thread = None
-                for end in self._reader_wake:  # type: ignore[union-attr]
-                    end.close()
+            except (NotImplementedError, OSError, ValueError):
+                pass
             for session in list(self._sessions.values()):
                 if session.transfer is not None and not session.transfer.done:
                     session.transfer.abort("server shutting down")
@@ -163,30 +148,22 @@ class AsyncServer(ServerBase):
 
     # -- requests ---------------------------------------------------------------------
 
-    def _on_listener_ready(self) -> None:
-        for _ in range(64):
-            arrival = self._listener.recv()
-            if arrival is None:
-                return
-            self._arrived(arrival)
-
-    def _reader(self) -> None:
-        sock = self._listener.sock
-        loop = self._loop
-        assert loop is not None
-        wake = self._reader_wake[0]  # type: ignore[index]
-        while not self._reader_stop.is_set():
+    async def _listen(self) -> None:
+        endpoint = self._listener.endpoint
+        while True:
             try:
-                readable, _, _ = select.select([sock, wake], [], [], 5.0)
-            except (OSError, ValueError):
-                return
-            if wake in readable or not readable:
+                datagram = await endpoint.arecv(_RECV_SIZE)
+            except OSError:
+                # An ICMP error surfacing on the listener: skip it, as the
+                # synchronous server does.
                 continue
-            while True:
+            self._arrived(self._listener.arrival(datagram))
+            # Whatever else is already queued, without another wait.
+            for _ in range(63):
                 arrival = self._listener.recv()
                 if arrival is None:
                     break
-                loop.call_soon_threadsafe(self._arrived, arrival)
+                self._arrived(arrival)
 
     def _arrived(self, arrival: Arrival) -> None:
         try:
