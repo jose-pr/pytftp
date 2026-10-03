@@ -60,10 +60,11 @@ in `benchmarks/results/`.
 
 ### Prerequisites and state
 
-- Requires `netimps` 0.3.3 or later within 0.3 (on PyPI). Tested against the
-  published 0.3.3 at the latest dependency versions (CPython 3.14) and at every
-  declared floor (CPython 3.9: `duho` 0.6.0, `pathlib-next` 0.9.0), on Windows
-  and Linux.
+- Requires `netimps` 0.3.4 or later within 0.3 (on PyPI); 0.3.4 fixed binding
+  and replying on link-local IPv6 addresses. Tested against the published
+  0.3.4 at the latest dependency versions (CPython 3.14) and at every declared
+  floor (CPython 3.9: `duho` 0.6.0, `pathlib-next` 0.9.0), on Windows and
+  Linux.
 - PyPI Trusted Publishing must be registered for the `tftp` project and the
   release workflow.
 - Not pushed; no tag.

@@ -29,11 +29,14 @@ classifiers = [
 ]
 # netimps supplies pktinfo (replying from the address a request was sent to),
 # reply sockets, host:port parsing, socket binding and bind-error hints, and has
-# no dependencies of its own. Floor 0.3.3, for APIs added in that patch:
+# no dependencies of its own. Floor 0.3.4: binding an interface's IPv6 address
+# (Server/Relay interface= with host '::') and replying to a link-local IPv6
+# client need its link-local fixes (routable addresses ranked first, the scope
+# id passed to bind); it also has the 0.3.3 APIs pytftp uses --
 # UdpEndpoint.reply_socket (port ranges) / Datagram.reply_address / arecv,
-# is_broadcast (with cache=), max_udp_payload, Backoff, AddressInUseError,
-# interface_for(cache=), and bind() / normalize_host() taking address objects.
-dependencies = ["netimps>=0.3.3,<0.4"]
+# is_broadcast and interface_for with cache=, max_udp_payload, Backoff,
+# AddressInUseError, and bind() / normalize_host() taking address objects.
+dependencies = ["netimps>=0.3.4,<0.4"]
 
 [project.optional-dependencies]
 # The CLI is optional: importing tftp never requires duho.
