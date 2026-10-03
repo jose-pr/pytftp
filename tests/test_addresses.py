@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ipaddress
-import socket
 from types import SimpleNamespace
 
 import netimps
@@ -13,20 +12,6 @@ import tftp
 from conftest import client_for
 from tftp.backends import UpstreamHandler
 from tftp.relay import Relay, Upstream, by_interface, by_subnet, upstream
-
-
-def _netimps_binds_objects() -> bool:
-    try:
-        netimps.bind(ipaddress.ip_address("127.0.0.1"), 0, family=socket.AF_INET).close()
-    except TypeError:
-        return False
-    return True
-
-
-needs_netimps_bind = pytest.mark.skipif(
-    not _netimps_binds_objects(),
-    reason="netimps.bind() takes only str (netimps finding 2026-10-03_bind_and_normalize_host_reject_address_objects)",
-)
 
 LOOPBACK = ipaddress.ip_address("127.0.0.1")
 
@@ -56,7 +41,7 @@ def test_format_url_host_forms():
 
 def test_upstream_forms():
     host = netimps.Host("10.0.0.5")
-    assert upstream(LOOPBACK) == Upstream(LOOPBACK, 69)
+    assert upstream(LOOPBACK) == Upstream("127.0.0.1", 69)
     assert upstream((host, 70)) == Upstream(host, 70)
     assert upstream("[2001:db8::1]:6969") == Upstream("2001:db8::1", 6969)
 
@@ -113,14 +98,12 @@ def test_relay_and_proxy_to_typed_upstreams(root, make_server):
     assert client_for(proxy).get("one.bin") == b"x"
 
 
-@needs_netimps_bind
 @pytest.mark.parametrize("host", [LOOPBACK, netimps.Host("127.0.0.1")], ids=["address", "Host"])
 def test_server_listens_on_typed_host(root, host):
     with tftp.Server(root, host, 0, timeout=0.5).start() as server:
         assert tftp.Client("127.0.0.1", server.server_address[1], timeout=0.5).get("one.bin") == b"x"
 
 
-@needs_netimps_bind
 def test_client_local_address_typed(root, make_server):
     server = make_server(root)
     client = client_for(server, local_address=(LOOPBACK, 0))

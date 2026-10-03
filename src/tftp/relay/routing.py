@@ -32,13 +32,12 @@ Route = Callable[[Any, Any], Optional[UpstreamLike]]
 
 def upstream(value: UpstreamLike) -> Upstream:
     """An :class:`Upstream` from ``"host"``, ``"host:port"``, ``"[v6]:port"``,
-    an address or ``netimps.Host`` (port 69), or ``(host, port)``."""
+    an address or ``netimps.Host`` (port 69 unless its text has one), or
+    ``(host, port)``."""
     if isinstance(value, Upstream):
         return value
     if isinstance(value, tuple):
         return Upstream(value[0], int(value[1]))
-    if not isinstance(value, str):
-        return Upstream(value, 69)  # only a string can carry a port
     from netimps import normalize_host
 
     host, port = normalize_host(value, 69)

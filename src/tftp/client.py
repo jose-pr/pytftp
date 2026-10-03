@@ -455,13 +455,11 @@ class Client:
             return n, peer
 
     def _target(self) -> Tuple[Any, int]:
-        """``(host, port)``: a ``"host:port"`` string is split; any other value has no port."""
-        if isinstance(self.host, str):
-            from netimps import normalize_host
+        """``(host, port)``: a port written in the host (``"h:70"``) overrides ``port``."""
+        from netimps import normalize_host
 
-            host, port = normalize_host(self.host, self.port)
-            return host, port if port is not None else self.port
-        return self.host, self.port
+        host, port = normalize_host(self.host, self.port)
+        return host, port if port is not None else self.port
 
     def _endpoint(self) -> Tuple[int, Tuple[Any, ...], Any]:
         """``(family, server sockaddr, server address)`` for this client's host."""

@@ -74,8 +74,8 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
   and follows a server that wraps to 1.
 - `family` — `socket.AF_INET`/`AF_INET6` to force one; `0` is whatever the host
   resolves to first.
-- `local_address` — `(address, port)` to send from (the address as a string;
-  objects need a netimps whose `bind()` accepts them).
+- `local_address` — `(address, port)` to send from; the address in any form
+  `host` takes.
 - `fallback` — if the server answers the *request* with ERROR 8 (options
   refused), ask again once without options.
 - `dally` — after the last ACK of a download, keep re-ACKing a repeated last
@@ -138,8 +138,7 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 - `host` — `"::"` (default) listens on IPv6 **and IPv4** with a dual-stack
   socket, falling back to `"0.0.0.0"` on a host without IPv6. `"0.0.0.0"` is
   IPv4 only; a specific address (`"192.0.2.10"`, `"[fe80::1%eth0]"`) listens
-  there alone. An `ipaddress` address or `netimps.Host` is passed to netimps
-  as is (needs a netimps whose `bind()` accepts it).
+  there alone. An `ipaddress` address or `netimps.Host` works too.
 - `port` — `0` picks a free port; read it from `server_address`.
 - `timeout`, `retries` — per transfer, unless the client negotiates `timeout`.
 - `options` — a `ServerOptions` policy.
@@ -511,7 +510,8 @@ use `UpstreamHandler` (a terminating proxy) instead.
   `supports_pktinfo`, `active_sessions`.
 
 Routing helpers (`tftp.relay`): **`upstream(value) -> Upstream(host, port)`**
-(`host` kept as given; only a string is split for a port);
+(`host` normalised by `netimps.normalize_host`: brackets dropped, a
+`"host:port"` split);
 **`by_subnet({network: upstream})`** (keys: anything `netimps.parse(...,
 IPNetwork)` takes — CIDR strings, `ipaddress` networks, interfaces, addresses
 as /32 or /128, `(address, prefix)`; client address, longest prefix; mapped

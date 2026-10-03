@@ -35,8 +35,8 @@ def _bind(host: "IPAddressLike | Host | None", port: int) -> socket.socket:
     # netimps' defaults keep the port exclusive for a datagram socket on every
     # platform (no SO_REUSEADDR on POSIX, SO_EXCLUSIVEADDRUSE on Windows).
     plain = {"connreset": False}
-    if isinstance(host, str) and host:
-        host = normalize_host(host)[0]  # "[::1]" -> "::1"; other values carry no brackets
+    if host:
+        host = normalize_host(host)[0]  # "[::1]" -> "::1"
     address = get_ip(host) if host else None
     if not host or (is_wildcard(host) and address is not None and address.version == 6):
         try:
