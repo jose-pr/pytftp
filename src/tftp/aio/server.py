@@ -101,12 +101,6 @@ class AsyncServer(ServerBase):
                 await listening
             except asyncio.CancelledError:
                 pass
-            # A cancelled arecv leaves its add_reader registration behind
-            # (netimps finding 2026-10-03_arecv_cancellation_leaves_reader).
-            try:
-                loop.remove_reader(self._listener.sock)
-            except (NotImplementedError, OSError, ValueError):
-                pass
             for session in list(self._sessions.values()):
                 if session.transfer is not None and not session.transfer.done:
                     session.transfer.abort("server shutting down")

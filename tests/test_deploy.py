@@ -149,8 +149,8 @@ def test_case_insensitive_lookup(root, make_server, handlers):
 
 
 def test_v4_client_of_dual_stack_listener_without_pktinfo(root, make_server):
-    """No destination address: the reply must still reach a v4 client (netimps would
-    hand back a v6-only socket; see Listener.reply_socket)."""
+    """No destination address: the reply must still reach a v4 client (netimps
+    answers it from a v4 socket, at Datagram.reply_address)."""
     server = make_server(root, "::", reply_from_request_address=False)
     if not server.dual_stack:
         pytest.skip("no dual-stack listener here")
