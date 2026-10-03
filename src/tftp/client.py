@@ -109,7 +109,7 @@ def _source_size(source: Any) -> Optional[int]:
 
 def _mtu_blksize(server: Any) -> int:
     """The largest blksize that fits the MTU toward ``server``, or 1428."""
-    from netimps import get_source_ip, interface_for
+    from netimps import get_source_ip, interface_for, max_udp_payload
 
     try:
         source = get_source_ip(str(server), ipv6=server.version == 6)
@@ -118,8 +118,7 @@ def _mtu_blksize(server: Any) -> int:
         iface = None
     if iface is None or not iface.mtu:
         return 1428
-    # IP header, UDP header (8), TFTP DATA header (4).
-    fits = iface.mtu - (40 if server.version == 6 else 20) - 8 - 4
+    fits = max_udp_payload(iface.mtu, server.version == 6) - 4  # the DATA header
     return max(MIN_BLKSIZE, min(fits, MAX_BLKSIZE))
 
 

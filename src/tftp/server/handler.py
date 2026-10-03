@@ -39,12 +39,14 @@ class RequestContext:
     :ivar local_address: the address the request was sent to, when the
         platform reports it (see ``Server.supports_pktinfo``), else ``None``.
     :ivar interface_index: the interface it arrived on, or ``0``.
+    :ivar interface: that interface as a ``netimps.Interface`` (name,
+        addresses, MTU), or ``None`` when unknown.
     :ivar listing: an RRQ asking for a directory listing (``x-list``) that
         the server's policy allows; a handler may then answer a directory
         with a :class:`tftp.listing.DirectoryListing`.
     """
 
-    __slots__ = ("request", "peer", "local_address", "interface_index", "listing")
+    __slots__ = ("request", "peer", "local_address", "interface_index", "interface", "listing")
 
     def __init__(
         self,
@@ -57,6 +59,7 @@ class RequestContext:
         self.peer = peer
         self.local_address = local_address
         self.interface_index = interface_index
+        self.interface: Any = None
         self.listing = False
 
     @property

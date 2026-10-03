@@ -31,10 +31,9 @@ from ..capture.events import PacketEvent, new_session_id
 from ..errors import TftpError
 from ..packet import ErrorCode, MalformedPacket, Opcode, Request, decode, encode_error
 from ..server.handler import RequestContext
-from ..server.listener import Listener
-from ..server.netinfo import InterfaceInfo
+from ..server.listener import Arrival, Listener
 from ..server.policy import ServerLimits
-from ..server.session import PortRange, bind_transfer, reply_socket
+from ..server.session import PortRange, bind_transfer
 from .routing import Route, Upstream, upstream as to_upstream
 from ..server.stats import RELAY_COUNTERS, Stats
 from .session import RelaySession, RelaySummary
@@ -115,7 +114,6 @@ class Relay:
         self.stats = Stats(*RELAY_COUNTERS)
         self._listener = Listener(host, port, pktinfo=reply_from_request_address)
         self._address = self._listener.sock.getsockname()
-        self._interfaces = InterfaceInfo()
         self._selector = selectors.DefaultSelector()
         self._wake_r, self._wake_w = socket.socketpair()
         self._wake_r.setblocking(False)
@@ -269,10 +267,10 @@ class Relay:
             arrival = self._listener.recv()
             if arrival is None:
                 return
-            data, sender, local, ifindex = arrival
+            data, sender = arrival.data, arrival.sender
             if len(data) < 2 or data[0] != 0 or data[1] not in (Opcode.RRQ, Opcode.WRQ):
                 continue
-            if self.ignore_broadcast and local is not None and self._interfaces.is_broadcast(local, ifindex):
+            if self.ignore_broadcast and self._listener.is_broadcast(arrival):
                 continue
             key = (str(unmap(sender[0])), sender[1])
             existing = self._sessions.get(key)
@@ -282,18 +280,19 @@ class Relay:
                     self._send(existing, existing.up, data, existing.upstream)
                 continue
             try:
-                self._open(data, sender, local, ifindex, key, now)
+                self._open(arrival, key, now)
             except Exception:  # pragma: no cover - a bug, not a client error
                 log.exception("relaying a request from %s failed", sender[:2])
 
-    def _open(self, data: bytes, sender, local, ifindex: int, key, now: float) -> None:
+    def _open(self, arrival: Arrival, key, now: float) -> None:
         self.stats.add("requests")
-        if not self._open_session(data, sender, local, ifindex, key, now):
+        if not self._open_session(arrival, key, now):
             self.stats.add("refused")
         else:
             self.stats.add("started")
 
-    def _open_session(self, data: bytes, sender, local, ifindex: int, key, now: float) -> bool:
+    def _open_session(self, arrival: Arrival, key, now: float) -> bool:
+        data, sender, local, ifindex = arrival[:4]
         if len(data) > self.limits.max_request_size:
             self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, "request too large")
             return False
@@ -311,6 +310,7 @@ class Relay:
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay busy")
             return False
         context = RequestContext(request, sender, local, ifindex)
+        context.interface = arrival.interface
         try:
             target = self.route(request, context)
             if target is None:
@@ -326,9 +326,7 @@ class Relay:
             return False
 
         try:
-            down, client = reply_socket(
-                self._listener.family, self._listener.host, sender, local, ifindex, self.port_range
-            )
+            down, client = self._listener.reply_socket(arrival, self.port_range)
         except OSError as exc:
             log.warning("no transfer socket for %s: %s", sender[:2], exc)
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay busy")

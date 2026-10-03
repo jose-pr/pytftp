@@ -125,8 +125,9 @@ class ServerContext:
         """The policy's ``max_blksize``, lowered to fit the MTU when asked to."""
         limit = self.policy.max_blksize
         if self.policy.fit_mtu and self.mtu:
-            # IP header, UDP header (8), TFTP DATA header (4).
-            fits = self.mtu - (40 if self.ipv6 else 20) - 8 - 4
+            from netimps import max_udp_payload
+
+            fits = max_udp_payload(self.mtu, self.ipv6) - 4  # the DATA header
             if fits >= MIN_BLKSIZE:
                 limit = min(limit, fits)
         return limit

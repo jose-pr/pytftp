@@ -193,6 +193,6 @@ def test_client_blksize_mtu(root, make_server):
 def test_server_fit_mtu_end_to_end(root, make_server):
     """The arrival interface's MTU bounds the grant (MTU injected: loopback's is huge)."""
     server = make_server(root, options=tftp.ServerOptions(fit_mtu=True))
-    server._interfaces.mtu = lambda ifindex: 1500
+    server._mtu = lambda session: 1500
     result = client_for(server, blksize=65464).download("big.bin", io.BytesIO())
     assert result.negotiated.blksize == 1468

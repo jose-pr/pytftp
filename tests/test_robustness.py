@@ -332,29 +332,35 @@ def test_sessions_per_client(root, make_server):
         assert error.code == ErrorCode.NOT_DEFINED and "busy" in error.message
 
 
+def _arrival(local, interface=None):
+    import ipaddress
+    from types import SimpleNamespace
+
+    from tftp.server.listener import Arrival
+
+    datagram = SimpleNamespace(local_address=None if local is None else ipaddress.ip_address(local))
+    return Arrival(b"", ("", 0), local, 0, datagram, interface)
+
+
 def test_broadcast_detection():
-    from tftp.server.netinfo import InterfaceInfo
+    from tftp.server.listener import Listener
 
-    info = InterfaceInfo()
-    assert info.is_broadcast("255.255.255.255")
-    assert info.is_broadcast("224.0.0.1")
-    assert info.is_broadcast("ff02::1")
-    assert info.is_broadcast("::ffff:255.255.255.255")
-    assert not info.is_broadcast("127.0.0.1")
-    assert not info.is_broadcast("::1")
+    for address in ("255.255.255.255", "224.0.0.1", "ff02::1", "::ffff:255.255.255.255", "::ffff:224.0.0.1"):
+        assert Listener.is_broadcast(_arrival(address)), address
+    for address in ("127.0.0.1", "::1", None):
+        assert not Listener.is_broadcast(_arrival(address)), address
 
 
-def test_subnet_broadcast_is_detected_from_interfaces():
+def test_subnet_broadcast_is_detected_from_the_arrival_interface():
     import netimps
 
-    from tftp.server.netinfo import InterfaceInfo
+    from tftp.server.listener import Listener
 
-    info = InterfaceInfo()
     for iface in netimps.get_interfaces():
         for address in iface.ipv4:
             if address.network.prefixlen < 31:
-                assert info.is_broadcast(str(address.network.broadcast_address), iface.index)
-                assert not info.is_broadcast(str(address.ip), iface.index)
+                assert Listener.is_broadcast(_arrival(str(address.network.broadcast_address), iface))
+                assert not Listener.is_broadcast(_arrival(str(address.ip), iface))
                 return
     pytest.skip("no IPv4 interface with a broadcast address")
 

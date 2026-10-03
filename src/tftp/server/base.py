@@ -25,9 +25,8 @@ from ..result import TransferResult
 from ..transfer import Receiver, Transfer
 from .handler import FileSystemHandler, RequestContext
 from .listener import Arrival, Listener
-from .netinfo import InterfaceInfo
 from .policy import ServerLimits
-from .session import PortRange, Session, reply_socket
+from .session import PortRange, Session
 from .stats import SERVER_COUNTERS, Stats
 
 __all__ = ["ServerBase"]
@@ -90,7 +89,6 @@ class ServerBase:
         self.trace = trace
         #: Where transfer sockets take their ports (:class:`PortRange`), or ``None``.
         self.port_range = PortRange.of(port_range)
-        self._interfaces = InterfaceInfo()
         self._sessions: Dict[Tuple[str, int], Session] = {}
         self._per_client: Dict[str, int] = {}
         #: Counters since start (:class:`Stats`); ``stats_snapshot()`` adds ``active``.
@@ -133,10 +131,10 @@ class ServerBase:
         Returns the new session (registered, with its transfer socket) or
         ``None`` when the datagram was dropped or refused.
         """
-        data, sender, local, ifindex = arrival
+        data, sender, local, ifindex = arrival[:4]
         if len(data) < 2 or data[0] != 0 or data[1] not in (Opcode.RRQ, Opcode.WRQ):
             return None  # not a request: never answer, never amplify
-        if self.ignore_broadcast and local is not None and self._interfaces.is_broadcast(local, ifindex):
+        if self.ignore_broadcast and self._listener.is_broadcast(arrival):
             log.debug("ignoring broadcast request from %s to %s", sender[:2], local)
             return None
         self.stats.add("requests")
@@ -171,15 +169,14 @@ class ServerBase:
             return None
 
         try:
-            sock, peer = reply_socket(
-                self._listener.family, self._listener.host, sender, local, ifindex, self.port_range
-            )
+            sock, peer = self._listener.reply_socket(arrival, self.port_range)
         except OSError as exc:
             log.warning("no transfer socket for %s: %s", sender[:2], exc)
             self.stats.add("refused")
             self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
             return None
         context = RequestContext(request, peer, local, ifindex)
+        context.interface = arrival.interface
         context.listing = (
             request.is_read
             and request.options.get("x-list", "").strip() == "1"
@@ -198,7 +195,8 @@ class ServerBase:
         return session
 
     def _mtu(self, session: Session) -> Optional[int]:
-        return self._interfaces.mtu(session.context.interface_index) if self.options.fit_mtu else None
+        interface = session.context.interface
+        return interface.mtu if self.options.fit_mtu and interface is not None else None
 
     def _engine(self, now: float) -> Dict[str, Any]:
         """Keyword arguments for a session's transfer."""
