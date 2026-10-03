@@ -38,3 +38,24 @@ check, not a release claim.
 
 Metric names are `<download|upload>/<case>`; the cases are listed in `CASES`
 in `run.py`.
+
+## Against tftpy
+
+`compare_tftpy.py` times downloads with pytftp talking to itself and tftpy
+talking to itself, on the options both support (no `windowsize`), each server
+reading the same file from disk. Linux only:
+
+```bash
+python benchmarks/compare_tftpy.py --tftpy-path ~/dev/tftpy
+```
+
+## What limits lock-step transfers
+
+Profiled 2026-10-03 (Windows 11 ARM64, Python 3.14, `windowsize` 1, 512-byte
+blocks, about 34 us per block round trip): the time is in system calls and
+wakeups, not in pytftp's Python. `sendto` costs about 9.6 us on the client and
+8.3 us on the server, and the rest is spent in `recvfrom_into`/`select`
+waiting for the other side. pytftp's own code is about 1.5 us per block in the
+client's receiver and 5-6 us in the server. tftpy, measured the same way on
+Linux, is within about 10% in lock-step. The large gains are from windowing
+(`windowsize`) and larger blocks, which cut the round trips themselves.
