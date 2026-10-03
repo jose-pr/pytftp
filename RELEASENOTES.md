@@ -49,7 +49,7 @@ in `benchmarks/results/`.
 
 ### Validation
 
-- Tests: 487 passed / 18 skipped on Windows (CPython 3.14 and 3.9), 500 passed
+- Tests: 488 passed / 18 skipped on Windows (CPython 3.14 and 3.9), 501 passed
   / 5 skipped on Linux (CPython 3.14 and 3.9). Skips are interop peers not
   installed on Windows, and platform-specific cases.
 - Interop: curl, tftp-hpa, BusyBox, dnsmasq (Linux); iPXE network boot in
