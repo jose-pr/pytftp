@@ -5,7 +5,7 @@ caveats and the evidence behind each release.
 
 ## [Unreleased]
 
-## [0.0.0] — prepared
+## [0.0.0] - 2026-10-03
 
 First release. What it contains is in the changelog.
 
@@ -67,4 +67,6 @@ in `benchmarks/results/`.
   Linux.
 - PyPI Trusted Publishing must be registered for the `tftp` project and the
   release workflow.
-- Not pushed; no tag.
+- Published 2026-10-03 from tag `v0.0.0`: PyPI (wheel and sdist), GitHub
+  release, docs site. CI on Linux, Windows and macOS (CPython 3.9 and 3.14,
+  plus 3.10-3.13 on Linux) and the dependency-floor job passed before tagging.
