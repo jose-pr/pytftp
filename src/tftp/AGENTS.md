@@ -236,8 +236,8 @@ ERROR 4 from the listening port; a client over `max_sessions_per_client`
   an option and then mishandles it (`refused={"windowsize"}`).
 - `fit_mtu` — lower `blksize` so a DATA packet fits the MTU of the interface
   the request arrived on (IP + UDP + 4-byte header): 1468 on IPv4 and 1448
-  on IPv6 for a 1500 MTU. Needs pktinfo for the interface; boot ROMs often
-  cannot reassemble fragments. Interface facts are cached for 30 s.
+  on IPv6 for a 1500 MTU (`netimps.max_udp_payload` − 4). Needs pktinfo for
+  the interface; boot ROMs often cannot reassemble fragments.
 - `accepts(name)` — `name` in `allowed` and not in `refused`.
 
 ## Options, registry and profiles
@@ -322,7 +322,8 @@ standard file object (`io.IOBase`) or declares `_tftp_copies_ = True`, and
 
 **`RequestContext`** — `request` (the `Request`), `peer` (client address
 tuple), `local_address` (the destination address as text, or `None` without
-pktinfo), `interface_index` (or 0), `listing` (the RRQ asks for `x-list=1`
+pktinfo), `interface_index` (or 0), `interface` (that interface as a
+`netimps.Interface` — name, addresses, MTU — or `None`), `listing` (the RRQ asks for `x-list=1`
 and the server allows it); shortcuts `filename`, `mode`, `options`.
 
 **`FileSystemHandler(root, *, writable=False, create=True, overwrite=False, backslash=True, max_upload=None)`**
@@ -388,8 +389,9 @@ close()`. Handlers:
 - The returned stream may be an async reader/iterable (RRQ) or async writer
   (WRQ); a writer is closed after the last block, and the final ACK waits
   until everything is written.
-- pktinfo is kept on every loop: the listener is read with `add_reader`, or
-  by a reader thread where the loop has none (Windows' Proactor loop).
+- pktinfo is kept on every loop: the listener is read with netimps'
+  `UdpEndpoint.arecv` (`add_reader`, or a readiness thread where the loop
+  has none — Windows' Proactor loop).
 - On Windows the default `max_sessions` is 500 (a selector loop's
   `select()`).
 
@@ -739,7 +741,9 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
 ## Dependencies
 
 `netimps` (required, no dependencies of its own; imported lazily, on the
-first transfer or server): pktinfo receive (`UdpEndpoint`), socket binding,
+first transfer or server): pktinfo receive and reply sockets (`UdpEndpoint`,
+also `arecv` for `AsyncServer`), broadcast/multicast checks, MTU payload
+sizing, socket binding,
 host:port parsing, address/network types (`AddressLike`, `IPNetworkLike`,
 `Host`, `Interface`: what the address-taking parameters accept), bind-error
 hints. Importing netimps installs its additive `recvmsg`/`sendmsg`

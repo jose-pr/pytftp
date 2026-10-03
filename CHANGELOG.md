@@ -88,6 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Hosts, networks and interfaces accepted as objects (`ipaddress` types,
   `netimps.Host`, `netimps.Interface`) wherever an address is taken, typed
   with netimps' aliases.
+- `RequestContext.interface`: the arrival interface as a `netimps.Interface`.
+- Reply sockets, broadcast checks, MTU sizing and the asyncio listener use
+  netimps' `UdpEndpoint` helpers rather than pytftp's own.
 - Loopback throughput benchmark (`benchmarks/run.py`).
 
 [Unreleased]: https://github.com/jose-pr/pytftp/commits/main
