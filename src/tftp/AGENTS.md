@@ -753,7 +753,7 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
 `netimps` (required, no dependencies of its own; imported lazily, on the
 first transfer or server): pktinfo receive and reply sockets (`UdpEndpoint`,
 also `arecv` for `AsyncServer`), broadcast/multicast checks, MTU payload
-sizing, socket binding,
+sizing, the retransmission timer (`Backoff`), socket binding,
 host:port parsing, address/network types (`AddressLike`, `IPNetworkLike`,
 `Host`, `Interface`: what the address-taking parameters accept), bind-error
 hints. Importing netimps installs its additive `recvmsg`/`sendmsg`

@@ -425,20 +425,19 @@ class Client:
         sock.sendto(request, server)
         if emit is not None:
             emit(request, "out", server)
-        tries = self.retries
-        wait = self.timeout
-        deadline = clock() + wait
+        from netimps import Backoff
+
+        timer = Backoff(self.timeout, self.backoff, self.max_timeout)  # RFC 1123 4.2.3.2
+        deadline = clock() + timer.delay
         while True:
             remaining = deadline - clock()
             if remaining <= 0:
-                tries -= 1
-                if tries < 0 or (expires is not None and clock() >= expires):
+                if timer.attempt >= self.retries or (expires is not None and clock() >= expires):
                     raise TransferTimeout("no response from %s:%s" % server[:2])
                 sock.sendto(request, server)
                 if emit is not None:
                     emit(request, "out", server)
-                wait = min(wait * self.backoff, self.max_timeout)  # RFC 1123 4.2.3.2
-                deadline = clock() + wait
+                deadline = clock() + timer.advance()
                 continue
             sock.settimeout(remaining)
             try:

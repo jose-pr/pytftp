@@ -366,16 +366,18 @@ class AsyncClient(Client):
             expires = None if self.max_duration is None else loop.time() + self.max_duration
             engine_kwargs = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
             # Request phase, with the same backoff as retransmissions.
-            wait = self.timeout
+            from netimps import Backoff
+
+            timer = Backoff(self.timeout, self.backoff, self.max_timeout)
             for attempt in range(self.retries + 1):
                 driver.sendto(request, server)
                 try:
-                    data, peer = await asyncio.wait_for(asyncio.shield(driver.first), wait)
+                    data, peer = await asyncio.wait_for(asyncio.shield(driver.first), timer.delay)
                     break
                 except asyncio.TimeoutError:
                     if expires is not None and loop.time() >= expires:
                         break
-                    wait = min(wait * self.backoff, self.max_timeout)
+                    timer.advance()
             else:
                 data = None  # type: ignore[assignment]
             if not driver.first.done():

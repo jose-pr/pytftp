@@ -128,8 +128,7 @@ class Transfer:
         "rollover",
         "_period",
         "retries",
-        "_tries",
-        "_rto",
+        "_timer",
         "backoff",
         "max_timeout",
         "expires",
@@ -160,10 +159,12 @@ class Transfer:
         self.rollover = negotiated.rollover
         self._period = 65536 - self.rollover
         self.retries = retries
-        self._tries = retries
-        self._rto = self.timeout
         self.backoff = max(1.0, backoff)
         self.max_timeout = max(self.timeout, max_timeout if max_timeout is not None else self.timeout * 8)
+        from netimps import Backoff  # pure arithmetic: the engine still does no I/O
+
+        #: The retransmission wait: doubles on silence, back to ``timeout`` on progress.
+        self._timer = Backoff(self.timeout, self.backoff, self.max_timeout)
         self.expires = expires
         self.done = False
         self.error: Optional[TftpError] = None
@@ -179,15 +180,14 @@ class Transfer:
         return ((block - self.rollover) % self._period) + self.rollover
 
     def _arm(self, now: float) -> None:
-        deadline = now + self._rto
+        deadline = now + self._timer.delay
         if self.expires is not None and deadline > self.expires:
             deadline = self.expires
         self.deadline = deadline
 
     def _progress(self) -> None:
         """The peer moved the transfer forward: fresh retries, base timeout."""
-        self._tries = self.retries
-        self._rto = self.timeout
+        self._timer.reset()
 
     def fail(self, exc: BaseException, notify: bool = True) -> None:
         """End the transfer with ``exc``, sending the peer an ERROR if asked."""
@@ -233,9 +233,9 @@ class Transfer:
         if self.expires is not None and now >= self.expires:
             self.fail(TransferTimeout("transfer exceeded its time limit"), notify=True)
             return True
-        self._tries -= 1
-        if self._tries < 0:
+        timer = self._timer
+        if timer.attempt >= self.retries:
             self.fail(TransferTimeout("no response after %d retries" % self.retries), notify=False)
             return True
-        self._rto = min(self._rto * self.backoff, self.max_timeout)
+        timer.advance()
         return False

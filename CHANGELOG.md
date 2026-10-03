@@ -92,8 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `pytftp serve`/`relay`): listen on one network adapter, by name,
   `netimps.Interface`, MAC or address.
 - `RequestContext.interface`: the arrival interface as a `netimps.Interface`.
-- Reply sockets, broadcast checks, MTU sizing and the asyncio listener use
-  netimps' `UdpEndpoint` helpers rather than pytftp's own.
+- Reply sockets, broadcast checks, MTU sizing, the asyncio listener and the
+  retransmission backoff use netimps' helpers (`UdpEndpoint`, `Backoff`)
+  rather than pytftp's own.
 - Loopback throughput benchmark (`benchmarks/run.py`).
 
 [Unreleased]: https://github.com/jose-pr/pytftp/commits/main
