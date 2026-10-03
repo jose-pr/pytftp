@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tftp"
-version = "0.1.0"
+version = "0.0.0"
 authors = [{ name = "jose-pr", email = "jose-pr@coqui.dev" }]
 description = "Pure-Python TFTP client and server for IPv4 and IPv6: RFC 1350, 2347, 2348, 2349 and 7440"
 readme = "README.md"

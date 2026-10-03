@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.0] - 2026-10-03
+
 ### Added
 
 - `Client`: download and upload over IPv4 and IPv6, to and from paths, binary
@@ -95,4 +97,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Loopback throughput benchmark (`benchmarks/run.py`).
 - Licensed under MIT.
 
-[Unreleased]: https://github.com/jose-pr/pytftp/commits/main
+[Unreleased]: https://github.com/jose-pr/pytftp/compare/v0.0.0...HEAD
+[0.0.0]: https://github.com/jose-pr/pytftp/releases/tag/v0.0.0
