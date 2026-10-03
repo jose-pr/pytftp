@@ -127,7 +127,7 @@ def main() -> int:
             "host": args.host,
             "metrics": metrics,
         }
-        out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        out.write_bytes((json.dumps(record, indent=2) + "\n").encode("utf-8"))  # LF on every platform
         print("saved", out)
     return 0
 
