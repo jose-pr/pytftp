@@ -82,9 +82,9 @@ py -3.14 -m venv .venv/3.14-nt-arm64
 Three workflows: `test.yml` (manual or `ci-*` tag; full matrix plus a job at
 the declared dependency floors), `release.yml` (`v*` tag: tests → build →
 strict docs gate → GitHub release → PyPI → docs dispatch) and `docs.yml`
-(Pages). The project has no license yet and carries the
-`Private :: Do Not Upload` classifier, so PyPI rejects an upload until one is
-chosen.
+(Pages). PyPI publishing uses Trusted Publishing (OIDC): the project and the
+`release.yml` workflow must be registered on PyPI before the first release.
+The `netimps>=0.3.3` floor must be on PyPI before CI can install anything.
 
 Benchmarks are run by hand (`python benchmarks/run.py --save <name>`), and the
 JSON is committed; a release's performance claims come from CI, not a laptop.

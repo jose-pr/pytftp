@@ -9,11 +9,9 @@ authors = [{ name = "jose-pr", email = "jose-pr@coqui.dev" }]
 description = "Pure-Python TFTP client and server for IPv4 and IPv6: RFC 1350, 2347, 2348, 2349 and 7440"
 readme = "README.md"
 requires-python = ">=3.9"
-# No license has been chosen yet, so none is declared and the project is
-# marked as not uploadable. Add `license`/`license-files` (PEP 639) and drop
-# the "Private" classifier once one is picked.
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = [
-    "Private :: Do Not Upload",
     "Development Status :: 3 - Alpha",
     "Intended Audience :: System Administrators",
     "Programming Language :: Python :: 3",

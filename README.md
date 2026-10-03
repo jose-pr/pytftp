@@ -1,6 +1,7 @@
 # tftp
 
 [![Python versions](https://img.shields.io/badge/python-3.9%20%7C%203.14-blue.svg)](https://github.com/jose-pr/pytftp)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jose-pr/pytftp/blob/main/LICENSE)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://jose-pr.github.io/pytftp/)
 [![CI](https://img.shields.io/github/actions/workflow/status/jose-pr/pytftp/test.yml)](https://github.com/jose-pr/pytftp/actions/workflows/test.yml)
 
@@ -213,5 +214,4 @@ at the tag, which owns every Pages deploy.
 
 ## License
 
-No license has been chosen yet; until one is, all rights are reserved and the
-package is marked as not for upload.
+MIT — see [LICENSE](https://github.com/jose-pr/pytftp/blob/main/LICENSE).

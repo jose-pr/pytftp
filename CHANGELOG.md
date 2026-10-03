@@ -96,5 +96,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   retransmission backoff use netimps' helpers (`UdpEndpoint`, `Backoff`)
   rather than pytftp's own.
 - Loopback throughput benchmark (`benchmarks/run.py`).
+- Licensed under MIT.
 
 [Unreleased]: https://github.com/jose-pr/pytftp/commits/main
