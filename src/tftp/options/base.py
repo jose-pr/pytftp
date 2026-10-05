@@ -127,7 +127,7 @@ class ServerContext:
         if self.policy.fit_mtu and self.mtu:
             from netimps import max_udp_payload
 
-            fits = max_udp_payload(self.mtu, self.ipv6) - 4  # the DATA header
+            fits = max_udp_payload(self.mtu, ipv6=self.ipv6) - 4  # the DATA header
             if fits >= MIN_BLKSIZE:
                 limit = min(limit, fits)
         return limit

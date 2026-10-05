@@ -42,7 +42,7 @@ from .capture.events import PacketEvent, new_session_id
 from .transfer import Receiver, Sender, Transfer, as_readinto, as_write
 
 if TYPE_CHECKING:  # netimps is imported lazily at run time
-    from netimps import AddressLike, Host
+    from netimps import HostLike
 
 __all__ = ["Client", "RemoteStat", "download", "upload", "MODES"]
 
@@ -109,18 +109,18 @@ def _source_size(source: Any) -> Optional[int]:
 
 def _mtu_blksize(server: Any) -> int:
     """The largest blksize that fits the MTU toward ``server``, or 1428."""
-    from netimps import get_source_ip, interface_for, max_udp_payload
+    from netimps import get_interface, get_source_ip, max_udp_payload
 
     try:
         source = get_source_ip(str(server), ipv6=server.version == 6)
         # cache=True: netimps reuses an adapter listing up to 1 s old, so a run of
         # transfers lists adapters at most once a second.
-        iface = interface_for(source, cache=True) if source is not None else None
+        iface = get_interface(source, cache=True) if source is not None else None
     except (OSError, ValueError):
         iface = None
     if iface is None or not iface.mtu:
         return 1428
-    fits = max_udp_payload(iface.mtu, server.version == 6) - 4  # the DATA header
+    fits = max_udp_payload(iface.mtu, ipv6=server.version == 6) - 4  # the DATA header
     return max(MIN_BLKSIZE, min(fits, MAX_BLKSIZE))
 
 
@@ -180,7 +180,7 @@ class Client:
 
     def __init__(
         self,
-        host: "AddressLike | Host",
+        host: "HostLike",
         port: int = 69,
         *,
         timeout: float = 1.0,
@@ -429,7 +429,7 @@ class Client:
             emit(request, "out", server)
         from netimps import Backoff
 
-        timer = Backoff(self.timeout, self.backoff, self.max_timeout)  # RFC 1123 4.2.3.2
+        timer = Backoff(self.timeout, multiplier=self.backoff, max_delay=self.max_timeout)  # RFC 1123 4.2.3.2
         deadline = clock() + timer.delay
         while True:
             remaining = deadline - clock()
@@ -456,17 +456,17 @@ class Client:
 
     def _target(self) -> Tuple[Any, int]:
         """``(host, port)``: a port written in the host (``"h:70"``) overrides ``port``."""
-        from netimps import normalize_host
+        from netimps import split_host
 
-        host, port = normalize_host(self.host, self.port)
+        host, port = split_host(self.host, default_port=self.port)
         return host, port if port is not None else self.port
 
     def _endpoint(self) -> Tuple[int, Tuple[Any, ...], Any]:
         """``(family, server sockaddr, server address)`` for this client's host."""
-        from netimps import get_ip
+        from netimps import Host
 
         host, port = self._target()
-        address = get_ip(host, ipv6={socket.AF_INET6: True, socket.AF_INET: False}.get(self.family))
+        address = Host(host).ip(ipv6={socket.AF_INET6: True, socket.AF_INET: False}.get(self.family))
         if address is None:
             raise socket.gaierror("cannot resolve %r" % host)
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
@@ -742,7 +742,7 @@ class Client:
 
 
 def download(
-    host: "AddressLike | Host",
+    host: "HostLike",
     filename: str,
     dest: PathOrFile,
     *,
@@ -756,7 +756,7 @@ def download(
 
 
 def upload(
-    host: "AddressLike | Host",
+    host: "HostLike",
     filename: str,
     source: Union[PathOrFile, bytes],
     *,

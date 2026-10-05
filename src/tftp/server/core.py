@@ -1,6 +1,6 @@
 """The server: one thread, one ``selectors`` event loop, any number of transfers.
 
-The listening socket is read through :class:`netimps.UdpEndpoint`, which
+The listening socket is read through :class:`netimps.UDPEndpoint`, which
 reports each request's destination address (``IP_PKTINFO`` /
 ``IPV6_PKTINFO``) where the platform allows it; :mod:`.session` binds the
 transfer's socket to it. Timers are a heap holding at most one live entry

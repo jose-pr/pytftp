@@ -338,7 +338,7 @@ def _arrival(local, interface=None):
 
     from tftp.server.listener import Arrival
 
-    datagram = SimpleNamespace(local_address=None if local is None else ipaddress.ip_address(local))
+    datagram = SimpleNamespace(destination=None if local is None else ipaddress.ip_address(local))
     return Arrival(b"", ("", 0), local, 0, datagram, interface)
 
 
@@ -465,30 +465,22 @@ def test_plain_windows_socket_does_report_connreset():
             sock.recvfrom(100)
 
 
-def test_interface_lookups_reuse_netimps_cache(monkeypatch):
+def test_interface_lookups_reuse_netimps_cache():
     """Per-request broadcast checks and per-transfer MTU lookups list adapters
     at most once per netimps cache period, not once per call."""
     import ipaddress
 
     import netimps
-    import netimps._ifaddrs as ifaddrs
 
     from tftp.client import _mtu_blksize
     from tftp.server.listener import Listener
 
-    real = ifaddrs._enumerate_interfaces
-    calls = []
-
-    def counting(*args, **kwargs):
-        calls.append(1)
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(ifaddrs, "_enumerate_interfaces", counting)
     netimps.clear_interface_cache()
+    before = netimps.interface_enumerations()
     for _ in range(5):
         assert not Listener.is_broadcast(_arrival("10.9.9.9"))  # no interface: falls back to a listing
-    assert len(calls) == 1
+    assert netimps.interface_enumerations() - before == 1
     netimps.clear_interface_cache()
-    calls.clear()
+    before = netimps.interface_enumerations()
     blksizes = {_mtu_blksize(ipaddress.ip_address("127.0.0.1")) for _ in range(5)}
-    assert len(calls) <= 1 and len(blksizes) == 1
+    assert netimps.interface_enumerations() - before <= 1 and len(blksizes) == 1

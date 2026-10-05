@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import functools
 import io
 import os
 import socket
@@ -304,12 +305,14 @@ class AsyncClient(Client):
         return await self._run(Opcode.WRQ, filename, mode, size, None, as_readinto(reader), progress, bridge)
 
     async def _run(self, opcode, filename, mode, size, write, read, progress, bridge) -> TransferResult:
-        from netimps import bind, get_ip
+        from netimps import Host, bind
 
         loop = asyncio.get_running_loop()
         host, port = self._target()
         ipv6 = {socket.AF_INET6: True, socket.AF_INET: False}.get(self.family)
-        address = await loop.run_in_executor(None, get_ip, host, ipv6)  # DNS off the loop
+        address = await loop.run_in_executor(
+            None, functools.partial(Host(host).ip, ipv6=ipv6)
+        )  # DNS off the loop
         if address is None:
             raise socket.gaierror("cannot resolve %r" % host)
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
@@ -368,7 +371,7 @@ class AsyncClient(Client):
             # Request phase, with the same backoff as retransmissions.
             from netimps import Backoff
 
-            timer = Backoff(self.timeout, self.backoff, self.max_timeout)
+            timer = Backoff(self.timeout, multiplier=self.backoff, max_delay=self.max_timeout)
             for attempt in range(self.retries + 1):
                 driver.sendto(request, server)
                 try:

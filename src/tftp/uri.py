@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
 if TYPE_CHECKING:
-    from netimps import AddressLike, Host
+    from netimps import HostLike
 from urllib.parse import quote, unquote, urlsplit
 
 __all__ = ["TftpURL", "parse_url", "format_url", "download_url", "upload_url"]
@@ -62,7 +62,7 @@ def parse_url(url: str) -> TftpURL:
     return TftpURL(host, port, filename, mode)
 
 
-def format_url(host: "AddressLike | Host", filename: str, port: int = 69, mode: str = "octet") -> str:
+def format_url(host: "HostLike", filename: str, port: int = 69, mode: str = "octet") -> str:
     """The ``tftp://`` URI for a file; the inverse of :func:`parse_url`.
 
     ``host`` is a name or address string, an ``ipaddress`` address or

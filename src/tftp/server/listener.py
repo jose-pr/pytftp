@@ -7,7 +7,7 @@ import socket
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Tuple
 
 if TYPE_CHECKING:
-    from netimps import Host, IPAddressLike, InterfaceSpec
+    from netimps import Host, InterfaceLike, IPAddressLike
 
 from ..packet import encode_error
 from .session import PortRange
@@ -35,11 +35,11 @@ class Arrival(NamedTuple):
 
 
 def _bind_interface(
-    host: "IPAddressLike | Host | None", port: int, interface: "InterfaceSpec"
+    host: "IPAddressLike | Host | None", port: int, interface: "InterfaceLike"
 ) -> socket.socket:
     """Listen on ``interface``'s address: IPv4 when it has one, unless ``host`` is a
     wildcard naming the family (``"0.0.0.0"`` or ``"::"``)."""
-    from netimps import bind, get_ip, is_wildcard
+    from netimps import Host, bind, is_wildcard
 
     plain = {"connreset": False, "interface": interface}
     if not host:
@@ -47,7 +47,7 @@ def _bind_interface(
             return bind("", port, family=socket.AF_INET, **plain)
         except ValueError:  # no IPv4 address on that adapter
             return bind("", port, family=socket.AF_INET6, **plain)
-    address = get_ip(host)
+    address = Host(host).ip()
     if address is None or not is_wildcard(host):
         raise ValueError(
             "give host or interface, not both (host may be '0.0.0.0' or '::' to pick the family)"
@@ -55,8 +55,8 @@ def _bind_interface(
     return bind("", port, family=socket.AF_INET6 if address.version == 6 else socket.AF_INET, **plain)
 
 
-def _bind(host: "IPAddressLike | Host | None", port: int, interface: "InterfaceSpec" = None) -> socket.socket:
-    from netimps import bind, get_ip, is_wildcard, normalize_host
+def _bind(host: "IPAddressLike | Host | None", port: int, interface: "InterfaceLike" = None) -> socket.socket:
+    from netimps import Host, bind, is_wildcard, split_host
 
     if interface is not None:
         return _bind_interface(host, port, interface)
@@ -64,8 +64,8 @@ def _bind(host: "IPAddressLike | Host | None", port: int, interface: "InterfaceS
     # platform (no SO_REUSEADDR on POSIX, SO_EXCLUSIVEADDRUSE on Windows).
     plain = {"connreset": False}
     if host:
-        host = normalize_host(host)[0]  # "[::1]" -> "::1"
-    address = get_ip(host) if host else None
+        host = split_host(host)[0]  # "[::1]" -> "::1"
+    address = Host(host).ip() if host else None
     if not host or (is_wildcard(host) and address is not None and address.version == 6):
         try:
             sock = bind(
@@ -93,7 +93,7 @@ class Listener:
     """The server's well-known-port socket.
 
     :param pktinfo: report each request's destination address, through
-        :class:`netimps.UdpEndpoint`, where the platform allows it; replies
+        :class:`netimps.UDPEndpoint`, where the platform allows it; replies
         then leave from that address.
     :param interface: listen on this adapter's address (see ``Server``).
     """
@@ -103,7 +103,7 @@ class Listener:
         host: "IPAddressLike | Host | None",
         port: int,
         pktinfo: bool = True,
-        interface: "InterfaceSpec" = None,
+        interface: "InterfaceLike" = None,
     ) -> None:
         self.sock = _bind(host, port, interface)
         self.family = self.sock.family
@@ -118,14 +118,14 @@ class Listener:
         bound = self.sock.getsockname()[0]
         #: The listening address, or ``None`` when it is a wildcard.
         self.host: Optional[str] = None if is_wildcard(bound) else bound
-        from netimps import UdpEndpoint
+        from netimps import UDPEndpoint
 
-        self.endpoint = UdpEndpoint(self.sock, pktinfo=pktinfo)
+        self.endpoint = UDPEndpoint(self.sock, pktinfo=pktinfo)
         self.sock.setblocking(False)
 
     @property
     def supports_pktinfo(self) -> bool:
-        return self.endpoint.supports_pktinfo
+        return self.endpoint.has_pktinfo
 
     @property
     def dual_stack(self) -> bool:
@@ -146,7 +146,7 @@ class Listener:
     @staticmethod
     def arrival(datagram: Any) -> Arrival:
         """An :class:`Arrival` from a netimps ``Datagram``."""
-        local = datagram.local_address
+        local = datagram.destination
         return Arrival(
             datagram.data,
             datagram.sender,
@@ -160,7 +160,7 @@ class Listener:
     def is_broadcast(arrival: Arrival) -> bool:
         """Sent to a broadcast (limited or subnet) or multicast address (RFC 1123 4.2.3.4)."""
         datagram = arrival.datagram
-        local = None if datagram is None else datagram.local_address
+        local = None if datagram is None else datagram.destination
         if local is None:
             return False  # without pktinfo every request looks unicast
         from netimps import is_broadcast, is_multicast
@@ -173,7 +173,7 @@ class Listener:
         self, arrival: Arrival, ports: "Optional[PortRange]" = None
     ) -> Tuple[socket.socket, Tuple[Any, ...]]:
         """A non-blocking socket for one transfer, bound to the address the
-        request was sent to (``UdpEndpoint.reply_socket``), and the peer to
+        request was sent to (``UDPEndpoint.reply_socket``), and the peer to
         send to in that socket's family.
 
         With ``ports`` it takes a free port from the range;

@@ -8,7 +8,7 @@ those not marked ``_tftp_fast_open_`` are opened in the loop's executor.
 
 The listening socket keeps pktinfo (replies from the request's address) on
 every loop, Windows' default Proactor loop included: it is read with netimps'
-``UdpEndpoint.arecv``.
+``UDPEndpoint.arecv``.
 """
 
 from __future__ import annotations

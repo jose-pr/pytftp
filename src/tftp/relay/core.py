@@ -253,9 +253,9 @@ class Relay:
         if cached is not None and cached[1] > now:
             address = cached[0]
         else:
-            from netimps import get_ip
+            from netimps import Host
 
-            address = get_ip(target.host)
+            address = Host(target.host).ip()
             if address is None:
                 raise TftpError(ErrorCode.NOT_DEFINED, "upstream unresolvable")
             self._resolved[target.host] = (address, now + _RESOLVE_TTL)

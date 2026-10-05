@@ -263,7 +263,7 @@ def test_serve_on_interface(root):
 
     import tftp
 
-    iface = netimps.interface_for("127.0.0.1")
+    iface = netimps.get_interface("127.0.0.1")
     if iface is None:
         pytest.skip("no loopback interface reported")
     proc, port = _serve_subprocess(["serve", str(root), "--interface", iface.name, "-p", "0"])

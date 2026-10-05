@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, NamedTuple, Optional, Sequence, Tuple, Union
 
 if TYPE_CHECKING:
-    from netimps import AddressLike, Host, Interface, IPAddressLike, IPNetworkLike
+    from netimps import HostLike, Interface, IPAddressLike, IPNetworkLike
 
 __all__ = ["Upstream", "upstream", "RouteTable", "by_subnet", "by_prefix", "by_interface", "Route"]
 
@@ -22,11 +22,11 @@ class Upstream(NamedTuple):
     ``ipaddress`` address, or a ``netimps.Host``.
     """
 
-    host: "AddressLike | Host"
+    host: "HostLike"
     port: int = 69
 
 
-UpstreamLike = Union[Upstream, "AddressLike", "Host", Tuple["AddressLike | Host", int]]
+UpstreamLike = Union[Upstream, "HostLike", Tuple["HostLike", int]]
 Route = Callable[[Any, Any], Optional[UpstreamLike]]
 
 
@@ -38,9 +38,9 @@ def upstream(value: UpstreamLike) -> Upstream:
         return value
     if isinstance(value, tuple):
         return Upstream(value[0], int(value[1]))
-    from netimps import normalize_host
+    from netimps import split_host
 
-    host, port = normalize_host(value, 69)
+    host, port = split_host(value, default_port=69)
     return Upstream(host, port or 69)
 
 
@@ -103,7 +103,7 @@ def by_interface(table: "dict[Union[int, Interface, IPAddressLike], UpstreamLike
 
     Needs pktinfo; without it neither is known and nothing matches.
     """
-    from netimps import Interface, get_ip, unmap
+    from netimps import Host, Interface, unmap
 
     by_index: Dict[int, Upstream] = {}
     by_address: Dict[Any, Upstream] = {}
@@ -115,7 +115,7 @@ def by_interface(table: "dict[Union[int, Interface, IPAddressLike], UpstreamLike
         elif isinstance(key, Interface):
             by_index[key.index] = upstream(target)
         else:
-            address = get_ip(key)  # an ipaddress interface counts as its address
+            address = Host(key).ip()  # an ipaddress interface counts as its address
             if address is None:
                 raise ValueError("by_interface: cannot resolve %r" % (key,))
             by_address[unmap(address)] = upstream(target)

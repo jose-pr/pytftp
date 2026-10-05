@@ -164,7 +164,7 @@ class Transfer:
         from netimps import Backoff  # pure arithmetic: the engine still does no I/O
 
         #: The retransmission wait: doubles on silence, back to ``timeout`` on progress.
-        self._timer = Backoff(self.timeout, self.backoff, self.max_timeout)
+        self._timer = Backoff(self.timeout, multiplier=self.backoff, max_delay=self.max_timeout)
         self.expires = expires
         self.done = False
         self.error: Optional[TftpError] = None

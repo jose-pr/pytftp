@@ -3,7 +3,7 @@
 Every transfer gets its own UDP socket -- its transfer ID (RFC 1350
 section 4) -- bound to the address the request was sent to when that is
 known, so a multi-homed or virtual-IP host answers from the address the
-client used (``Listener.reply_socket``, on netimps' ``UdpEndpoint``).
+client used (``Listener.reply_socket``, on netimps' ``UDPEndpoint``).
 """
 
 from __future__ import annotations

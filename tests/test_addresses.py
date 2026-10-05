@@ -114,7 +114,7 @@ def test_client_local_address_typed(root, make_server):
 
 
 def _loopback():
-    iface = netimps.interface_for("127.0.0.1")
+    iface = netimps.get_interface("127.0.0.1")
     if iface is None:
         pytest.skip("no loopback interface reported")
     return iface
