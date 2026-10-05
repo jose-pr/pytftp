@@ -7,7 +7,9 @@ they wrote against the builtin (or against the package base) stops matching.
 
 import ast
 import builtins
+import copy
 import importlib
+import pickle
 from pathlib import Path
 
 import pytest
@@ -146,3 +148,71 @@ def test_every_exception_is_exported_from_its_module(cls, builtins):
 def test_the_root_exports_every_exception_but_the_capture_ones(cls):
     assert getattr(tftp, cls.__name__) is cls
     assert cls.__name__ in tftp.__all__
+
+
+# --------------------------------------------------------------------------- #
+# Copy and pickle: every class is rebuilt by type(*args).
+# --------------------------------------------------------------------------- #
+_INSTANCES = [
+    TFTPError(2, "no"),
+    TFTPError(900, "an unknown code"),
+    TFTPProtocolError("bad oack", 8),
+    TFTPProtocolError("bad"),
+    RemoteError(3, "full"),
+    RemoteError.from_code(77, "unnamed"),
+    FileNotFound(message="gone"),
+    AccessViolation(),
+    DiskFull(),
+    IllegalOperation(),
+    UnknownTransferID(),
+    FileAlreadyExists(),
+    NoSuchUser(),
+    OptionNegotiationError(message="refused"),
+    TransferTimeoutError("slow"),
+    TransferTimeoutError(),
+    TransferAbortedError("stop"),
+    TransferAbortedError(),
+    TFTPValueError("not a URL"),
+    TFTPDecodeError("short"),
+    CaptureFormatError("truncated"),
+    CaptureFilterError("bad key"),
+]
+
+
+def _state(error):
+    return (type(error), error.args, error.code, error.message, str(error))
+
+
+def test_the_instances_cover_every_class_but_the_signal():
+    assert {type(error) for error in _INSTANCES} == {cls for cls, _ in _BUILTINS}
+
+
+@pytest.mark.parametrize("error", _INSTANCES, ids=repr)
+@pytest.mark.parametrize("how", [copy.copy, copy.deepcopy], ids=["copy", "deepcopy"])
+def test_an_exception_copies(error, how):
+    twin = how(error)
+    assert twin is not error
+    assert _state(twin) == _state(error)
+
+
+@pytest.mark.parametrize("error", _INSTANCES, ids=repr)
+@pytest.mark.parametrize("protocol", range(pickle.HIGHEST_PROTOCOL + 1))
+def test_an_exception_pickles(error, protocol):
+    twin = pickle.loads(pickle.dumps(error, protocol))
+    assert _state(twin) == _state(error)
+
+
+@pytest.mark.parametrize("error", _INSTANCES, ids=repr)
+def test_a_transfer_result_holding_an_exception_copies_and_pickles(error):
+    result = tftp.TransferResult(
+        "f", "read", "octet", ("h", 1), ("l", 2), 0, 0, 0, 0.0, tftp.Negotiated(), error
+    )
+    for twin in (copy.copy(result), copy.deepcopy(result), pickle.loads(pickle.dumps(result))):
+        assert _state(twin.error) == _state(error)
+
+
+def test_a_timeout_survives_a_process_boundary_without_an_errno():
+    twin = pickle.loads(pickle.dumps(TransferTimeoutError("slow")))
+    assert isinstance(twin, TimeoutError)
+    assert twin.errno is None
+    assert twin.message == "slow"
