@@ -35,7 +35,8 @@ from .options import (
     accept_oack,
     request_options,
 )
-from .packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_error, encode_request, decode
+from .packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_request, decode
+from .packet.codec import _encode_error
 from .result import TransferResult
 from ._sockets import fit_window, same_host, sockaddr
 from .capture.events import PacketEvent, new_session_id
@@ -400,14 +401,14 @@ class TFTPClient:
                     options, oack, is_read=is_read, timeout=self.timeout, registry=self.registry
                 )
             except TFTPProtocolError as exc:
-                send(encode_error(exc.code, exc.message))
+                send(_encode_error(exc.code, exc.message))
                 raise
             return negotiated, False
         if (is_read and op == TFTPOpcode.DATA) or (
             not is_read and op == TFTPOpcode.ACK and view[2] == 0 and view[3] == 0
         ):
             return Negotiated(timeout=self.timeout), is_read
-        send(encode_error(TFTPErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
+        send(_encode_error(TFTPErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
         raise TFTPProtocolError("unexpected opcode %d in response to the request" % op)
 
     def _emitter(self, sock) -> Optional[Callable[[Any, str, Tuple[Any, ...]], None]]:
@@ -564,9 +565,9 @@ class TFTPClient:
             self.on_negotiated(negotiated, peer)
         except BaseException as exc:
             if isinstance(exc, TFTPError):
-                packet = encode_error(exc.code, exc.message)
+                packet = _encode_error(exc.code, exc.message)
             else:
-                packet = encode_error(TFTPErrorCode.NOT_DEFINED, "transfer cancelled")
+                packet = _encode_error(TFTPErrorCode.NOT_DEFINED, "transfer cancelled")
             try:
                 send(packet)
             except OSError:
@@ -601,16 +602,16 @@ class TFTPClient:
                 packet = decode(view[:n])
                 raise RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
             if op == TFTPOpcode.OACK:
-                send(encode_error(TFTPErrorCode.OPTION_REFUSED, "size probe only"))
+                send(_encode_error(TFTPErrorCode.OPTION_REFUSED, "size probe only"))
                 return dict(decode(view[:n]).options), None  # type: ignore[union-attr]
             if op == TFTPOpcode.DATA and n >= 4:
                 size = n - 4
                 if size < DEFAULT_BLKSIZE:
                     send(encode_ack(1))  # the whole file: finish politely
                     return None, size
-                send(encode_error(TFTPErrorCode.NOT_DEFINED, "size probe only"))
+                send(_encode_error(TFTPErrorCode.NOT_DEFINED, "size probe only"))
                 return None, None
-            send(encode_error(TFTPErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
+            send(_encode_error(TFTPErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
             raise TFTPProtocolError("unexpected opcode %d in response to the request" % op)
 
     def _exchange(
@@ -699,7 +700,7 @@ class TFTPClient:
                 emit(view[:n], "in", addr)
             if addr[1] != peer_port or addr[0] != peer_host:
                 try:
-                    stray = encode_error(TFTPErrorCode.UNKNOWN_TID)
+                    stray = _encode_error(TFTPErrorCode.UNKNOWN_TID)
                     sock.sendto(stray, addr)
                     if trace is not None:
                         emit(stray, "out", addr)

@@ -53,6 +53,17 @@ def test_event_fields_and_json():
     assert out.source == ("::1", 5) and "[::1]:5 > [::1]:6" in out.format()
 
 
+def test_a_request_event_is_json_with_its_options():
+    import json
+
+    request = PacketEvent(
+        0, "in", ("10.0.0.1", 69), ("10.0.0.5", 2000), encode_request(1, "f", "octet", {"blksize": 8})
+    )
+    assert json.loads(json.dumps(request.to_dict()))["options"] == {"blksize": "8"}
+    refusal = PacketEvent(0, "out", ("10.0.0.1", 69), ("10.0.0.5", 2000), encode_error(8, "no"))
+    assert json.loads(json.dumps(refusal.to_dict()))["code"] == 8
+
+
 # -- trace hooks ------------------------------------------------------------------------
 
 

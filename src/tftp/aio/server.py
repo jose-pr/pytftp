@@ -23,7 +23,8 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
-from ..packet import TFTPErrorCode, encode_error
+from ..packet import TFTPErrorCode
+from ..packet.codec import _encode_error
 from ..server.base import ServerBase
 from ..server.listener import _RECV_SIZE, Arrival
 from ..server.session import Session
@@ -232,7 +233,7 @@ class AsyncTFTPServer(ServerBase):
         if session.trace is not None:
             session.emit(data, "in", addr)
         if addr[1] != session.port or addr[0] != session.host:
-            stray = encode_error(TFTPErrorCode.UNKNOWN_TID)
+            stray = _encode_error(TFTPErrorCode.UNKNOWN_TID)
             try:
                 session.sock.sendto(stray, addr)
             except OSError:

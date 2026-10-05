@@ -130,8 +130,8 @@ def test_write_dally_reacknowledges_last_block(root, make_server):
 @pytest.mark.parametrize(
     "request_bytes,code",
     [
-        (encode_request(TFTPOpcode.RRQ, "one.bin", "mail"), TFTPErrorCode.ILLEGAL_OPERATION),
-        (encode_request(TFTPOpcode.RRQ, "one.bin", "weird"), TFTPErrorCode.ILLEGAL_OPERATION),
+        (b"\x00\x01one.bin\x00mail\x00", TFTPErrorCode.ILLEGAL_OPERATION),
+        (b"\x00\x01one.bin\x00weird\x00", TFTPErrorCode.ILLEGAL_OPERATION),
         (b"\x00\x01\x00octet\x00", TFTPErrorCode.ILLEGAL_OPERATION),
     ],
 )
@@ -321,12 +321,28 @@ def test_tftp_error_keeps_codes_the_wire_can_carry():
     assert tftp.TFTPError(1).code is TFTPErrorCode.FILE_NOT_FOUND
 
 
-def test_encode_error_is_total():
-    assert decode(encode_error(1, "bad\0name")).message == "bad?name"
-    assert decode(encode_error(70000, "x")).code == 0
-    assert decode(encode_error(-1, "x")).code == 0
-    long = decode(encode_error(1, "é" * 5000)).message
+def test_the_error_the_library_sends_is_always_encodable():
+    from tftp.packet.codec import _encode_error
+
+    assert decode(_encode_error(1, "bad\0name")).message == "bad?name"
+    assert decode(_encode_error(70000, "x")).code == 0
+    assert decode(_encode_error(-1, "x")).code == 0
+    assert decode(_encode_error(None, None)).message == "None"
+    long = decode(_encode_error(1, "é" * 5000)).message
     assert 0 < len(long.encode()) <= 512 and set(long) == {"é"}
+
+
+def test_a_refusal_that_cannot_be_encoded_as_written_still_reaches_the_client(root, make_server):
+    class Handler:
+        def open_read(self, context):
+            raise tftp.TFTPError(70, "bad\0name" + "é" * 5000)
+
+    server = make_server(Handler())
+    with pytest.raises(tftp.RemoteError) as raised:
+        client_for(server).get("anything")
+    assert raised.value.code == 70 and raised.value.message.startswith("bad?name")
+    assert len(raised.value.message.encode()) <= 512
+    assert client_for(make_server(root)).get("one.bin") == b"x"  # and the next server carries on
 
 
 def _wait_idle(server, seconds: float = 2.0) -> None:

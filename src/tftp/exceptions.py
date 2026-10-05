@@ -79,11 +79,7 @@ class TFTPError(Exception):
             raise ValueError("an error code is 0 to 65535, not %d" % code)
         if not isinstance(message, str):
             raise TypeError("an error message is text, not %s" % type(message).__name__)
-        try:
-            code = TFTPErrorCode(code)
-        except ValueError:
-            pass
-        self.code = code
+        self.code = TFTPErrorCode(code)
         self.message = message or _default_message(code)
         super().__init__(*self._constructor_args())
 
@@ -96,8 +92,7 @@ class TFTPError(Exception):
         return (self.code, self.message)
 
     def __str__(self) -> str:
-        name = self.code.name if isinstance(self.code, TFTPErrorCode) else str(self.code)
-        return "%s: %s" % (name, self.message)
+        return "%s: %s" % (self.code.name, self.message)
 
 
 class TFTPProtocolError(TFTPError):

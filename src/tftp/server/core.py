@@ -26,7 +26,8 @@ if TYPE_CHECKING:
 
 from ..capture.events import PacketEvent
 from ..options import TFTPServerOptions
-from ..packet import TFTPErrorCode, encode_error
+from ..packet import TFTPErrorCode
+from ..packet.codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Transfer
 from .base import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
@@ -370,7 +371,7 @@ class TFTPServer(ServerBase):
                 session.emit(view[:n], "in", addr)
             if addr[1] != port or addr[0] != host:
                 try:
-                    stray = encode_error(TFTPErrorCode.UNKNOWN_TID)
+                    stray = _encode_error(TFTPErrorCode.UNKNOWN_TID)
                     session.sock.sendto(stray, addr)
                     if trace is not None:
                         session.emit(stray, "out", addr)

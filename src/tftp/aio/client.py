@@ -17,7 +17,8 @@ from ..listing import ListEntry, parse_listing
 from ..exceptions import RemoteError, TransferTimeoutError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import DEFAULT_BLKSIZE
-from ..packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_error, encode_request
+from ..packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_request
+from ..packet.codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from .._sockets import fit_window, same_host, sockaddr
@@ -92,7 +93,7 @@ class _Transfer:
             return
         peer = self.peer
         if addr[1] != peer[1] or addr[0] != peer[0]:  # type: ignore[index]
-            self.sendto(encode_error(TFTPErrorCode.UNKNOWN_TID), addr)
+            self.sendto(_encode_error(TFTPErrorCode.UNKNOWN_TID), addr)
             return
         engine = self.engine
         engine.handle(memoryview(data), len(data), self.loop.time())

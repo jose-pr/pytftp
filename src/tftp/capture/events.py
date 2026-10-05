@@ -156,7 +156,9 @@ class PacketEvent(NamedTuple):
             for field in ("filename", "mode", "options", "code", "message"):
                 if hasattr(packet, field):
                     value = getattr(packet, field)
-                    record[field] = int(value) if field == "code" else value
+                    record[field] = (
+                        int(value) if field == "code" else dict(value) if field == "options" else value
+                    )
         if payload and self.opcode == TFTPOpcode.DATA:
             record["payload"] = self.data[4:].hex()
         return record

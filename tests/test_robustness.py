@@ -308,13 +308,19 @@ def test_shutdown_aborts_running_transfers(root, make_server):
 # -- limits and broadcast --------------------------------------------------
 
 
+def _oversized_request(filename, options=()):
+    """A request as a hostile peer sends it: what ``encode_request`` refuses."""
+    fields = [filename, "octet"] + [text for pair in options for text in pair]
+    return b"\x00\x01" + b"".join(f.encode() + b"\0" for f in fields)
+
+
 @pytest.mark.parametrize(
     "request_bytes,fragment",
     [
-        (encode_request(TFTPOpcode.RRQ, "a" * 600), "filename"),
-        (encode_request(TFTPOpcode.RRQ, "f", "octet", {"opt%d" % i: 1 for i in range(20)}), "options"),
-        (encode_request(TFTPOpcode.RRQ, "f", "octet", {"blksize": "1" * 300}), "option"),
-        (encode_request(TFTPOpcode.RRQ, "f" * 1100), "too large"),
+        (_oversized_request("a" * 600), "filename"),
+        (_oversized_request("f", [("opt%d" % i, "1") for i in range(20)]), "options"),
+        (_oversized_request("f", [("blksize", "1" * 300)]), "option"),
+        (_oversized_request("f" * 1100), "too large"),
     ],
 )
 def test_request_limits(root, make_server, request_bytes, fragment):

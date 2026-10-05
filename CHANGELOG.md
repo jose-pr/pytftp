@@ -71,6 +71,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `TransferTimeoutError().errno` is `None`; it was `TFTPErrorCode.NOT_DEFINED`
   (0), which is not an operating-system error number.
 
+- **The five packet types are validated, immutable values, not named tuples.**
+  `RequestPacket`, `DataPacket`, `AckPacket`, `ErrorPacket` and
+  `OptionAckPacket` equal only their own type (`AckPacket(5) == (5,)` was
+  `True`), are hashable (a request and an OACK were not), do not unpack or
+  index, and refuse a block outside 0..65535 or a wrong type at construction.
+  `options` is a read-only mapping. Each has a `decode(data)` classmethod,
+  `encode()` and `bytes(packet)`: `bytes(AckPacket(5))` is
+  `b"\x00\x04\x00\x05"`, where it was one octet, and `bytes(DataPacket(...))`
+  raised. `decode()` returns an ERROR's `code` as a `TFTPErrorCode`, which
+  carries a number the RFCs do not define as an unnamed member
+  (`TFTPErrorCode(258).name == "CODE_258"`) instead of a plain `int`.
+- **The encoders are strict**, where they wrote what the decoder refuses. These
+  inputs raised nothing and now raise `ValueError`: `encode_request` with an
+  empty file name, a mode other than `netascii`, `octet` and `mail`, an empty
+  option name or a request over 512 octets (RFC 2347), `encode_oack` with no
+  options or an empty option name, and `encode_error` with a code outside
+  0..65535 (it sent 0), a NUL in the message (it sent `?`) or a message over 512
+  octets (it cut it). An option value that is not text or an `int`
+  (`None`, `True`, a float) raises `TypeError`; it was written as `str(value)`.
+  `encode_data` and `encode_ack` raise `ValueError` or `TypeError` for a bad
+  block, where `struct.error` escaped. The servers and clients still send
+  every ERROR they report, however malformed its code or text.
+
 ### Renamed
 
 Old names are not kept as aliases.

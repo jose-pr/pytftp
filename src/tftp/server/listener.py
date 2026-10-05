@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Tuple
 if TYPE_CHECKING:
     from netimps import Host, InterfaceLike, IPAddressLike
 
-from ..packet import encode_error
+from ..packet.codec import _encode_error
 from .session import PortRange
 
 __all__ = ["Listener", "Arrival"]
@@ -188,7 +188,7 @@ class Listener:
     def reply_error(self, sender: Tuple[Any, ...], code: int, message: str) -> None:
         """Answer a request with an ERROR from the listening socket itself."""
         try:
-            self.sock.sendto(encode_error(code, message), sender)
+            self.sock.sendto(_encode_error(code, message), sender)
         except OSError:
             pass
 

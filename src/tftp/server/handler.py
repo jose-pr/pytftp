@@ -10,6 +10,7 @@ uploads somewhere other than a disk.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import os
 import tempfile
 from typing import Any, BinaryIO, Optional, Tuple
@@ -63,7 +64,7 @@ class TFTPRequestContext:
         a wrapper that rewrites names does not have to know the fields.
         """
         clone = copy.copy(self)
-        clone.request = self.request._replace(filename=filename, raw=b"")
+        clone.request = dataclasses.replace(self.request, filename=filename, raw=b"")
         return clone
 
     @property

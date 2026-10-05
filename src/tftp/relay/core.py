@@ -30,7 +30,8 @@ if TYPE_CHECKING:
 from .._sockets import same_host, sockaddr
 from ..capture.events import PacketEvent, new_session_id
 from ..exceptions import TFTPDecodeError, TFTPError
-from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode, encode_error
+from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
+from ..packet.codec import _encode_error
 from ..server.handler import TFTPRequestContext
 from ..server.listener import Arrival, Listener
 from ..server.policy import TFTPServerLimits
@@ -197,7 +198,7 @@ class TFTPRelay:
             for session in list(self._sessions.values()):
                 for sock, peer in ((session.down, session.client), (session.up, session.upstream_tid)):
                     if peer is not None:
-                        self._send(session, sock, encode_error(0, "relay shutting down"), peer, "out")
+                        self._send(session, sock, _encode_error(0, "relay shutting down"), peer, "out")
                 self._end(session, "shutdown", now)
 
     def shutdown(self) -> None:
@@ -392,14 +393,14 @@ class TFTPRelay:
                         continue  # not the server we asked
                     session.upstream_tid = addr  # RFC 1350 section 4: learn its TID
                 if addr[0] != session.upstream_tid[0] or addr[1] != session.upstream_tid[1]:
-                    self._send(session, sock, encode_error(TFTPErrorCode.UNKNOWN_TID), addr)
+                    self._send(session, sock, _encode_error(TFTPErrorCode.UNKNOWN_TID), addr)
                     continue
                 self._emit(session, sock, data, addr, "in", "upstream")
                 session.observe(data, False, now, self.linger)
                 self._send(session, session.down, data, session.client)
             else:
                 if addr[0] != session.client[0] or addr[1] != session.client[1]:
-                    self._send(session, sock, encode_error(TFTPErrorCode.UNKNOWN_TID), addr)
+                    self._send(session, sock, _encode_error(TFTPErrorCode.UNKNOWN_TID), addr)
                     continue
                 self._emit(session, sock, data, addr, "in", "client")
                 if session.upstream_tid is None:

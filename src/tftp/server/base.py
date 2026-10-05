@@ -20,7 +20,8 @@ if TYPE_CHECKING:
 from ..capture.events import PacketEvent
 from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, error_for_exception
 from ..options import Negotiated, TFTPServerOptions
-from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode, encode_error
+from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
+from ..packet.codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Transfer
 from .handler import TFTPRequestContext
@@ -238,7 +239,7 @@ class ServerBase:
         log.info("%s refused: %s", session.context, error)
         self.stats.add("refused")
         try:
-            session.send(encode_error(error.code, error.message))
+            session.send(_encode_error(error.code, error.message))
             session.close_stream(ok=False)
         finally:
             self._release(session)

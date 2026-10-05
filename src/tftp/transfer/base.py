@@ -17,7 +17,7 @@ from ..exceptions import (
 )
 from ..netascii import NetasciiWriter
 from ..options import Negotiated
-from ..packet import encode_error
+from ..packet.codec import _encode_error
 
 __all__ = ["Transfer", "as_readinto", "as_write"]
 
@@ -206,7 +206,7 @@ class Transfer:
         self.is_stalled = False
         if notify:
             try:
-                self._send(encode_error(error.code, error.message))
+                self._send(_encode_error(error.code, error.message))
             except OSError:
                 pass
 
