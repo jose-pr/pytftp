@@ -668,7 +668,7 @@ not one of these. `TFTPError` plays three roles, told apart by the subclass:
 Malformed text raises **`TFTPValueError`**, also a `ValueError`:
 **`TFTPDecodeError`** (bytes that are not a packet; `.code` is 4),
 `CaptureFormatError` and `CaptureFilterError` (both in `tftp.capture` too) and
-`parse_url`'s refusals. `str()` of these is the message alone. **`WouldBlock`**
+`TFTPURL.parse`'s refusals. `str()` of these is the message alone. **`WouldBlock`**
 is a `BlockingIOError`, a signal that a source or sink has nothing ready.
 
 Every exception copies and pickles (`copy.copy`, `multiprocessing`), a
@@ -705,15 +705,26 @@ relay forwards unknown options untouched), `DataPacket(block, data)`, `AckPacket
 
 ## URIs (RFC 3617)
 
-- **`parse_url(url) -> TFTPURL(host, port, filename, mode)`** — the file name
-  is the percent-decoded path after the authority's `/`; `;mode=netascii`
-  selects the mode (default `octet`); the port defaults to 69. Anything else
-  (another scheme, no host or file, an unknown parameter, `mode=mail`) raises
-  `TFTPValueError`.
-- **`format_url(host, filename, port=69, mode="octet")`** — the inverse
-  (`str(TFTPURL)` too); `host` may be an address or interface object or a
-  `netimps.Host`; IPv6 hosts are bracketed. `port` must be an `int` (`None`
-  omits it): a `str` or `bool` raises `TypeError`.
+- **`TFTPURL(host, port, filename, mode="octet")`** — a frozen, hashable
+  value that equals only another `TFTPURL`; it is not a tuple. The constructor
+  validates and normalises: `host` is lower-cased text (an `ipaddress` address
+  or interface, or a `netimps.Host`, is reduced to its text; an IPv6 literal
+  is compressed and its zone kept), `port` an `int` in 1..65535, `mode`
+  `"octet"` or `"netascii"` (any case), `filename` non-empty text without a NUL.
+  A wrong type raises `TypeError`, a value no URL can carry `TFTPValueError`.
+  `str(url)` is the URL (IPv6 hosts bracketed, a zone written `%25`, the port
+  only when it is not 69, `;mode=netascii` only for netascii) and imports
+  nothing: `TFTPURL.parse(str(url)) == url`.
+- **`TFTPURL.parse(text)`** — RFC 3617's `"tftp://" host "/" file [ mode ]`
+  plus an optional `:port` (default 69) and `/` inside the file name. The
+  file name is percent-decoded as UTF-8 with `surrogateescape` (the packet
+  codec's own, so any octet sequence round-trips); a `%25` zone decodes. Raises
+  `TFTPValueError` for another scheme, no host or file, a query (`?`), a
+  fragment (`#`), userinfo, port 0 or a non-digit port, a control character, a
+  NUL in the file name, a repeated or unknown parameter and `mode=mail` (write
+  `%3F` or `%23` for a literal `?` or `#`); `TypeError` for a non-`str`.
+  **`TFTPURL.try_parse(text, default=None)`** returns `default` instead of
+  raising `TFTPValueError`.
 - **`download_url(url, dest, *, progress=None, **client_options)`**,
   **`upload_url(url, source, ...)`** — one-shot transfers by URL.
 

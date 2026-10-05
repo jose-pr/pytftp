@@ -33,10 +33,10 @@ def test_client_host_string_with_port(root, make_server):
     assert tftp.TFTPClient("127.0.0.1:%d" % server.server_address[1]).get("one.bin") == b"x"
 
 
-def test_format_url_host_forms():
-    assert tftp.format_url(ipaddress.ip_address("2001:db8::1"), "f", 70) == "tftp://[2001:db8::1]:70/f"
-    assert tftp.format_url(ipaddress.ip_interface("10.0.0.5/24"), "f") == "tftp://10.0.0.5/f"
-    assert tftp.format_url(netimps.Host("boot.lan"), "f") == "tftp://boot.lan/f"
+def test_url_host_forms():
+    assert str(tftp.TFTPURL(ipaddress.ip_address("2001:db8::1"), 70, "f")) == "tftp://[2001:db8::1]:70/f"
+    assert str(tftp.TFTPURL(ipaddress.ip_interface("10.0.0.5/24"), 69, "f")) == "tftp://10.0.0.5/f"
+    assert str(tftp.TFTPURL(netimps.Host("boot.lan"), 69, "f")) == "tftp://boot.lan/f"
 
 
 def test_upstream_forms():

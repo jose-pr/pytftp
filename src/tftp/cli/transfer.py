@@ -18,7 +18,7 @@ import time as _time
 import typing as _ty
 
 from ..exceptions import TFTPError
-from ..uri import parse_url
+from ..uri import TFTPURL
 from .common import ClientCmd, error
 
 __all__ = ["Get", "Put", "Ls"]
@@ -53,7 +53,7 @@ class Get(ClientCmd):
     def __call__(self) -> "int | None":
         mode = self.mode
         if _is_url(self.host):
-            url = parse_url(self.host)
+            url = TFTPURL.parse(self.host)
             client = self._client(url.host, url.port)
             remote, target = url.filename, self.remote or _basename(url.filename)
             if mode == "octet":
@@ -101,7 +101,7 @@ class Put(ClientCmd):
     def __call__(self) -> "int | None":
         mode = self.mode
         if _is_url(self.host):
-            url = parse_url(self.host)
+            url = TFTPURL.parse(self.host)
             client = self._client(url.host, url.port)
             remote: _ty.Optional[str] = url.filename
             if mode == "octet":
@@ -147,7 +147,7 @@ class Ls(ClientCmd):
 
     def __call__(self) -> "int | None":
         if _is_url(self.host):
-            url = parse_url(self.host)
+            url = TFTPURL.parse(self.host)
             client = self._client(url.host, url.port)
             remote = url.filename
         else:

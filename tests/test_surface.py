@@ -77,8 +77,6 @@ EXPECTED = {
         "encode_error",
         "encode_oack",
         "encode_request",
-        "format_url",
-        "parse_url",
         "register_option",
         "upload",
         "upload_url",
@@ -248,8 +246,6 @@ EXPECTED = {
     "tftp.uri": [
         "TFTPURL",
         "download_url",
-        "format_url",
-        "parse_url",
         "upload_url",
     ],
     "tftp.listing": [

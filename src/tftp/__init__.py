@@ -88,7 +88,7 @@ from .options import (
 )
 from .result import TransferResult
 from .transfer import Receiver, Sender
-from .uri import TFTPURL, download_url, format_url, parse_url, upload_url
+from .uri import TFTPURL, download_url, upload_url
 
 __all__ = [
     "__version__",
@@ -100,8 +100,6 @@ __all__ = [
     "upload",
     "MODES",
     "TFTPURL",
-    "parse_url",
-    "format_url",
     "download_url",
     "upload_url",
     # Server

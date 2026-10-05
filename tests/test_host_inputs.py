@@ -77,17 +77,6 @@ def test_a_host_that_is_not_a_host_is_a_type_error():
         tftp.TFTPClient(None).get("one.bin")
 
 
-@pytest.mark.parametrize("port", ["70", True])
-def test_format_url_wants_an_int_port(port):
-    with pytest.raises(TypeError):
-        tftp.format_url("boot.lan", "f", port)
-
-
-def test_format_url_int_and_default_ports():
-    assert tftp.format_url("boot.lan", "f", 70) == "tftp://boot.lan:70/f"
-    assert tftp.format_url("boot.lan", "f") == "tftp://boot.lan/f"
-
-
 # -- socket buffers -----------------------------------------------------------------
 
 

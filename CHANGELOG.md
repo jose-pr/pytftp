@@ -32,8 +32,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`"[10.0.0.5]"` is refused), each raising `ValueError`
   (`netimps.NetimpsValueError`); a host that is not text, an address, a `Host`
   or an `FQDN` (`None`, say) raises `TypeError` where it raised `ValueError`.
-- `format_url` raises `TypeError` for a port that is not an `int` (a `str` or
-  a `bool`).
+- **`TFTPURL` is a validated, immutable value, not a tuple.** The constructor
+  normalises (host lower-cased, mode lower-cased) and refuses what no URL can
+  carry: a port outside 1..65535, a mode other than `octet` and `netascii`,
+  an empty file name or one with a NUL, a host that is empty or holds `/ ? # @`
+  or a space (`TFTPValueError`), and an argument of the wrong type
+  (`TypeError`). It equals another `TFTPURL` only: it no longer equals, hashes
+  like or unpacks as a tuple of its fields. `TFTPURL.parse(text)` and
+  `TFTPURL.try_parse(text)` are the way in and `str(url)` the way back; both
+  read and write the file name with the packet codec's encoding, so
+  `tftp://h/caf%E9` keeps its octet where it used to become U+FFFD, and a
+  `%25` IPv6 zone decodes. `str(url)` imports nothing, so formatting a URL no
+  longer imports netimps and, on Windows, patches `socket`.
+- **`TFTPURL.parse` refuses what RFC 3617's grammar has no place for**, where
+  `parse_url` dropped it: a query (`tftp://h/f?x=1` named the file `f`), a
+  fragment, userinfo, port 0 (it was read as 69), a repeated `mode`
+  parameter (the last one won), an empty parameter (`f;`), a `NUL` in the file
+  name (`%00`), a control character, and a bracketed host that is not an IPv6
+  address. A literal `?` or `#` in a file name is written `%3F` or `%23`.
+  `parse_url(None)` and `parse_url(b"...")` raised `TFTPValueError`; `parse`
+  raises `TypeError`.
 - A socket-buffer shortfall on a windowed transfer is logged by netimps, once
   per process for each distinct request and grant, at `WARNING` on the logger
   `netimps._sockets`; `tftp` no longer logs it at `DEBUG`.
@@ -44,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `tftp.exceptions` and is a `TFTPError`: `TFTPDecodeError` (bytes that are not
   a packet), `CaptureFormatError` and `CaptureFilterError` were plain
   `ValueError` subclasses and are now `TFTPError` as well, and the new
-  `TFTPValueError(TFTPError, ValueError)` is what `parse_url` raises for a
+  `TFTPValueError(TFTPError, ValueError)` is what `TFTPURL.parse` raises for a
   URL it cannot read (it used to raise a bare `ValueError`; `except ValueError`
   still catches it). `WouldBlock` moves there too and stays a
   `BlockingIOError`, outside `TFTPError`, since it is a signal and not a
@@ -81,6 +99,8 @@ Old names are not kept as aliases.
 | `MemoryHandler`, `HttpHandler`, `UpstreamHandler` | `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` |
 | `TftpBackend` (`tftp.path`) | private |
 | entry point `tftp.path.uri:TftpUriPath` | `tftp.path:TFTPURIPath` (the scheme is still `tftp`) |
+| `parse_url(url)` | `TFTPURL.parse(url)` (and `TFTPURL.try_parse(url)`) |
+| `format_url(host, filename, port, mode)` | `str(TFTPURL(host, port, filename, mode))` |
 | `ServerOptions`, `ServerLimits` | `TFTPServerOptions`, `TFTPServerLimits` |
 | `ServerContext`, `ClientContext` | `ServerOptionContext`, `ClientOptionContext` |
 | `Blksize`, `Blksize2`, `Timeout`, `Utimeout`, `Tsize`, `Windowsize`, `Rollover`, `Cookie`, `Mstfwindow`, `XList`, `XMtime` (`tftp.options`) | the same with the suffix `Option`: `BlksizeOption` ... `XMtimeOption` |

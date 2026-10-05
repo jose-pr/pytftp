@@ -107,7 +107,7 @@ def test_the_leaves_describe_the_servers_file_not_a_local_one(leaf):
 def test_a_malformed_url_is_a_value_error_and_a_package_error():
     for catches in (TFTPValueError, ValueError, TFTPError):
         with pytest.raises(catches):
-            tftp.parse_url("http://host/file")
+            tftp.TFTPURL.parse("http://host/file")
 
 
 def test_every_exception_class_is_defined_in_one_module():
