@@ -68,3 +68,27 @@ def client_for(server, host=None, **kwargs) -> tftp.Client:
     kwargs.setdefault("timeout", 0.5)
     kwargs.setdefault("retries", 3)
     return tftp.Client(host, address[1], **kwargs)
+
+
+def _link_local():
+    """``(address text, interface index)`` of a link-local IPv6 address of this host, or ``None``."""
+    try:
+        import netimps
+
+        for iface in netimps.get_interfaces():
+            for ip in iface.ips:
+                address = getattr(ip, "ip", ip)
+                if address.version == 6 and address.is_link_local and iface.index:
+                    return str(address).split("%")[0], iface.index
+    except Exception:
+        return None
+    return None
+
+
+@pytest.fixture
+def link_local():
+    """A link-local IPv6 address of this host with its zone, ``"fe80::1%7"``; skips without one."""
+    found = _link_local()
+    if found is None:
+        pytest.skip("no link-local IPv6 address on this host")
+    return "%s%%%d" % found

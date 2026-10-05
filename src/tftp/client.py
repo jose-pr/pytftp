@@ -37,7 +37,7 @@ from .options import (
 )
 from .packet import ErrorCode, Opcode, encode_ack, encode_error, encode_request, decode
 from .result import TransferResult
-from ._sockets import fit_window
+from ._sockets import fit_window, same_host, sockaddr
 from .capture.events import PacketEvent, new_session_id
 from .transfer import Receiver, Sender, Transfer, as_readinto, as_write
 
@@ -45,6 +45,9 @@ if TYPE_CHECKING:  # netimps is imported lazily at run time
     from netimps import HostLike
 
 __all__ = ["Client", "RemoteStat", "download", "upload", "MODES"]
+
+#: Receive buffer: longer than any UDP datagram, so a stray one is read whole.
+_RECV_BUFFER = 65536
 
 log = logging.getLogger("tftp.client")
 
@@ -452,7 +455,7 @@ class Client:
                 continue
             if emit is not None:
                 emit(view[:n], "in", peer)
-            if n < 2 or (self.strict_source and peer[0] != server[0]):
+            if n < 2 or (self.strict_source and not same_host(peer, server)):
                 continue  # not the server we asked
             return n, peer
 
@@ -472,7 +475,7 @@ class Client:
         if address is None:
             raise socket.gaierror("cannot resolve %r" % host)
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
-        return family, (str(address), port), address
+        return family, sockaddr(address, port), address
 
     def _socket(self, family: int) -> socket.socket:
         from netimps import bind
@@ -583,7 +586,7 @@ class Client:
         family, server, _ = self._endpoint()
         with self._socket(family) as sock:
             request = encode_request(Opcode.RRQ, filename, mode, options)
-            buf = bytearray(4 + 65536)
+            buf = bytearray(_RECV_BUFFER)
             view = memoryview(buf)
             emit = self._emitter(sock)
             n, peer = self._request(sock, server, request, buf, view, None, emit)
@@ -616,7 +619,10 @@ class Client:
         is_read = opcode == Opcode.RRQ
         request = encode_request(opcode, filename, mode, options)
         requested_blksize = int(options.get("blksize", DEFAULT_BLKSIZE))
-        buf = bytearray(4 + max(requested_blksize, DEFAULT_BLKSIZE) + 1)
+        # Whatever a datagram's length: Windows reports one longer than the
+        # buffer as an error before the sender can be looked at, and a longer
+        # DATA than negotiated is the engine's to judge.
+        buf = bytearray(_RECV_BUFFER)
         view = memoryview(buf)
         recv_into = sock.recvfrom_into
         clock = time.monotonic
@@ -657,9 +663,6 @@ class Client:
         else:
             session = Sender(send, read, negotiated, self.retries, now, **engine)
 
-        if len(buf) < 4 + negotiated.blksize + 1:
-            buf = bytearray(4 + negotiated.blksize + 1)
-            view = memoryview(buf)
         total = negotiated.tsize
         reported = -1
         peer_host, peer_port = peer[0], peer[1]

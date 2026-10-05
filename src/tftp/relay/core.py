@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
+from .._sockets import same_host, sockaddr
 from ..capture.events import PacketEvent, new_session_id
 from ..errors import TftpError
 from ..packet import ErrorCode, MalformedPacket, Opcode, Request, decode, encode_error
@@ -274,7 +275,7 @@ class Relay:
                 raise TftpError(ErrorCode.NOT_DEFINED, "upstream unresolvable")
             self._resolved[target.host] = (address, now + _RESOLVE_TTL)
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
-        return family, (str(address), target.port)
+        return family, sockaddr(address, target.port)
 
     def _on_request(self, now: float) -> None:
         from netimps import unmap
@@ -386,7 +387,7 @@ class Relay:
             data = bytes(buf[:n])
             if leg == "up":
                 if session.upstream_tid is None:
-                    if addr[0] != session.upstream[0]:
+                    if not same_host(addr, session.upstream):
                         continue  # not the server we asked
                     session.upstream_tid = addr  # RFC 1350 section 4: learn its TID
                 if addr[0] != session.upstream_tid[0] or addr[1] != session.upstream_tid[1]:

@@ -259,3 +259,15 @@ def test_relay_stats(root, make_server, make_relay):
         1,
     )
     assert snapshot["bytes_to_clients"] == 513 and snapshot["active"] == 0
+
+
+# -- the relay's upstream named by a link-local address ------------------------------------------
+
+
+def test_relay_hears_an_upstream_named_by_a_link_local_address_with_its_zone(link_local, make_relay):
+    from tftp.backends import MemoryHandler
+
+    with tftp.Server(MemoryHandler({"f": b"through the relay"}), "::", 0, timeout=0.5).start() as upstream:
+        relay = make_relay("[%s]:%d" % (link_local, upstream.server_address[1]))
+        client = tftp.Client("127.0.0.1", relay.server_address[1], timeout=0.5, retries=2)
+        assert client.get("f") == b"through the relay"

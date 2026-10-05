@@ -20,7 +20,7 @@ from ..options import DEFAULT_BLKSIZE
 from ..packet import ErrorCode, Opcode, encode_ack, encode_error, encode_request
 from ..result import TransferResult
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
-from .._sockets import fit_window
+from .._sockets import fit_window, same_host, sockaddr
 from .bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
 
 __all__ = ["AsyncClient"]
@@ -35,8 +35,8 @@ class _Protocol(asyncio.DatagramProtocol):
     def datagram_received(self, data: bytes, addr: Tuple[Any, ...]) -> None:
         self.driver.received(data, addr)
 
-    def error_received(self, exc: Exception) -> None:  # ICMP errors: loss
-        pass
+    def error_received(self, exc: Exception) -> None:
+        self.driver.failed(exc)
 
 
 class _Transfer:
@@ -86,7 +86,7 @@ class _Transfer:
             self.emit(data, "in", addr)
         if self.engine is None:
             if self.peer is None and not self.first.done():
-                if len(data) >= 2 and (not self.client.strict_source or addr[0] == self.server[0]):
+                if len(data) >= 2 and (not self.client.strict_source or same_host(addr, self.server)):
                     self.peer = addr
                     self.first.set_result((data, addr))
             return
@@ -97,6 +97,20 @@ class _Transfer:
         engine = self.engine
         engine.handle(memoryview(data), len(data), self.loop.time())
         self.after()
+
+    def failed(self, exc: Exception) -> None:
+        """The transport reported an error.
+
+        An ICMP report (the peer's port is closed) is loss, which the
+        retransmission timer deals with. Anything else is the host refusing
+        a send: it ends the transfer with that error rather than leaving the
+        caller to wait out every retry for an answer that was never asked for.
+        """
+        if isinstance(exc, (ConnectionRefusedError, ConnectionResetError)):
+            return
+        future = self.first if self.engine is None else self.done
+        if not future.done():
+            future.set_exception(exc)
 
     # -- engine bookkeeping --------------------------------------------------------
 
@@ -316,7 +330,7 @@ class AsyncClient(Client):
         if address is None:
             raise socket.gaierror("cannot resolve %r" % host)
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
-        server = (str(address), port)
+        server = sockaddr(address, port)
         options = self._options(opcode == Opcode.RRQ, size, address)
         local_host, local_port = self.local_address or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
         started = time.monotonic()

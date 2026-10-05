@@ -43,6 +43,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A server named by a link-local IPv6 address with a zone (`fe80::1%7`) was
+  never heard under the default `strict_source=True`: the reply's source was
+  compared as text, and a received address carries no zone in its text. Both
+  clients and the relay now compare addresses by value (packed address, and
+  the scope id when both sides have one) and send to a resolved socket address
+  with the scope id as a number, which also makes a request to such a server
+  work on the Proactor event loop (the host refused the zone in the text, and
+  the error was dropped). The relay's upstream leg is fixed the same way.
+- A send the host refuses ends an asyncio client's request with that
+  `OSError` at once; it was reported as `TransferTimeout` after every retry.
+  An ICMP report from the peer is still loss.
+- On Windows, one datagram longer than the client's receive buffer, from any
+  address, ended a synchronous transfer with an uncaught `OSError` (WinError
+  10040). The buffer is now longer than any datagram: a stray one is answered
+  with ERROR 5 and the transfer carries on, and a DATA longer than the
+  negotiated `blksize` is a `ProtocolError`.
 - **With a window above 1, one duplicated, lost or late ACK, or one reordered
   DATA pair, made every remaining window be sent and acknowledged twice** (a
   3001-block transfer at `windowsize=16` sent 5922 DATA datagrams). An ACK

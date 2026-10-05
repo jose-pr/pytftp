@@ -56,8 +56,12 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
   8 × `timeout`; below `timeout` is a `ValueError`); progress resets the wait. `backoff=1` disables it.
 - `max_duration` — seconds a whole transfer may take; `None` is unlimited.
 - `strict_source` — the first answer must come from the address the request
-  was sent to. `False` accepts a multi-homed server answering from another
-  address (the transfer then locks on to that address and port).
+  was sent to; addresses are compared by value (packed address, and scope id
+  when both sides have one), never by their text, so a link-local server named
+  with its zone (`fe80::1%7`) is heard. `False` accepts a multi-homed server
+  answering from another address (the transfer then locks on to that address
+  and port). A datagram of any length from any other address is answered with
+  ERROR 5 and does not disturb the transfer.
 - `blksize` — requested; `None` asks for nothing (512). The default 1428 fits
   one Ethernet frame on IPv4 and IPv6. `"mtu"` sizes it to the MTU of the
   interface the route to the server uses (1428 when unknown).
@@ -123,8 +127,10 @@ Methods (each returns a `TransferResult` unless noted):
 - Raises `RemoteError` (the server sent ERROR), `TransferTimeout`,
   (as the subclass for its code: `FileNotFound`, `AccessViolation`, ...),
   `ProtocolError` (the server broke the protocol, e.g. an OACK with a larger
-  `blksize` than requested — the client sends ERROR 8 first), or `OSError` for
-  local failures (resolution, the local file).
+  `blksize` than requested — the client sends ERROR 8 first, or a DATA longer
+  than the negotiated `blksize`), or `OSError` for local failures (resolution,
+  the local file, a send the host refuses: the asyncio client raises it at
+  once and does not wait out the retries).
 
 **`download(host, filename, dest, *, port=69, mode="octet", progress=None, **client_options)`**
 and **`upload(host, filename, source, ...)`** — one-shot wrappers;
@@ -500,7 +506,9 @@ Both support what TFTP can do, plus listing against a server speaking
 **`Relay(route, host=None, port=69, *, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None, interface=None)`**
 — a transparent application relay (there is no standard TFTP relay). The
 request is forwarded **byte for byte** from a fresh upstream-side socket; the
-upstream's TID is learned from its first answer (from the address asked);
+upstream's TID is learned from its first answer (from the address asked,
+compared by value, so an upstream named by a link-local address with its zone
+answers);
 datagrams then cross unchanged between `client <-> relay(client-side TID)` and
 `relay(upstream-side TID) <-> upstream`, so options and extensions this
 library does not know work end to end. Each side negotiates nothing with the

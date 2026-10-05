@@ -339,3 +339,49 @@ def test_async_server_releases_a_session_whose_error_could_not_be_encoded():
         assert server.active_sessions == 0
 
     serve(Handler(), scenario)
+
+
+# -- link-local servers and send failures ---------------------------------------------------------
+
+
+def _loop_factories():
+    if sys.platform == "win32":
+        return [asyncio.SelectorEventLoop, asyncio.ProactorEventLoop]
+    return [None]
+
+
+@pytest.mark.parametrize("loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default"))
+@pytest.mark.parametrize("strict", [True, False])
+def test_async_client_hears_a_server_named_by_a_link_local_address_with_its_zone(
+    link_local, loop_factory, strict
+):
+    async def main():
+        async with AsyncServer(MemoryHandler({"f": b"link-local"}), link_local, 0, timeout=0.5) as server:
+            await server.start()
+            client = AsyncClient(
+                link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=strict
+            )
+            assert await client.get("f") == b"link-local"
+
+    run(main(), loop_factory)
+
+
+def test_a_send_the_host_refuses_ends_the_request_and_an_icmp_report_does_not():
+    """Transport errors are loss only when they are the peer's ICMP report."""
+    import errno
+
+    from tftp.aio.client import _Protocol, _Transfer
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        driver = _Transfer(AsyncClient("127.0.0.1", 9), loop)
+        protocol = _Protocol(driver)
+        protocol.error_received(ConnectionRefusedError(errno.ECONNREFUSED, "port closed"))
+        protocol.error_received(ConnectionResetError(10054, "ICMP port unreachable"))
+        assert not driver.first.done()
+        protocol.error_received(OSError(errno.EMSGSIZE, "message too long"))
+        with pytest.raises(OSError) as info:
+            await driver.first
+        assert info.value.errno == errno.EMSGSIZE and not isinstance(info.value, tftp.TftpError)
+
+    run(main())

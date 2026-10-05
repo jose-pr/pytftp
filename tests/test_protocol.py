@@ -474,3 +474,75 @@ def test_a_windowed_download_costs_one_window_after_a_duplicated_ack(make_server
     assert bytes(received) == payload
     # blocks, the empty last one, and the one window the duplicate may cost.
     assert data_datagrams <= blocks + 1 + 2 * windowsize, data_datagrams
+
+
+# -- the client reads any datagram, and compares addresses and not their text ------------------
+
+
+def test_a_datagram_longer_than_the_blocks_is_answered_and_does_not_end_the_transfer():
+    """A stray of 4000 octets reaches the client mid-transfer: ERROR 5 to its sender, transfer intact."""
+    import threading
+
+    if not _bindable("127.0.0.2"):
+        pytest.skip("127.0.0.2 is not a local address here")
+    outcome = {}
+
+    with (
+        raw_socket(3.0) as listen,
+        raw_socket(3.0) as tid,
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as stranger,
+    ):
+        stranger.bind(("127.0.0.2", 0))
+        stranger.settimeout(3.0)
+
+        def serve():
+            _, client_addr = listen.recvfrom(2048)
+            tid.sendto(encode_data(1, b"p" * 512), client_addr)
+            tid.recvfrom(2048)  # ACK 1
+            stranger.sendto(b"\x00\x03\x00\x01" + b"z" * 3996, client_addr)
+            outcome["stray"] = stranger.recvfrom(2048)[0]
+            tid.sendto(encode_data(2, b"end"), client_addr)
+            outcome["ack"] = decode(tid.recvfrom(2048)[0])
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        data = tftp.Client("127.0.0.1", listen.getsockname()[1], timeout=2, retries=1).get("f")
+        thread.join(5)
+    assert data == b"p" * 512 + b"end"
+    assert decode(outcome["stray"]).code == ErrorCode.UNKNOWN_TID
+    assert outcome["ack"] == tftp.Ack(2)
+
+
+def test_an_oversized_data_from_the_server_is_a_protocol_error_and_not_an_oserror():
+    import threading
+
+    with raw_socket(3.0) as listen, raw_socket(3.0) as tid:
+
+        def serve():
+            _, client_addr = listen.recvfrom(2048)
+            tid.sendto(encode_data(1, b"x" * 3000), client_addr)
+
+        threading.Thread(target=serve, daemon=True).start()
+        with pytest.raises(tftp.ProtocolError):
+            tftp.Client("127.0.0.1", listen.getsockname()[1], timeout=2, retries=1).get("f")
+
+
+def test_hosts_are_compared_by_address_and_scope_and_not_by_text():
+    from tftp._sockets import same_host
+
+    assert same_host(("fe80::1", 1, 0, 7), ("fe80::1%7", 2))  # the zone is in the text on one side
+    assert same_host(("fe80::1", 1, 0, 7), ("FE80:0:0:0:0:0:0:1", 2, 0, 7))
+    assert same_host(("::ffff:10.0.0.1", 1, 0, 0), ("10.0.0.1", 2))
+    assert same_host(("fe80::1", 1, 0, 7), ("fe80::1", 2, 0, 0))  # no scope id says nothing about the link
+    assert not same_host(("fe80::1", 1, 0, 7), ("fe80::1", 1, 0, 8))
+    assert not same_host(("fe80::1", 1, 0, 7), ("fe80::2", 1, 0, 7))
+    assert not same_host(("10.0.0.1", 1), ("10.0.0.2", 1))
+
+
+def test_a_server_named_by_a_link_local_address_with_its_zone_is_heard(link_local):
+    from tftp.backends import MemoryHandler
+
+    with tftp.Server(MemoryHandler({"f": b"link-local"}), link_local, 0, timeout=0.5).start() as server:
+        client = tftp.Client(link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=True)
+        assert client.get("f") == b"link-local"
+        assert client.get("f") == b"link-local"
