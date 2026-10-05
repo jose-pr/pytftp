@@ -13,7 +13,6 @@ from ..exceptions import (
     TransferAbortedError,
     TransferTimeoutError,
     WouldBlock,
-    error_for_exception,
 )
 from ..netascii import NetasciiWriter
 from ..options import Negotiated
@@ -197,7 +196,7 @@ class Transfer:
         """End the transfer with ``exc``, sending the peer an ERROR if asked."""
         if self.is_done:
             return
-        error = error_for_exception(exc)
+        error = TFTPError.from_exception(exc)
         if not isinstance(exc, TFTPError):
             error.__cause__ = exc
         self.error = error

@@ -11,7 +11,7 @@ import pytest
 import tftp
 from conftest import client_for
 from tftp.backends import UpstreamBackend
-from tftp.relay import TFTPRelay, Upstream, by_interface, by_subnet, upstream
+from tftp.relay import TFTPRelay, Upstream, by_interface, by_subnet
 
 LOOPBACK = ipaddress.ip_address("127.0.0.1")
 
@@ -41,9 +41,49 @@ def test_url_host_forms():
 
 def test_upstream_forms():
     host = netimps.Host("10.0.0.5")
-    assert upstream(LOOPBACK) == Upstream("127.0.0.1", 69)
-    assert upstream((host, 70)) == Upstream(host, 70)
-    assert upstream("[2001:db8::1]:6969") == Upstream("2001:db8::1", 6969)
+    assert Upstream.parse(LOOPBACK) == Upstream("127.0.0.1", 69)
+    assert Upstream.parse((host, 70)) == Upstream(host, 70)
+    assert Upstream.parse("[2001:db8::1]:6969") == Upstream("2001:db8::1", 6969)
+    assert Upstream.parse("boot.lan:70") == Upstream("boot.lan", 70)
+    assert Upstream.parse("boot.lan") == Upstream("boot.lan", 69)
+    same = Upstream("h", 70)
+    assert Upstream.parse(same) is same
+
+
+def test_an_upstream_is_a_value():
+    import copy
+    import pickle
+
+    one = Upstream("h", 70)
+    assert (
+        one == Upstream("h", 70)
+        and hash(one) == hash(Upstream("h", 70))
+        and len({one, Upstream("h", 70)}) == 1
+    )
+    assert one != Upstream("h", 69) and one != Upstream("g", 70) and Upstream("h") == Upstream("h", 69)
+    assert one.__eq__(("h", 70)) is NotImplemented
+    assert one != ("h", 70) and ("h", 70) != one and one not in {("h", 70)}
+    with pytest.raises(TypeError):
+        tuple(one)
+    with pytest.raises(AttributeError):
+        one.port = 71  # type: ignore[misc]
+    assert eval(repr(one), {"Upstream": Upstream}) == one
+    for clone in (copy.copy(one), copy.deepcopy(one), pickle.loads(pickle.dumps(one))):
+        assert clone == one and type(clone) is Upstream
+
+
+@pytest.mark.parametrize("port", [0, 65536, -1])
+def test_an_upstream_port_is_checked(port):
+    with pytest.raises(tftp.TFTPValueError):
+        Upstream("h", port)
+    with pytest.raises(tftp.TFTPValueError):
+        Upstream.parse(("h", port))
+
+
+@pytest.mark.parametrize("port", ["70", True, 70.0, None])
+def test_an_upstream_port_is_an_int(port):
+    with pytest.raises(TypeError):
+        Upstream("h", port)
 
 
 def _context(peer, local=None, index=0):

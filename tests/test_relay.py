@@ -234,7 +234,7 @@ def test_trace_sees_both_legs(root, make_server, make_relay):
     assert ("upstream", "in", "DATA") in legs and ("client", "out", "DATA") in legs
     assert len({e.session for e in events}) == 1
     assert all(e.role == "relay" for e in events)
-    assert "RRQ 'one.bin' octet" in events[0].format()
+    assert "RRQ 'one.bin' octet" in str(events[0])
 
 
 @needs_ipv6

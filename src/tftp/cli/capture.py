@@ -96,7 +96,7 @@ class CaptureCmd(Base):
                 if self.json_out:
                     print(_json.dumps(event.to_dict(payload=self.payload)), flush=True)
                 else:
-                    print(event.format(), flush=True)
+                    print(str(event), flush=True)
         except CaptureFormatError as exc:
             error("error: %s" % exc)
             return 2

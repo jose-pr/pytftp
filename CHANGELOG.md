@@ -110,6 +110,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   contents. `Profile.server` returns a copy each time (like `Profile.client`),
   so `tftp.Profile.PXE.server.max_blksize = 512` no longer changes the preset.
 
+- **`Upstream` is a validated, immutable value, not a tuple.** It equals only
+  another `Upstream` (`Upstream("h", 69) == ("h", 69)` was `True`), is hashable,
+  does not unpack, and checks its port: an `int` in 1..65535, `TypeError` for
+  another type (a `(host, "70")` pair was converted), `TFTPValueError` outside
+  the range. `Upstream.parse(value)` takes what `relay.upstream(value)` took.
+  `ListEntry`, `RemoteStat` and `PacketEvent`, which the library only hands
+  out, stay named tuples.
+- `RemoteError.from_code` is a classmethod (it was a staticmethod), and
+  `TFTPError.from_exception(exc)` replaces `tftp.exceptions.error_for_exception`.
+- Option numbers are read in one place and as ASCII digits only, surrounding
+  space ignored: a server or client no longer takes `blksize=+1428`,
+  `blksize=1_428` or an Arabic-Indic numeral, which the option handlers read
+  with `int()`, and the capture and relay observers no longer count one of
+  those, nor a digit `int()` cannot read, as a negotiated size. `parse_int`,
+  which returned `None` under the name `parse`, is no longer exported.
+- `str(event)` is the human line of a `PacketEvent` (`event.format()` is gone),
+  and `CapturedTransfer.size` is the transferred byte count (`.bytes` is gone;
+  the `"bytes"` key of `to_dict()` is unchanged).
+
 ### Renamed
 
 Old names are not kept as aliases.
@@ -140,6 +159,12 @@ Old names are not kept as aliases.
 | entry point `tftp.path.uri:TftpUriPath` | `tftp.path:TFTPURIPath` (the scheme is still `tftp`) |
 | `parse_url(url)` | `TFTPURL.parse(url)` (and `TFTPURL.try_parse(url)`) |
 | `format_url(host, filename, port, mode)` | `str(TFTPURL(host, port, filename, mode))` |
+| `relay.upstream(value)` | `Upstream.parse(value)` |
+| `tftp.exceptions.error_for_exception(exc)` | `TFTPError.from_exception(exc)` |
+| `tftp.listing.parse_listing(data)`, `format_listing(entries)` | `tftp.listing.loads(data)`, `dumps(entries)` |
+| `PacketEvent.format()` | `str(event)` |
+| `CapturedTransfer.bytes` | `CapturedTransfer.size` |
+| `tftp.options.parse_int(text)` | private (`read_decimal`) |
 | `PortRange.of(value)` | `PortRange.parse(text)`; the functions take a `PortRangeLike` |
 | `ServerOptions`, `ServerLimits` | `TFTPServerOptions`, `TFTPServerLimits` |
 | `ServerContext`, `ClientContext` | `ServerOptionContext`, `ClientOptionContext` |

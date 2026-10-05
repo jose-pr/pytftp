@@ -172,7 +172,7 @@ class Traced(Base):
         if self.trace:
 
             def show(event: _ty.Any) -> None:
-                print(event.format(), file=_sys.stderr, flush=True)
+                print(str(event), file=_sys.stderr, flush=True)
 
             hooks.append(show)
         if self.pcap:

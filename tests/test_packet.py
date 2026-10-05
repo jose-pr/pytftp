@@ -394,12 +394,12 @@ def test_decode_then_encode_is_the_identity_for_what_encode_emits():
 
 
 def test_errors_map_os_errors():
-    from tftp.exceptions import error_for_exception
+    from tftp.exceptions import TFTPError
 
-    assert error_for_exception(FileNotFoundError(2, "x")).code == TFTPErrorCode.FILE_NOT_FOUND
-    assert error_for_exception(PermissionError(13, "x")).code == TFTPErrorCode.ACCESS_VIOLATION
-    assert error_for_exception(FileExistsError(17, "x")).code == TFTPErrorCode.FILE_EXISTS
-    assert error_for_exception(OSError(28, "No space left")).code == TFTPErrorCode.DISK_FULL
-    assert error_for_exception(RuntimeError("boom")).code == TFTPErrorCode.NOT_DEFINED
+    assert TFTPError.from_exception(FileNotFoundError(2, "x")).code == TFTPErrorCode.FILE_NOT_FOUND
+    assert TFTPError.from_exception(PermissionError(13, "x")).code == TFTPErrorCode.ACCESS_VIOLATION
+    assert TFTPError.from_exception(FileExistsError(17, "x")).code == TFTPErrorCode.FILE_EXISTS
+    assert TFTPError.from_exception(OSError(28, "No space left")).code == TFTPErrorCode.DISK_FULL
+    assert TFTPError.from_exception(RuntimeError("boom")).code == TFTPErrorCode.NOT_DEFINED
     # The OS text could leak server paths, so it never becomes the message.
-    assert "secret" not in error_for_exception(FileNotFoundError(2, "/secret/path")).message
+    assert "secret" not in TFTPError.from_exception(FileNotFoundError(2, "/secret/path")).message

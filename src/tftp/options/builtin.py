@@ -31,7 +31,7 @@ from .base import (
     ClientOptionContext,
     OptionHandler,
     ServerOptionContext,
-    parse_int,
+    read_decimal,
     refuse,
 )
 
@@ -53,7 +53,7 @@ __all__ = [
 
 
 def _number(name: str, text: str) -> int:
-    value = parse_int(text)
+    value = read_decimal(text)
     if value is None:
         raise refuse("server sent non-numeric %s=%r" % (name, text))
     return value
@@ -64,7 +64,7 @@ class BlksizeOption(OptionHandler):
     standard = True
 
     def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
-        size = parse_int(value)
+        size = read_decimal(value)
         if size is None or size < MIN_BLKSIZE:
             return None
         # RFC 2348: the server may answer with a smaller value.
@@ -86,7 +86,7 @@ class Blksize2Option(OptionHandler):
     def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         if "blksize" in ctx.acked:
             return None  # one block size per transfer; blksize wins
-        size = parse_int(value)
+        size = read_decimal(value)
         if size is None or size < MIN_BLKSIZE:
             return None
         limit = min(size, ctx.max_blksize)
@@ -108,7 +108,7 @@ class TimeoutOption(OptionHandler):
     standard = True
 
     def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
-        seconds = parse_int(value)
+        seconds = read_decimal(value)
         if seconds is None or not 1 <= seconds <= 255:
             return None
         ctx.result.timeout = float(seconds)
@@ -125,7 +125,7 @@ class UtimeoutOption(OptionHandler):
     name = "utimeout"
 
     def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
-        micro = parse_int(value)
+        micro = read_decimal(value)
         if micro is None or not MIN_UTIMEOUT <= micro <= MAX_UTIMEOUT:
             return None
         ctx.result.timeout = micro / 1e6
@@ -143,7 +143,7 @@ class TsizeOption(OptionHandler):
     standard = True
 
     def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
-        size = parse_int(value)
+        size = read_decimal(value)
         if size is None or size < 0:
             return None
         if not ctx.is_read:
@@ -168,7 +168,7 @@ class WindowsizeOption(OptionHandler):
     standard = True
 
     def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
-        window = parse_int(value)
+        window = read_decimal(value)
         if window is None or window < 1:
             return None
         policy = ctx.policy
@@ -188,7 +188,7 @@ class RolloverOption(OptionHandler):
     name = "rollover"
 
     def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
-        target = parse_int(value)
+        target = read_decimal(value)
         if target not in (0, 1):
             return None
         ctx.result.rollover = target  # type: ignore[assignment]

@@ -387,8 +387,9 @@ carried over.
 
 **`tftp.listing`** — the `x-list` format: UTF-8 lines `<f|d> <size> <mtime|-> <name>`
 (`%`, CR, LF in names as `%25`, `%0D`, `%0A`). **`ListEntry(name, is_dir,
-size, mtime=None)`**, **`format_listing(entries) -> bytes`**,
-**`parse_listing(data) -> list`** (malformed lines skipped),
+size, mtime=None)`** (a named tuple: it is only handed out),
+**`dumps(entries) -> bytes`**, **`loads(data) -> list`** (malformed lines
+skipped),
 **`DirectoryListing(directory, root=None)`** (a `BytesIO` with `size`,
 `mtime`, `_tftp_listing_`; sorted by name; leaves out symlinks resolving
 outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
@@ -556,9 +557,13 @@ use `UpstreamBackend` (a terminating proxy) instead.
   `start`, `stop`, `close`, context manager; `server_address`,
   `has_pktinfo`, `active_sessions`.
 
-Routing helpers (`tftp.relay`): **`upstream(value) -> Upstream(host, port)`**
-(`host` read by `netimps.split_host`: brackets dropped, a `"host:port"`
-split, the port ASCII digits only);
+Routing helpers (`tftp.relay`): **`Upstream(host, port=69)`** — a frozen,
+hashable value that equals only another `Upstream` (`port` an `int` in
+1..65535: `TypeError`, or `TFTPValueError` outside the range) and
+**`Upstream.parse(value)`**, which takes a host (`host` read by
+`netimps.split_host`: brackets dropped, a `"host:port"` split, the port ASCII
+digits only), an address or `netimps.Host` (port 69), `(host, port)` or an
+`Upstream`;
 **`by_subnet({network: upstream})`** (keys: anything `netimps.parse(...,
 IPNetwork)` takes — CIDR strings, `ipaddress` networks, interfaces, addresses
 as /32 or /128, `(address, prefix)`; client address, longest prefix; mapped
@@ -576,9 +581,9 @@ match wins).
 (`"seen"` for a passive capture); `session` correlates one transfer's events;
 `leg` is the relay side. Properties: `opcode`, `opcode_name`, `block`,
 `payload_size`, `summary` (one line, never raises), `source`, `destination`;
-methods `decode()`, `format()` (a human line), `to_dict(payload=False)` (JSON-
-ready metadata; DATA payloads only as hex with `payload=True`).
-`summarize(data)` is the one-line description on its own.
+methods `decode()`, `to_dict(payload=False)` (JSON-
+ready metadata; DATA payloads only as hex with `payload=True`);
+`str(event)` is the human line. `summarize(data)` is the one-line description on its own.
 
 **Trace hooks** — `TFTPClient(trace=)`, `TFTPServer(trace=)`, `TFTPRelay(trace=)` take
 `trace(PacketEvent)`, called for every datagram received and sent, on the
@@ -611,13 +616,14 @@ reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
   another address too, within 10 s) between that TID and the client's
   address/port. `::ffff:a.b.c.d` and `a.b.c.d` count as one host.
   `keep_payloads=False` drops the DATA payloads (`CapturedTransfer.data()` is
-  then empty); `bytes`, `retransmissions` and `missing_blocks` are counted
+  then empty); `size`, `retransmissions` and `missing_blocks` are counted
   either way.
 - **`CapturedTransfer`** — `session`, `client`, `server`, `server_tid`,
   `filename`, `mode`, `operation`, `requested`, `acknowledged`, `blksize`,
   `windowsize`, `tsize`, `error` (`(code, message, "client"|"server")`),
   `is_complete` (final DATA seen and ACKed), `packets`, `retransmissions` (DATA
-  seen again), `request_retransmissions`, `bytes`, `missing_blocks`,
+  seen again), `request_retransmissions`, `size` (the DATA bytes; `"bytes"`
+  in `to_dict()`), `missing_blocks`,
   `started`, `ended`, `duration`; `data(decode_netascii=True)` returns the
   file up to the first gap (block numbers followed across rollover);
   `to_dict()`.
@@ -665,7 +671,7 @@ not one of these. `TFTPError` plays three roles, told apart by the subclass:
   `DiskFull` 3, `IllegalOperation` 4, `UnknownTransferID` 5,
   `FileAlreadyExists` 6, `NoSuchUser` 7, `OptionNegotiationError` 8) and plain
   `RemoteError` for 0 and unknown codes; `RemoteError.from_code(code,
-  message)` builds one. The leaves describe the *server's* file, so none is
+  message)` (a classmethod) builds one. The leaves describe the *server's* file, so none is
   also a `FileNotFoundError` or `PermissionError`; `tftp.path` raises those.
   Also **`TFTPProtocolError(message, code=4)`** (the peer broke the protocol;
   code 4, or 8 for option problems), **`TransferTimeoutError(message)`** (also
@@ -682,10 +688,10 @@ Malformed text raises **`TFTPValueError`**, also a `ValueError`:
 is a `BlockingIOError`, a signal that a source or sink has nothing ready.
 
 Every exception copies and pickles (`copy.copy`, `multiprocessing`), a
-`TransferResult` holding one included. `tftp.exceptions.error_for_exception(exc)
--> TFTPError` maps any exception to the ERROR to send: a `TFTPError` as is, an
-`OSError` by errno with the generic text (never the OS text, which would
-disclose server paths).
+`TransferResult` holding one included. `TFTPError.from_exception(exc)`
+(a classmethod, returning a `TFTPError`) maps any exception to the ERROR to
+send: a `TFTPError` as is, an `OSError` by errno with the generic text (never
+the OS text, which would disclose server paths).
 
 ## Wire format
 

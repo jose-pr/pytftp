@@ -48,9 +48,9 @@ def test_event_fields_and_json():
     record = event.to_dict()
     assert record["source"] == "10.0.0.5:2000" and record["block"] == 3 and "payload" not in record
     assert event.to_dict(payload=True)["payload"] == "6162"
-    assert "[s1] 10.0.0.5:2000 > 10.0.0.1:69 DATA 3 (2 bytes)" in event.format()
+    assert "[s1] 10.0.0.5:2000 > 10.0.0.1:69 DATA 3 (2 bytes)" in str(event)
     out = PacketEvent(0, "out", ("::1", 5), ("::1", 6), encode_ack(1))
-    assert out.source == ("::1", 5) and "[::1]:5 > [::1]:6" in out.format()
+    assert out.source == ("::1", 5) and "[::1]:5 > [::1]:6" in str(out)
 
 
 def test_a_request_event_is_json_with_its_options():
@@ -321,7 +321,7 @@ def test_flow_counters_are_the_same_with_or_without_payloads(keep):
     tracker = FlowTracker(keep_payloads=keep)
     list(tracker.feed_all(_lossy_capture()))
     (transfer,) = tracker.transfers
-    assert (transfer.bytes, transfer.retransmissions, transfer.missing_blocks) == (1546, 1, [3])
+    assert (transfer.size, transfer.retransmissions, transfer.missing_blocks) == (1546, 1, [3])
     assert transfer.is_complete
     record = transfer.to_dict()
     assert (record["bytes"], record["retransmissions"], record["missing_blocks"]) == (1546, 1, 1)

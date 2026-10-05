@@ -14,6 +14,7 @@ import struct
 from typing import Any, NamedTuple, Optional, Tuple
 
 from ..options import DEFAULT_BLKSIZE
+from ..options.base import read_decimal
 from ..exceptions import TFTPDecodeError
 from ..packet import TFTPOpcode, RequestPacket, decode
 
@@ -135,9 +136,9 @@ class RelaySession:
             except TFTPDecodeError:
                 return
             for name in ("blksize", "blksize2"):
-                value = options.get(name, "")
-                if value.strip().isdigit():
-                    self.blksize = int(value)
+                value = read_decimal(options.get(name, ""))
+                if value is not None:
+                    self.blksize = value
         elif op == TFTPOpcode.ERROR:
             try:
                 packet = decode(data)

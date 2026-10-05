@@ -36,7 +36,7 @@ from ..server.handler import TFTPRequestContext
 from ..server.listener import Arrival, Listener
 from ..server.policy import TFTPServerLimits
 from ..server.session import PortAllocator, as_port_range, bind_transfer
-from .routing import RouteFunction, Upstream, upstream as to_upstream
+from .routing import RouteFunction, Upstream
 from ..server.stats import RELAY_COUNTERS, TFTPStats
 from .session import RelaySession, RelaySummary
 
@@ -99,7 +99,7 @@ class TFTPRelay:
         if callable(route):
             self.route: RouteFunction = route
         else:
-            fixed = to_upstream(route)
+            fixed = Upstream.parse(route)
             self.route = lambda request, context: fixed
         self.idle_timeout = idle_timeout
         self.max_lifetime = max_lifetime
@@ -336,7 +336,7 @@ class TFTPRelay:
             target = self.route(request, context)
             if target is None:
                 raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION, "no route")
-            family, upstream = self._resolve(to_upstream(target))
+            family, upstream = self._resolve(Upstream.parse(target))
         except TFTPError as exc:
             log.info("%r refused: %s", context, exc)
             self._listener.reply_error(sender, exc.code, exc.message)

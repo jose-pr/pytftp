@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
 from ..capture.events import PacketEvent
-from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, error_for_exception
+from ..exceptions import RemoteError, TFTPDecodeError, TFTPError
 from ..options import Negotiated, TFTPServerOptions
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
 from ..packet.codec import _encode_error
@@ -234,7 +234,7 @@ class ServerBase:
 
     def _refuse(self, session: Session, exc: BaseException) -> None:
         """The handler (or the mode) refused: ERROR to the client, report, release."""
-        error = error_for_exception(exc)
+        error = TFTPError.from_exception(exc)
         if not isinstance(exc, (TFTPError, OSError)):
             log.error("handler failed for %r", session.context, exc_info=exc)
         log.info("%s refused: %s", session.context, error)

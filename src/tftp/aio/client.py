@@ -13,7 +13,8 @@ from typing import Any, AsyncIterator, List, Optional, Tuple
 
 from ..capture.events import PacketEvent, new_session_id
 from ..client import TFTPClient, Progress, RemoteStat, _NotListing, _mode, _source_size
-from ..listing import ListEntry, parse_listing
+from .. import listing
+from ..listing import ListEntry
 from ..exceptions import RemoteError, TransferTimeoutError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import DEFAULT_BLKSIZE
@@ -250,7 +251,7 @@ class AsyncTFTPClient(TFTPClient):
             await lister.download(dirname or ".", sink)
         except _NotListing:
             raise NotADirectoryError(errno.ENOTDIR, "not a directory", dirname) from None
-        return parse_listing(sink.getvalue())
+        return listing.loads(sink.getvalue())
 
     async def stream(
         self, filename: str, *, mode: str = "octet", buffer: int = 1 << 20

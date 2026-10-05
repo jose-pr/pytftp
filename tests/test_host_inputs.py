@@ -12,7 +12,7 @@ import tftp
 from conftest import client_for
 from tftp._sockets import fit_window
 from tftp.aio import AsyncTFTPClient
-from tftp.relay import TFTPRelay, upstream
+from tftp.relay import TFTPRelay, Upstream
 
 # -- a host name as the listen address -----------------------------------------
 
@@ -55,7 +55,7 @@ def test_max_timeout_below_timeout_is_refused_when_the_client_is_built(cls):
 @pytest.mark.parametrize("text", ["boot.lan:+70", "boot.lan:7_0", "[10.0.0.5]:70", "[boot.lan]:70"])
 def test_upstream_refuses_malformed_host_port_text(text):
     with pytest.raises(ValueError):
-        upstream(text)
+        Upstream.parse(text)
 
 
 def test_client_refuses_malformed_host_port_text_before_sending():
@@ -70,7 +70,7 @@ def test_server_refuses_a_bracketed_ipv4_address(root):
 
 def test_a_host_that_is_not_a_host_is_a_type_error():
     with pytest.raises(TypeError):
-        upstream(None)
+        Upstream.parse(None)
     with pytest.raises(TypeError):
         TFTPRelay(None)
     with pytest.raises(TypeError):
@@ -115,4 +115,4 @@ def test_a_zone_is_dropped_before_an_address_is_compared():
     assert client_directory(("::ffff:10.0.0.7", 1000)) == "10.0.0.7"
     route = by_interface({"fe80::1": "10.9.9.9:70"})
     context = SimpleNamespace(interface_index=0, local_address="fe80::1%eth0")
-    assert route(None, context) == upstream("10.9.9.9:70")
+    assert route(None, context) == Upstream.parse("10.9.9.9:70")

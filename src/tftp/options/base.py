@@ -19,7 +19,7 @@ __all__ = [
     "ServerOptionContext",
     "ClientOptionContext",
     "refuse",
-    "parse_int",
+    "read_decimal",
 ]
 
 DEFAULT_BLKSIZE = 512
@@ -77,12 +77,16 @@ class Negotiated:
         )
 
 
-def parse_int(text: str) -> Optional[int]:
-    """A decimal option value, or ``None`` when it is not one."""
-    try:
-        return int(text.strip())
-    except (ValueError, AttributeError):
+def read_decimal(text: str) -> Optional[int]:
+    """The value of an option text of ASCII digits, surrounding space ignored, or ``None``.
+
+    A sign, an underscore and a non-ASCII digit are not digits here: RFC 2347
+    values are decimal numerals.
+    """
+    if not isinstance(text, str):
         return None
+    digits = text.strip()
+    return int(digits) if digits.isascii() and digits.isdigit() else None
 
 
 def refuse(message: str) -> TFTPProtocolError:

@@ -149,3 +149,22 @@ def test_a_profiles_server_policy_cannot_be_changed_through_a_reference():
     profile = tftp.options.Profile("custom", built, {})
     built.max_blksize = 512
     assert profile.server.max_blksize == 1024
+
+
+@pytest.mark.parametrize("text,value", [("8", 8), (" 8 ", 8), ("0", 0), ("007", 7), ("65464", 65464)])
+def test_option_numbers_are_ascii_digits(text, value):
+    from tftp.options.base import read_decimal
+
+    assert read_decimal(text) == value
+
+
+@pytest.mark.parametrize("text", ["", " ", "+8", "-8", "8.0", "1_0", "0x10", "8k", "٨", "²", "1 2", None, 8])
+def test_anything_else_is_not_an_option_number(text):
+    from tftp.options.base import read_decimal
+
+    assert read_decimal(text) is None
+
+
+def test_a_signed_or_non_ascii_blksize_is_not_negotiated():
+    for text in ("+1428", "١٤٢٨", "1_428"):
+        assert negotiate({"blksize": text}, POLICY, is_read=True, timeout=1.0, size=10).options == {}

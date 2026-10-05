@@ -21,7 +21,6 @@ from .base import (
     Negotiated,
     OptionHandler,
     ServerOptionContext,
-    parse_int,
     refuse,
 )
 from .builtin import (
@@ -54,7 +53,6 @@ __all__ = [
     "OptionHandler",
     "ServerOptionContext",
     "ClientOptionContext",
-    "parse_int",
     "refuse",
     "BlksizeOption",
     "Blksize2Option",

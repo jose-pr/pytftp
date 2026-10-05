@@ -120,7 +120,7 @@ class PacketEvent(NamedTuple):
         """Who it was sent to."""
         return self.local if self.direction != "out" else self.remote
 
-    def format(self) -> str:
+    def __str__(self) -> str:
         """A human line: ``12:00:00.123456 [t3] 10.0.0.5:2000 > 10.0.0.1:69 RRQ 'f' octet``."""
         stamp = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
         tags = " ".join(t for t in (self.session and "[%s]" % self.session, self.leg) if t)

@@ -10,7 +10,7 @@ import pytest
 import tftp
 import tftp.aio
 from conftest import client_for
-from tftp.listing import DirectoryListing, ListEntry, format_listing, parse_listing
+from tftp.listing import DirectoryListing, ListEntry, dumps, loads
 
 LISTING = tftp.TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | tftp.LISTING_OPTIONS)
 
@@ -28,16 +28,16 @@ def test_format_round_trip():
         ListEntry("sp ace %25 and\nnewline\rcr", False, 1, 2),
         ListEntry("ÃƒÂ©", False, 3, 4),
     ]
-    data = format_listing(entries)
+    data = dumps(entries)
     assert data.count(b"\n") == 4
-    assert parse_listing(data) == entries
-    assert parse_listing(b"garbage\nf x 1 bad-size\nq 1 1 kind\nf 1 - ok\n") == [ListEntry("ok", False, 1)]
+    assert loads(data) == entries
+    assert loads(b"garbage\nf x 1 bad-size\nq 1 1 kind\nf 1 - ok\n") == [ListEntry("ok", False, 1)]
 
 
 def test_directory_listing_stream(root):
     (root / ".up.bin.abc.part").write_bytes(b"in progress")
     listing = DirectoryListing(str(root))
-    names = {e.name: e for e in parse_listing(listing.read())}
+    names = {e.name: e for e in loads(listing.read())}
     assert names["sub"].is_dir and names["one.bin"].size == 1
     assert ".up.bin.abc.part" not in names
     assert listing.size == len(listing.getvalue()) and listing.mtime

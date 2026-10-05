@@ -53,7 +53,6 @@ __all__ = [
     "CaptureFormatError",
     "CaptureFilterError",
     "WouldBlock",
-    "error_for_exception",
 ]
 
 
@@ -82,6 +81,31 @@ class TFTPError(Exception):
         self.code = TFTPErrorCode(code)
         self.message = message or _default_message(code)
         super().__init__(*self._constructor_args())
+
+    @classmethod
+    def from_exception(cls, exc: BaseException) -> "TFTPError":
+        """The ERROR to send for ``exc``, always a plain :class:`TFTPError` or ``exc`` itself.
+
+        A :class:`TFTPError` is used as is. An ``OSError`` maps by errno
+        (``ENOENT`` -> file not found, ``EACCES`` -> access violation,
+        ``ENOSPC`` -> disk full, ...). Its message is the generic one for the
+        code, never the OS text, which would disclose server paths.
+        """
+        if isinstance(exc, TFTPError):
+            return exc
+        if isinstance(exc, OSError):
+            code = _ERRNO_CODES.get(exc.errno or 0)
+            if code is None:
+                if isinstance(exc, FileNotFoundError):
+                    code = TFTPErrorCode.FILE_NOT_FOUND
+                elif isinstance(exc, PermissionError):
+                    code = TFTPErrorCode.ACCESS_VIOLATION
+                elif isinstance(exc, FileExistsError):
+                    code = TFTPErrorCode.FILE_EXISTS
+                else:
+                    code = TFTPErrorCode.NOT_DEFINED
+            return TFTPError(code)
+        return TFTPError(TFTPErrorCode.NOT_DEFINED)
 
     def _constructor_args(self) -> Tuple[object, ...]:
         """The positional arguments that rebuild this instance: ``args``.
@@ -121,10 +145,10 @@ class RemoteError(TFTPError):
     def __init__(self, code: "int | None" = None, message: str = "") -> None:
         super().__init__(self._CODE if code is None else code, message)
 
-    @staticmethod
-    def from_code(code: int, message: str = "") -> "RemoteError":
-        """The :class:`RemoteError` subclass instance for ``code``."""
-        return _REMOTE_CLASSES.get(code, RemoteError)(code, message)
+    @classmethod
+    def from_code(cls, code: int, message: str = "") -> "RemoteError":
+        """The :class:`RemoteError` subclass instance for ``code`` (``cls`` itself for a code with no leaf)."""
+        return _REMOTE_CLASSES.get(code, cls)(code, message)
 
 
 class FileNotFound(RemoteError):
@@ -291,28 +315,3 @@ _ERRNO_CODES = {
 }
 if hasattr(errno, "EDQUOT"):
     _ERRNO_CODES[errno.EDQUOT] = TFTPErrorCode.DISK_FULL
-
-
-def error_for_exception(exc: BaseException) -> TFTPError:
-    """The ERROR to send for ``exc``.
-
-    A :class:`TFTPError` is used as is. An ``OSError`` maps by errno
-    (``ENOENT`` -> file not found, ``EACCES`` -> access violation, ``ENOSPC``
-    -> disk full, ...). Its message is the generic one for the code, never the
-    OS text, which would disclose server paths.
-    """
-    if isinstance(exc, TFTPError):
-        return exc
-    if isinstance(exc, OSError):
-        code = _ERRNO_CODES.get(exc.errno or 0)
-        if code is None:
-            if isinstance(exc, FileNotFoundError):
-                code = TFTPErrorCode.FILE_NOT_FOUND
-            elif isinstance(exc, PermissionError):
-                code = TFTPErrorCode.ACCESS_VIOLATION
-            elif isinstance(exc, FileExistsError):
-                code = TFTPErrorCode.FILE_EXISTS
-            else:
-                code = TFTPErrorCode.NOT_DEFINED
-        return TFTPError(code)
-    return TFTPError(TFTPErrorCode.NOT_DEFINED)

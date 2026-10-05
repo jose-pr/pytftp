@@ -15,6 +15,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 from ..netascii import decode as netascii_decode
 from ..options import DEFAULT_BLKSIZE
+from ..options.base import read_decimal
 from ..exceptions import TFTPDecodeError
 from ..packet import TFTPOpcode, decode
 from .events import PacketEvent, new_session_id
@@ -113,7 +114,7 @@ class CapturedTransfer:
             self.is_complete = True
 
     @property
-    def bytes(self) -> int:
+    def size(self) -> int:
         return sum(self._sizes.values())
 
     @property
@@ -158,7 +159,7 @@ class CapturedTransfer:
             "blksize": self.blksize,
             "windowsize": self.windowsize,
             "tsize": self.tsize,
-            "bytes": self.bytes,
+            "bytes": self.size,
             "packets": self.packets,
             "retransmissions": self.retransmissions,
             "missing_blocks": len(self.missing_blocks),
@@ -182,7 +183,7 @@ class CapturedTransfer:
             self.filename,
             self.client,
             self.server,
-            self.bytes,
+            self.size,
             state,
         )
 
@@ -277,14 +278,17 @@ class FlowTracker:
                 return
             transfer.acknowledged = dict(options)
             for name in ("blksize", "blksize2"):
-                if options.get(name, "").strip().isdigit():
-                    transfer.blksize = int(options[name])
-            if options.get("windowsize", "").strip().isdigit():
-                transfer.windowsize = int(options["windowsize"])
-            if options.get("tsize", "").strip().isdigit():
-                transfer.tsize = int(options["tsize"])
-            if options.get("rollover", "").strip() in ("0", "1"):
-                transfer._rollover = int(options["rollover"])
+                value = read_decimal(options.get(name, ""))
+                if value is not None:
+                    transfer.blksize = value
+            window = read_decimal(options.get("windowsize", ""))
+            if window is not None:
+                transfer.windowsize = window
+            tsize = read_decimal(options.get("tsize", ""))
+            if tsize is not None:
+                transfer.tsize = tsize
+            if read_decimal(options.get("rollover", "")) in (0, 1):
+                transfer._rollover = read_decimal(options["rollover"])
         elif op == TFTPOpcode.ERROR and transfer.error is None:
             try:
                 packet = decode(payload)

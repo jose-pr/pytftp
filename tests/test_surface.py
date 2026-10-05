@@ -107,7 +107,6 @@ EXPECTED = {
         "by_interface",
         "by_prefix",
         "by_subnet",
-        "upstream",
     ],
     "tftp.capture": [
         "Analysis",
@@ -164,7 +163,6 @@ EXPECTED = {
         "XMtimeOption",
         "accept_oack",
         "negotiate",
-        "parse_int",
         "refuse",
         "register_option",
         "request_options",
@@ -217,7 +215,6 @@ EXPECTED = {
         "TransferTimeoutError",
         "UnknownTransferID",
         "WouldBlock",
-        "error_for_exception",
     ],
     "tftp.cli": [
         "CaptureCmd",
@@ -254,8 +251,8 @@ EXPECTED = {
         "LIST_OPTION",
         "ListEntry",
         "MTIME_OPTION",
-        "format_listing",
-        "parse_listing",
+        "dumps",
+        "loads",
     ],
     "tftp.netascii": [
         "NetasciiReader",

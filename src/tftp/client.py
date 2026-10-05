@@ -24,7 +24,8 @@ from typing import (
 )
 
 from .exceptions import TFTPProtocolError, RemoteError, TFTPError, TransferTimeoutError
-from .listing import LIST_OPTION, MTIME_OPTION, ListEntry, parse_listing
+from . import listing
+from .listing import LIST_OPTION, MTIME_OPTION, ListEntry
 from .netascii import NetasciiReader, NetasciiWriter, encoded_size
 from .options import (
     DEFAULT_BLKSIZE,
@@ -537,7 +538,7 @@ class TFTPClient:
             lister.download(dirname or ".", sink)
         except _NotListing:
             raise NotADirectoryError(errno.ENOTDIR, "not a directory", dirname) from None
-        return parse_listing(sink.getvalue())
+        return listing.loads(sink.getvalue())
 
     def _lister(self) -> "TFTPClient":
         """A copy of this client whose download is a listing or fails with _NotListing."""

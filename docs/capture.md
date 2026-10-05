@@ -10,7 +10,7 @@ import tftp
 from tftp.capture import PcapWriter
 
 def show(event):
-    print(event.format())          # 12:00:00.123 [s3] 10.0.0.5:2000 > 10.0.0.1:69 RRQ 'pxelinux.0' octet blksize=1432 tsize=0
+    print(str(event))          # 12:00:00.123 [s3] 10.0.0.5:2000 > 10.0.0.1:69 RRQ 'pxelinux.0' octet blksize=1432 tsize=0
 
 tftp.TFTPClient("192.0.2.1", trace=show).get("pxelinux.0")
 

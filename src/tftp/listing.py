@@ -24,7 +24,7 @@ import os
 import re
 from typing import Iterable, List, NamedTuple, Optional
 
-__all__ = ["ListEntry", "format_listing", "parse_listing", "DirectoryListing", "LIST_OPTION", "MTIME_OPTION"]
+__all__ = ["ListEntry", "dumps", "loads", "DirectoryListing", "LIST_OPTION", "MTIME_OPTION"]
 
 #: The option asking for a listing; its value is the format version, ``1``.
 LIST_OPTION = "x-list"
@@ -57,8 +57,8 @@ def _unescape(name: str) -> str:
     return _CODES.sub(lambda match: _DECODED[match.group(1).lower()], name)
 
 
-def format_listing(entries: Iterable[ListEntry]) -> bytes:
-    """The wire form of ``entries``."""
+def dumps(entries: Iterable[ListEntry]) -> bytes:
+    """The wire form of ``entries``; the inverse of :func:`loads`."""
     lines = []
     for entry in entries:
         mtime = "-" if entry.mtime is None else str(int(entry.mtime))
@@ -69,7 +69,7 @@ def format_listing(entries: Iterable[ListEntry]) -> bytes:
     return "".join(lines).encode("utf-8", "surrogateescape")
 
 
-def parse_listing(data: bytes) -> List[ListEntry]:
+def loads(data: bytes) -> List[ListEntry]:
     """Entries from a listing; malformed lines are skipped."""
     entries = []
     for line in data.decode("utf-8", "surrogateescape").split("\n"):
@@ -117,7 +117,7 @@ class DirectoryListing(io.BytesIO):
                     continue
                 entries.append(ListEntry(name, is_dir, info.st_size, int(info.st_mtime)))
         entries.sort(key=lambda e: e.name)
-        data = format_listing(entries)
+        data = dumps(entries)
         super().__init__(data)
         self.size = len(data)
         self.mtime: Optional[int] = int(os.stat(directory).st_mtime)

@@ -216,3 +216,19 @@ def test_a_timeout_survives_a_process_boundary_without_an_errno():
     assert isinstance(twin, TimeoutError)
     assert twin.errno is None
     assert twin.message == "slow"
+
+
+def test_from_code_is_a_classmethod_that_picks_the_leaf():
+    assert type(RemoteError.from_code(1, "x")) is FileNotFound
+    assert type(RemoteError.from_code(2)) is AccessViolation
+    assert type(RemoteError.from_code(77, "x")) is RemoteError
+    assert RemoteError.from_code(77, "x").code == 77 and RemoteError.from_code(1, "gone").message == "gone"
+    assert isinstance(RemoteError.__dict__["from_code"], classmethod)
+
+
+def test_from_exception_maps_what_a_transfer_failed_with():
+    mine = TFTPError(3, "full")
+    assert TFTPError.from_exception(mine) is mine
+    assert TFTPError.from_exception(PermissionError(13, "/secret")).code == 2
+    assert type(TFTPError.from_exception(KeyError("x"))) is TFTPError
+    assert TFTPError.from_exception(KeyError("x")).code == 0
