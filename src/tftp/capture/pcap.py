@@ -158,7 +158,7 @@ class PcapWriter:
     headers (with valid checksums), so Wireshark decodes it as TFTP. A
     v4-mapped IPv6 address is written as IPv4.
 
-    Usable as a ``trace`` hook directly: ``Server(..., trace=PcapWriter(path))``.
+    Usable as a ``trace`` hook directly: ``TFTPServer(..., trace=PcapWriter(path))``.
     """
 
     def __init__(self, target: Union[str, "os.PathLike[str]", IO[bytes]]) -> None:

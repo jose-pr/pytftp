@@ -2,7 +2,7 @@
 
 ## Tracing your own traffic
 
-`Client`, `Server` and `Relay` take `trace=`, called with a
+`TFTPClient`, `TFTPServer` and `TFTPRelay` take `trace=`, called with a
 `tftp.capture.PacketEvent` for every datagram sent and received:
 
 ```python
@@ -12,10 +12,10 @@ from tftp.capture import PcapWriter
 def show(event):
     print(event.format())          # 12:00:00.123 [s3] 10.0.0.5:2000 > 10.0.0.1:69 RRQ 'pxelinux.0' octet blksize=1432 tsize=0
 
-tftp.Client("192.0.2.1", trace=show).get("pxelinux.0")
+tftp.TFTPClient("192.0.2.1", trace=show).get("pxelinux.0")
 
 with PcapWriter("server.pcap") as pcap:                  # open it in Wireshark
-    tftp.Server("/srv/tftp", trace=pcap).serve_forever()
+    tftp.TFTPServer("/srv/tftp", trace=pcap).serve_forever()
 ```
 
 Events carry a `session` id per transfer, the direction, both addresses, the

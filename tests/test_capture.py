@@ -10,7 +10,7 @@ import pytest
 
 import tftp
 from conftest import client_for, needs_ipv6
-from tftp import Opcode, encode_ack, encode_data, encode_error, encode_oack, encode_request
+from tftp import TFTPOpcode, encode_ack, encode_data, encode_error, encode_oack, encode_request
 from tftp.capture import (
     CaptureFilterError,
     FlowTracker,
@@ -28,7 +28,7 @@ from tftp.capture import (
 
 def test_summaries():
     assert (
-        summarize(encode_request(Opcode.RRQ, "a.bin", "octet", {"blksize": 1428}))
+        summarize(encode_request(TFTPOpcode.RRQ, "a.bin", "octet", {"blksize": 1428}))
         == "RRQ 'a.bin' octet blksize=1428"
     )
     assert summarize(encode_data(7, b"xyz")) == "DATA 7 (3 bytes)"
@@ -153,7 +153,7 @@ def _pcapng(frames, linktype=1, nanoseconds=False):
 def test_pcapng_ethernet_vlan_and_fragments():
     big = _udp(50000, 50001, encode_data(1, os.urandom(3000)))  # 3012 bytes of UDP: 3 fragments
     frames = [
-        _ether(_ipv4("10.0.0.5", "10.0.0.1", _udp(50000, 69, encode_request(Opcode.RRQ, "f")))),
+        _ether(_ipv4("10.0.0.5", "10.0.0.1", _udp(50000, 69, encode_request(TFTPOpcode.RRQ, "f")))),
         _ether(_ipv4("10.0.0.1", "10.0.0.5", big[:1480], ident=9, offset=0, more=True), vlan=True),
         _ether(_ipv4("10.0.0.1", "10.0.0.5", big[2960:], ident=9, offset=2960)),  # out of order
         _ether(_ipv4("10.0.0.1", "10.0.0.5", big[1480:2960], ident=9, offset=1480, more=True)),
@@ -166,7 +166,7 @@ def test_pcapng_ethernet_vlan_and_fragments():
 
 
 def test_pcapng_nanoseconds_linux_sll_and_ipv6_fragments():
-    payload = _udp(1000, 69, encode_request(Opcode.WRQ, "v6"))
+    payload = _udp(1000, 69, encode_request(TFTPOpcode.WRQ, "v6"))
     src = bytes(15) + b"\x01"
     first, second = payload[:16], payload[16:]
 
@@ -202,8 +202,8 @@ C, S, T = ("10.0.0.5", 2000), ("10.0.0.1", 69), ("10.0.0.1", 40000)
 
 def test_flow_retransmission_error_and_stray():
     datagrams = _flow(
-        (C, S, encode_request(Opcode.RRQ, "f")),
-        (C, S, encode_request(Opcode.RRQ, "f")),  # request retransmitted
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")),
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")),  # request retransmitted
         (T, C, encode_data(1, b"a" * 512)),
         (T, C, encode_data(1, b"a" * 512)),  # DATA retransmitted
         (C, T, encode_ack(1)),
@@ -221,7 +221,7 @@ def test_flow_retransmission_error_and_stray():
 
 def test_flow_rollover_and_netascii():
     tracker = FlowTracker(keep_payloads=True)
-    packets = [(C, S, encode_request(Opcode.RRQ, "t", "netascii", {"blksize": 8}))]
+    packets = [(C, S, encode_request(TFTPOpcode.RRQ, "t", "netascii", {"blksize": 8}))]
     packets.append((T, C, encode_oack({"blksize": 8})))
     count = 65540
     for logical in range(1, count + 1):
@@ -240,7 +240,7 @@ def test_flow_rollover_and_netascii():
 def test_flow_answer_from_another_address():
     other = ("10.0.0.99", 41000)
     tracker = FlowTracker()
-    for datagram in _flow((C, S, encode_request(Opcode.RRQ, "f")), (other, C, encode_data(1, b"x"))):
+    for datagram in _flow((C, S, encode_request(TFTPOpcode.RRQ, "f")), (other, C, encode_data(1, b"x"))):
         tracker.feed(datagram)
     assert tracker.transfers[0].server_tid == other and tracker.transfers[0].data() == b"x"
 
@@ -273,7 +273,7 @@ def _event(data, src=("10.0.0.5", 2000), dst=("10.0.0.1", 69), **kw):
     ],
 )
 def test_filters(expression, matches):
-    event = _event(encode_request(Opcode.RRQ, "boot/x.efi"), session="c1")
+    event = _event(encode_request(TFTPOpcode.RRQ, "boot/x.efi"), session="c1")
     assert compile_filter(expression)(event) is matches
 
 
@@ -298,7 +298,7 @@ def test_filter_errors(expression):
 
 def _lossy_capture():
     # blocks 1, 2, 2 again, 4 (3 never captured), 5 (the short last one)
-    packets = [(C, S, encode_request(Opcode.RRQ, "f"))]
+    packets = [(C, S, encode_request(TFTPOpcode.RRQ, "f"))]
     for number, size in [(1, 512), (2, 512), (2, 512), (4, 512), (5, 10)]:
         packets.append((T, C, encode_data(number, b"d" * size)))
         packets.append((C, T, encode_ack(number)))

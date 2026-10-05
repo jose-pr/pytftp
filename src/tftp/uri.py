@@ -78,20 +78,20 @@ def format_url(host: "HostLike", filename: str, port: int = 69, mode: str = "oct
 
 
 def download_url(url: str, dest: Any, *, progress: Optional[Any] = None, **client_options: Any):
-    """Download the file a ``tftp://`` URI names; ``client_options`` go to ``Client``."""
-    from .client import Client
+    """Download the file a ``tftp://`` URI names; ``client_options`` go to ``TFTPClient``."""
+    from .client import TFTPClient
 
     target = parse_url(url)
-    return Client(target.host, target.port, **client_options).download(
+    return TFTPClient(target.host, target.port, **client_options).download(
         target.filename, dest, mode=target.mode, progress=progress
     )
 
 
 def upload_url(url: str, source: Any, *, progress: Optional[Any] = None, **client_options: Any):
-    """Upload to the file a ``tftp://`` URI names; ``client_options`` go to ``Client``."""
-    from .client import Client
+    """Upload to the file a ``tftp://`` URI names; ``client_options`` go to ``TFTPClient``."""
+    from .client import TFTPClient
 
     target = parse_url(url)
-    return Client(target.host, target.port, **client_options).upload(
+    return TFTPClient(target.host, target.port, **client_options).upload(
         target.filename, source, mode=target.mode, progress=progress
     )

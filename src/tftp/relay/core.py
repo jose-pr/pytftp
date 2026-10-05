@@ -30,8 +30,8 @@ if TYPE_CHECKING:
 from .._sockets import same_host, sockaddr
 from ..capture.events import PacketEvent, new_session_id
 from ..exceptions import TFTPDecodeError, TFTPError
-from ..packet import ErrorCode, Opcode, Request, decode, encode_error
-from ..server.handler import RequestContext
+from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode, encode_error
+from ..server.handler import TFTPRequestContext
 from ..server.listener import Arrival, Listener
 from ..server.policy import ServerLimits
 from ..server.session import PortRange, bind_transfer
@@ -39,7 +39,7 @@ from .routing import Route, Upstream, upstream as to_upstream
 from ..server.stats import RELAY_COUNTERS, Stats
 from .session import RelaySession, RelaySummary
 
-__all__ = ["Relay"]
+__all__ = ["TFTPRelay"]
 
 log = logging.getLogger("tftp.relay")
 
@@ -49,14 +49,14 @@ _DRAIN = 64
 _RESOLVE_TTL = 60.0
 
 
-class Relay:
+class TFTPRelay:
     """Forward TFTP requests to upstream servers, transparently.
 
     :param route: an upstream (``"host"``, ``"host:port"``, ``(host, port)``,
         :class:`Upstream`) for every request, or a route callable
         ``route(request, context) -> upstream | None`` (see
         :mod:`tftp.relay.routing`). ``None`` refuses with ERROR 2.
-    :param host, port: where to listen for requests (as for ``Server``).
+    :param host, port: where to listen for requests (as for ``TFTPServer``).
     :param idle_timeout: end a transfer after this long without traffic.
         Keep it above the largest timeout a peer may negotiate times its
         retries.
@@ -66,14 +66,14 @@ class Relay:
     :param upstream_source: local address to send upstream from (a string,
         an ``ipaddress`` address or a ``netimps.Host``).
     :param limits, max_sessions, ignore_broadcast,
-        reply_from_request_address: as for ``Server``.
+        reply_from_request_address: as for ``TFTPServer``.
     :param trace: ``trace(PacketEvent)`` for every datagram received or
         sent, with ``role="relay"`` and ``leg`` ``"client"``/``"upstream"``.
     :param on_session_end: ``on_session_end(RelaySummary)`` when a relayed
         transfer ends.
     :param port_range: ports for both sockets of each relayed transfer (the
-        client side and the upstream side), as for ``Server``.
-    :param interface: listen on one network adapter, as for ``Server``.
+        client side and the upstream side), as for ``TFTPServer``.
+    :param interface: listen on one network adapter, as for ``TFTPServer``.
     """
 
     def __init__(
@@ -137,7 +137,7 @@ class Relay:
         self._thread: Optional[threading.Thread] = None
         self._closed = False
 
-    # -- properties and lifecycle (as for Server) --------------------------------
+    # -- properties and lifecycle (as for TFTPServer) --------------------------------
 
     @property
     def server_address(self) -> Tuple[Any, ...]:
@@ -207,7 +207,7 @@ class Relay:
         except OSError:
             pass
 
-    def start(self) -> "Relay":
+    def start(self) -> "TFTPRelay":
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError("relay already running")
         self._thread = threading.Thread(target=self.serve_forever, name="tftp-relay", daemon=True)
@@ -231,7 +231,7 @@ class Relay:
         self._wake_r.close()
         self._wake_w.close()
 
-    def __enter__(self) -> "Relay":
+    def __enter__(self) -> "TFTPRelay":
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -273,7 +273,7 @@ class Relay:
 
             address = Host(target.host).ip()
             if address is None:
-                raise TFTPError(ErrorCode.NOT_DEFINED, "upstream unresolvable")
+                raise TFTPError(TFTPErrorCode.NOT_DEFINED, "upstream unresolvable")
             self._resolved[target.host] = (address, now + _RESOLVE_TTL)
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
         return family, sockaddr(address, target.port)
@@ -286,7 +286,7 @@ class Relay:
             if arrival is None:
                 return
             data, sender = arrival.data, arrival.sender
-            if len(data) < 2 or data[0] != 0 or data[1] not in (Opcode.RRQ, Opcode.WRQ):
+            if len(data) < 2 or data[0] != 0 or data[1] not in (TFTPOpcode.RRQ, TFTPOpcode.WRQ):
                 continue
             if self.ignore_broadcast and self._listener.is_broadcast(arrival):
                 continue
@@ -313,27 +313,27 @@ class Relay:
     def _open_session(self, arrival: Arrival, key, now: float) -> bool:
         data, sender, local, ifindex = arrival[:4]
         if len(data) > self.limits.max_request_size:
-            self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, "request too large")
+            self._listener.reply_error(sender, TFTPErrorCode.ILLEGAL_OPERATION, "request too large")
             return False
         try:
             request = decode(data)
-            assert isinstance(request, Request)
+            assert isinstance(request, RequestPacket)
             self.limits.check(request)
         except TFTPDecodeError as exc:
-            self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, str(exc))
+            self._listener.reply_error(sender, TFTPErrorCode.ILLEGAL_OPERATION, str(exc))
             return False
         except TFTPError as exc:
             self._listener.reply_error(sender, exc.code, exc.message)
             return False
         if self.max_sessions is not None and len(self._sessions) >= self.max_sessions:
-            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay busy")
+            self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "relay busy")
             return False
-        context = RequestContext(request, sender, local, ifindex)
+        context = TFTPRequestContext(request, sender, local, ifindex)
         context.interface = arrival.interface
         try:
             target = self.route(request, context)
             if target is None:
-                raise TFTPError(ErrorCode.ACCESS_VIOLATION, "no route")
+                raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION, "no route")
             family, upstream = self._resolve(to_upstream(target))
         except TFTPError as exc:
             log.info("%r refused: %s", context, exc)
@@ -341,21 +341,21 @@ class Relay:
             return False
         except Exception:
             log.exception("route failed for %r", context)
-            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay error")
+            self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "relay error")
             return False
 
         try:
             down, client = self._listener.reply_socket(arrival, self.port_range)
         except OSError as exc:
             log.warning("no transfer socket for %s: %s", sender[:2], exc)
-            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay busy")
+            self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "relay busy")
             return False
         try:
             source = self.upstream_source or ("::" if family == socket.AF_INET6 else "0.0.0.0")
             up = bind_transfer(source, family, self.port_range)
         except OSError:
             down.close()
-            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "relay error")
+            self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "relay error")
             return False
         session = RelaySession(new_session_id("r"), client, key, down, up, upstream, request, context, now)
         self._sessions[key] = session
@@ -392,14 +392,14 @@ class Relay:
                         continue  # not the server we asked
                     session.upstream_tid = addr  # RFC 1350 section 4: learn its TID
                 if addr[0] != session.upstream_tid[0] or addr[1] != session.upstream_tid[1]:
-                    self._send(session, sock, encode_error(ErrorCode.UNKNOWN_TID), addr)
+                    self._send(session, sock, encode_error(TFTPErrorCode.UNKNOWN_TID), addr)
                     continue
                 self._emit(session, sock, data, addr, "in", "upstream")
                 session.observe(data, False, now, self.linger)
                 self._send(session, session.down, data, session.client)
             else:
                 if addr[0] != session.client[0] or addr[1] != session.client[1]:
-                    self._send(session, sock, encode_error(ErrorCode.UNKNOWN_TID), addr)
+                    self._send(session, sock, encode_error(TFTPErrorCode.UNKNOWN_TID), addr)
                     continue
                 self._emit(session, sock, data, addr, "in", "client")
                 if session.upstream_tid is None:

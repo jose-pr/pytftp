@@ -13,15 +13,15 @@ import struct
 from typing import Dict, List, Mapping, NamedTuple, Optional, Tuple, Union
 
 from ..exceptions import TFTPDecodeError
-from .enums import Opcode
+from .enums import TFTPOpcode
 
 __all__ = [
-    "Request",
-    "Data",
-    "Ack",
-    "Error",
-    "OptionAck",
-    "Packet",
+    "RequestPacket",
+    "DataPacket",
+    "AckPacket",
+    "ErrorPacket",
+    "OptionAckPacket",
+    "TFTPPacket",
     "decode",
     "encode_request",
     "encode_data",
@@ -41,7 +41,7 @@ _HDR = struct.Struct("!HH")
 _OP = struct.Struct("!H")
 
 
-class Request(NamedTuple):
+class RequestPacket(NamedTuple):
     """A read (RRQ) or write (WRQ) request.
 
     ``options`` keys are lower-cased, as RFC 2347 makes option names
@@ -51,7 +51,7 @@ class Request(NamedTuple):
     options this library does not know all survive.
     """
 
-    opcode: Opcode
+    opcode: TFTPOpcode
     filename: str
     mode: str
     options: Dict[str, str]
@@ -59,7 +59,7 @@ class Request(NamedTuple):
 
     @property
     def is_read(self) -> bool:
-        return self.opcode == Opcode.RRQ
+        return self.opcode == TFTPOpcode.RRQ
 
     @property
     def raw_options(self) -> List[Tuple[str, str]]:
@@ -74,25 +74,25 @@ class Request(NamedTuple):
         return self.raw or encode_request(self.opcode, self.filename, self.mode, self.options)
 
 
-class Data(NamedTuple):
+class DataPacket(NamedTuple):
     block: int
     data: bytes
 
 
-class Ack(NamedTuple):
+class AckPacket(NamedTuple):
     block: int
 
 
-class Error(NamedTuple):
+class ErrorPacket(NamedTuple):
     code: int
     message: str
 
 
-class OptionAck(NamedTuple):
+class OptionAckPacket(NamedTuple):
     options: Dict[str, str]
 
 
-Packet = Union[Request, Data, Ack, Error, OptionAck]
+TFTPPacket = Union[RequestPacket, DataPacket, AckPacket, ErrorPacket, OptionAckPacket]
 
 
 def _text(value: str) -> bytes:
@@ -119,17 +119,17 @@ def encode_request(
     options: Optional[Mapping[str, object]] = None,
 ) -> bytes:
     """Build an RRQ or WRQ. Option values are sent as ``str(value)``."""
-    if opcode not in (Opcode.RRQ, Opcode.WRQ):
+    if opcode not in (TFTPOpcode.RRQ, TFTPOpcode.WRQ):
         raise ValueError("a request opcode is RRQ or WRQ, not %r" % (opcode,))
     return _OP.pack(opcode) + _text(filename) + b"\0" + _text(mode) + b"\0" + _options_bytes(options)
 
 
 def encode_data(block: int, data: bytes) -> bytes:
-    return _HDR.pack(Opcode.DATA, block) + bytes(data)
+    return _HDR.pack(TFTPOpcode.DATA, block) + bytes(data)
 
 
 def encode_ack(block: int) -> bytes:
-    return _HDR.pack(Opcode.ACK, block)
+    return _HDR.pack(TFTPOpcode.ACK, block)
 
 
 #: Most octets of message text an ERROR carries.
@@ -150,11 +150,11 @@ def encode_error(code: int, message: str = "") -> bytes:
     raw = message.encode(FILENAME_ENCODING, _ERRORS).replace(b"\0", b"?")
     if len(raw) > MAX_ERROR_TEXT:
         raw = raw[:MAX_ERROR_TEXT].decode(FILENAME_ENCODING, "ignore").encode(FILENAME_ENCODING)
-    return _HDR.pack(Opcode.ERROR, code) + raw + b"\0"
+    return _HDR.pack(TFTPOpcode.ERROR, code) + raw + b"\0"
 
 
 def encode_oack(options: Mapping[str, object]) -> bytes:
-    return _OP.pack(Opcode.OACK) + _options_bytes(options)
+    return _OP.pack(TFTPOpcode.OACK) + _options_bytes(options)
 
 
 def _strings(body: bytes) -> list:
@@ -176,31 +176,31 @@ def _parse_options(fields: list) -> Dict[str, str]:
     return options
 
 
-def decode(packet: Union[bytes, bytearray, memoryview]) -> Packet:
+def decode(packet: Union[bytes, bytearray, memoryview]) -> TFTPPacket:
     """Parse one packet. Raises :class:`TFTPDecodeError` on invalid input."""
     buf = bytes(packet)
     if len(buf) < 2:
         raise TFTPDecodeError("packet shorter than an opcode")
     (op,) = _OP.unpack_from(buf)
-    if op in (Opcode.RRQ, Opcode.WRQ):
+    if op in (TFTPOpcode.RRQ, TFTPOpcode.WRQ):
         fields = _strings(buf[2:])
         if len(fields) < 2 or not fields[0]:
             raise TFTPDecodeError("request without a filename and mode")
-        return Request(Opcode(op), fields[0], fields[1].lower(), _parse_options(fields[2:]), buf)
-    if op == Opcode.DATA:
+        return RequestPacket(TFTPOpcode(op), fields[0], fields[1].lower(), _parse_options(fields[2:]), buf)
+    if op == TFTPOpcode.DATA:
         if len(buf) < 4:
             raise TFTPDecodeError("DATA shorter than its header")
-        return Data(_HDR.unpack_from(buf)[1], buf[4:])
-    if op == Opcode.ACK:
+        return DataPacket(_HDR.unpack_from(buf)[1], buf[4:])
+    if op == TFTPOpcode.ACK:
         if len(buf) < 4:
             raise TFTPDecodeError("ACK shorter than its header")
-        return Ack(_HDR.unpack_from(buf)[1])
-    if op == Opcode.ERROR:
+        return AckPacket(_HDR.unpack_from(buf)[1])
+    if op == TFTPOpcode.ERROR:
         if len(buf) < 4:
             raise TFTPDecodeError("ERROR shorter than its header")
         code = _HDR.unpack_from(buf)[1]
         text = _strings(buf[4:])
-        return Error(code, text[0] if text else "")
-    if op == Opcode.OACK:
-        return OptionAck(_parse_options(_strings(buf[2:])))
+        return ErrorPacket(code, text[0] if text else "")
+    if op == TFTPOpcode.OACK:
+        return OptionAckPacket(_parse_options(_strings(buf[2:])))
     raise TFTPDecodeError("unknown opcode %d" % op)

@@ -1,15 +1,15 @@
 import pytest
 
 import tftp
-from tftp import ErrorCode, Opcode
+from tftp import TFTPErrorCode, TFTPOpcode
 
 
 def test_request_roundtrip_with_options():
-    raw = tftp.encode_request(Opcode.RRQ, "boot/pxelinux.0", "octet", {"blksize": 1428, "tsize": 0})
+    raw = tftp.encode_request(TFTPOpcode.RRQ, "boot/pxelinux.0", "octet", {"blksize": 1428, "tsize": 0})
     assert raw == b"\x00\x01boot/pxelinux.0\x00octet\x00blksize\x001428\x00tsize\x000\x00"
     packet = tftp.decode(raw)
-    assert packet == tftp.Request(
-        Opcode.RRQ, "boot/pxelinux.0", "octet", {"blksize": "1428", "tsize": "0"}, raw
+    assert packet == tftp.RequestPacket(
+        TFTPOpcode.RRQ, "boot/pxelinux.0", "octet", {"blksize": "1428", "tsize": "0"}, raw
     )
     assert packet.is_read
     assert packet.encode() == raw
@@ -21,7 +21,7 @@ def test_request_keeps_raw_bytes_and_original_options():
     assert packet.raw == raw and packet.encode() == raw
     assert packet.mode == "octet" and packet.options == {"blksize": "100", "x-vendor": "v"}
     assert packet.raw_options == [("BlkSize", "100"), ("blksize", "200"), ("X-Vendor", "v")]
-    built = tftp.Request(Opcode.WRQ, "f", "octet", {"tsize": "5"})
+    built = tftp.RequestPacket(TFTPOpcode.WRQ, "f", "octet", {"tsize": "5"})
     assert built.raw == b"" and built.raw_options == [("tsize", "5")]
     assert tftp.decode(built.encode()).options == {"tsize": "5"}
 
@@ -41,7 +41,7 @@ def test_request_tolerates_missing_final_nul_and_dangling_option():
 
 def test_request_filename_bytes_roundtrip():
     name = b"caf\xe9-\xff".decode("utf-8", "surrogateescape")
-    raw = tftp.encode_request(Opcode.WRQ, name)
+    raw = tftp.encode_request(TFTPOpcode.WRQ, name)
     assert tftp.decode(raw).filename == name
     assert raw[2:8] == b"caf\xe9-\xff"
 
@@ -64,28 +64,28 @@ def test_malformed(raw):
 
 
 def test_data_ack_error_oack():
-    assert tftp.decode(tftp.encode_data(7, b"abc")) == tftp.Data(7, b"abc")
-    assert tftp.decode(tftp.encode_ack(65535)) == tftp.Ack(65535)
-    err = tftp.decode(tftp.encode_error(ErrorCode.FILE_NOT_FOUND, "nope"))
-    assert err == tftp.Error(1, "nope")
-    assert tftp.decode(b"\x00\x05\x00\x02") == tftp.Error(2, "")
-    assert tftp.decode(tftp.encode_oack({"blksize": 9})) == tftp.OptionAck({"blksize": "9"})
+    assert tftp.decode(tftp.encode_data(7, b"abc")) == tftp.DataPacket(7, b"abc")
+    assert tftp.decode(tftp.encode_ack(65535)) == tftp.AckPacket(65535)
+    err = tftp.decode(tftp.encode_error(TFTPErrorCode.FILE_NOT_FOUND, "nope"))
+    assert err == tftp.ErrorPacket(1, "nope")
+    assert tftp.decode(b"\x00\x05\x00\x02") == tftp.ErrorPacket(2, "")
+    assert tftp.decode(tftp.encode_oack({"blksize": 9})) == tftp.OptionAckPacket({"blksize": "9"})
 
 
 def test_nul_in_strings_is_refused():
     with pytest.raises(ValueError):
-        tftp.encode_request(Opcode.RRQ, "a\0b")
+        tftp.encode_request(TFTPOpcode.RRQ, "a\0b")
     with pytest.raises(ValueError):
-        tftp.encode_request(Opcode.DATA, "a")
+        tftp.encode_request(TFTPOpcode.DATA, "a")
 
 
 def test_errors_map_os_errors():
     from tftp.exceptions import error_for_exception
 
-    assert error_for_exception(FileNotFoundError(2, "x")).code == ErrorCode.FILE_NOT_FOUND
-    assert error_for_exception(PermissionError(13, "x")).code == ErrorCode.ACCESS_VIOLATION
-    assert error_for_exception(FileExistsError(17, "x")).code == ErrorCode.FILE_EXISTS
-    assert error_for_exception(OSError(28, "No space left")).code == ErrorCode.DISK_FULL
-    assert error_for_exception(RuntimeError("boom")).code == ErrorCode.NOT_DEFINED
+    assert error_for_exception(FileNotFoundError(2, "x")).code == TFTPErrorCode.FILE_NOT_FOUND
+    assert error_for_exception(PermissionError(13, "x")).code == TFTPErrorCode.ACCESS_VIOLATION
+    assert error_for_exception(FileExistsError(17, "x")).code == TFTPErrorCode.FILE_EXISTS
+    assert error_for_exception(OSError(28, "No space left")).code == TFTPErrorCode.DISK_FULL
+    assert error_for_exception(RuntimeError("boom")).code == TFTPErrorCode.NOT_DEFINED
     # The OS text could leak server paths, so it never becomes the message.
     assert "secret" not in error_for_exception(FileNotFoundError(2, "/secret/path")).message

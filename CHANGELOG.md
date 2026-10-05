@@ -23,11 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   as its code) or a `message` that is not text, and `ValueError` for a code
   outside 0..65535. `encode_error` never raises.
 - Requires `netimps>=0.4.0,<0.5`; netimps 0.3 is no longer supported.
-- `Client(timeout=..., max_timeout=...)` raises `ValueError` when
+- `TFTPClient(timeout=..., max_timeout=...)` raises `ValueError` when
   `max_timeout` is below `timeout`, where it used to be raised to `timeout`
   silently.
-- Host text is read by netimps' stricter rules, for `Client`, `Server`,
-  `Relay` and `upstream`: a port is ASCII digits only
+- Host text is read by netimps' stricter rules, for `TFTPClient`, `TFTPServer`,
+  `TFTPRelay` and `upstream`: a port is ASCII digits only
   (`"host:+70"` is refused) and brackets hold an IPv6 literal only
   (`"[10.0.0.5]"` is refused), each raising `ValueError`
   (`netimps.NetimpsValueError`); a host that is not text, an address, a `Host`
@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `netimps._sockets`; `tftp` no longer logs it at `DEBUG`.
 - On Windows an address the system marks tentative or duplicate (the
   169.254.x.x of a media-disconnected adapter) is no longer one of an
-  adapter's addresses, so `Server(interface=...)` does not consider it.
+  adapter's addresses, so `TFTPServer(interface=...)` does not consider it.
 - Every exception the library raises on its own account is defined in
   `tftp.exceptions` and is a `TFTPError`: `TFTPDecodeError` (bytes that are not
   a packet), `CaptureFormatError` and `CaptureFilterError` were plain
@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `BlockingIOError`, outside `TFTPError`, since it is a signal and not a
   failure. `str()` of the decode, filter, capture-format and value errors is
   the message alone.
-- `TransferTimeoutError().errno` is `None`; it was `ErrorCode.NOT_DEFINED`
+- `TransferTimeoutError().errno` is `None`; it was `TFTPErrorCode.NOT_DEFINED`
   (0), which is not an operating-system error number.
 
 ### Renamed
@@ -67,6 +67,14 @@ Old names are not kept as aliases.
 | `UnknownTransferId` | `UnknownTransferID` |
 | `MalformedPacket` (`tftp.packet`) | `TFTPDecodeError` |
 | `FilterError` (`tftp.capture`) | `CaptureFilterError` |
+| `Client`, `AsyncClient` | `TFTPClient`, `AsyncTFTPClient` |
+| `Server`, `AsyncServer` | `TFTPServer`, `AsyncTFTPServer` |
+| `Relay` | `TFTPRelay` |
+| `Handler` | `TFTPHandler` |
+| `RequestContext` | `TFTPRequestContext` |
+| `Opcode`, `ErrorCode` | `TFTPOpcode`, `TFTPErrorCode` |
+| `Request`, `Data`, `Ack`, `OptionAck`, `Packet` | `RequestPacket`, `DataPacket`, `AckPacket`, `OptionAckPacket`, `TFTPPacket` |
+| `Error` (the ERROR packet, not an exception) | `ErrorPacket` |
 
 ### Fixed
 
@@ -77,7 +85,7 @@ Old names are not kept as aliases.
   with ERROR 0 (a `str` was wrapped where a handler belongs); only combined
   with `--per-client` or `--ignore-case` did it work. A remapped name also
   lost the request's listing flag, so `pytftp ls HOST alias` for a remapped
-  directory answered "file not found": `RequestContext.with_filename()` copies
+  directory answered "file not found": `TFTPRequestContext.with_filename()` copies
   a context with another filename and `--remap` uses it.
 - On Windows an idle `pytftp serve` did not stop on Ctrl-C until a datagram
   arrived, and Ctrl-Break and SIGTERM ended `serve` and `relay` without
@@ -89,10 +97,10 @@ Old names are not kept as aliases.
   reported 0 bytes, 0 retransmissions and no missing blocks unless
   `--extract` kept the payloads. They are counted from the sizes and block
   numbers either way.
-- A `TftpPath` bound to an `AsyncClient` returned wrong results without
+- A `TftpPath` bound to an `AsyncTFTPClient` returned wrong results without
   raising (`read_bytes()` gave `b""`, `write_bytes()` reported success, and
   nothing was sent: the client's coroutines were never awaited).
-  `AsyncClient.path()` raises `TypeError`, and `TftpPath`, `TftpUriPath`
+  `AsyncTFTPClient.path()` raises `TypeError`, and `TftpPath`, `TftpUriPath`
   (through `with_client()` and `TftpBackend`) refuse an asyncio client with
   `TypeError`.
 - A server named by a link-local IPv6 address with a zone (`fe80::1%7`) was
@@ -131,13 +139,13 @@ Old names are not kept as aliases.
   referenced, outside every limit).
 - A handler's `TFTPError` that could not be encoded as an ERROR (a NUL in
   the message, a code outside 0..65535) ended the synchronous server's thread
-  for every client, and left an `AsyncServer` session open for good. Every
+  for every client, and left an `AsyncTFTPServer` session open for good. Every
   ERROR now encodes: a NUL in the text is sent as `?`, the text is cut to 512
   octets, and a code outside 0..65535 is sent as 0. A transfer records its
   failure before it sends the ERROR, and an exception escaping one dispatch
   of the server loop, the asyncio server or the relay ends that one transfer
   (logged once, with its traceback) and not the loop.
-- `Server(max_sessions=...)` and `Relay(max_sessions=...)` above what
+- `TFTPServer(max_sessions=...)` and `TFTPRelay(max_sessions=...)` above what
   `select()` can watch on Windows (510 and 255) raise `ValueError` at
   construction, where the serving thread died at the first request past it.
 - The shipped API header named `NETIMPS_NO_SOCKET_PATCH`, which netimps 0.4

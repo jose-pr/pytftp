@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..exceptions import TFTPError
-from ..packet import ErrorCode, Request
+from ..packet import TFTPErrorCode, RequestPacket
 
 __all__ = ["ServerLimits"]
 
@@ -61,12 +61,12 @@ class ServerLimits:
         self.max_duration = max_duration
         self.max_idle = max_idle
 
-    def check(self, request: Request) -> None:
+    def check(self, request: RequestPacket) -> None:
         """Raise :class:`TFTPError` (4) if ``request`` exceeds a limit."""
         if len(request.filename) > self.max_filename_length:
-            raise TFTPError(ErrorCode.ILLEGAL_OPERATION, "filename too long")
+            raise TFTPError(TFTPErrorCode.ILLEGAL_OPERATION, "filename too long")
         if len(request.options) > self.max_options:
-            raise TFTPError(ErrorCode.ILLEGAL_OPERATION, "too many options")
+            raise TFTPError(TFTPErrorCode.ILLEGAL_OPERATION, "too many options")
         for name, value in request.options.items():
             if len(name) > self.max_option_length or len(value) > self.max_option_length:
-                raise TFTPError(ErrorCode.ILLEGAL_OPERATION, "option too long")
+                raise TFTPError(TFTPErrorCode.ILLEGAL_OPERATION, "option too long")

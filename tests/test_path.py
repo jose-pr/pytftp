@@ -124,17 +124,17 @@ def test_client_path_needs_no_pathlib_import_until_used():
 
 
 def test_an_asyncio_client_has_no_path(server):
-    from tftp.aio import AsyncClient
+    from tftp.aio import AsyncTFTPClient
 
-    client = AsyncClient("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
+    client = AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
     with pytest.raises(TypeError, match="synchronous"):
         client.path("one.bin")
 
 
 def test_a_path_refuses_an_asyncio_client_at_construction_and_in_with_client(server):
-    from tftp.aio import AsyncClient
+    from tftp.aio import AsyncTFTPClient
 
-    asynchronous = AsyncClient("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
+    asynchronous = AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
     with pytest.raises(TypeError, match="synchronous"):
         TftpPath("one.bin", client=asynchronous)
     with pytest.raises(TypeError, match="synchronous"):

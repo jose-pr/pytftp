@@ -134,7 +134,7 @@ def test_our_client_downloads_from_peer(served, kind, shape):
     server = _peer(kind, root)
     try:
         sink = io.BytesIO()
-        result = tftp.Client("127.0.0.1", server.port, timeout=1.0, retries=3, **shape).download(
+        result = tftp.TFTPClient("127.0.0.1", server.port, timeout=1.0, retries=3, **shape).download(
             "f.bin", sink
         )
         assert sink.getvalue() == data
@@ -153,7 +153,9 @@ def test_our_client_uploads_to_peer(served, kind):
             # tftp-hpa runs as nobody: the file it writes must be writable by it.
             (root / "up.bin").write_bytes(b"")
             os.chmod(root / "up.bin", 0o666)
-        tftp.Client("127.0.0.1", server.port, timeout=1.0, retries=3, windowsize=None).upload("up.bin", data)
+        tftp.TFTPClient("127.0.0.1", server.port, timeout=1.0, retries=3, windowsize=None).upload(
+            "up.bin", data
+        )
         assert (root / "up.bin").read_bytes() == data
     finally:
         server.stop()
@@ -164,7 +166,7 @@ def test_our_client_sees_peer_errors(served):
     server = _peer("tftp-hpa", root)
     try:
         with pytest.raises(tftp.FileNotFound):
-            tftp.Client("127.0.0.1", server.port, timeout=1.0).get("missing.bin")
+            tftp.TFTPClient("127.0.0.1", server.port, timeout=1.0).get("missing.bin")
     finally:
         server.stop()
 
@@ -175,7 +177,7 @@ def test_our_client_sees_peer_errors(served):
 @pytest.fixture
 def our_server(served):
     root, data = served
-    with tftp.Server(str(root), "127.0.0.1", 0, writable=True, overwrite=True, timeout=1.0) as server:
+    with tftp.TFTPServer(str(root), "127.0.0.1", 0, writable=True, overwrite=True, timeout=1.0) as server:
         server.start()
         yield server, root, data
 

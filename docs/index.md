@@ -24,12 +24,12 @@ pip install "tftp[cli]"     # plus the pytftp command
 import tftp
 
 # Download with large blocks and an RFC 7440 window.
-client = tftp.Client("192.0.2.1", blksize=1428, windowsize=16)
+client = tftp.TFTPClient("192.0.2.1", blksize=1428, windowsize=16)
 result = client.download("pxelinux.0", "pxelinux.0")
 print(result.bytes, result.throughput, result.negotiated)
 
 # Serve a directory on IPv6 and IPv4, accepting uploads.
-with tftp.Server("/srv/tftp", writable=True) as server:
+with tftp.TFTPServer("/srv/tftp", writable=True) as server:
     server.serve_forever()
 ```
 
@@ -48,7 +48,7 @@ pytftp serve /srv/tftp --write --json
 - [Relaying](relay.md) — forwarding to upstream servers, packets unchanged.
 - [Capture and debugging](capture.md) — tracing, pcaps, reconstructing transfers.
 - [Paths](paths.md) — `TftpPath` and `tftp://` URLs for pathlib-next.
-- [asyncio](async.md) — `AsyncClient`, `AsyncServer`, async handlers.
+- [asyncio](async.md) — `AsyncTFTPClient`, `AsyncTFTPServer`, async handlers.
 - API reference: [Client](api/client.md), [Server](api/server.md),
   [Options](api/options.md), [Packets](api/packet.md),
   [Transfer engine](api/transfer.md).

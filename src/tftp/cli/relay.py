@@ -10,7 +10,7 @@ import json as _json
 import logging as _logging
 import typing as _ty
 
-from ..relay import Relay, RouteTable, by_prefix, by_subnet
+from ..relay import TFTPRelay, RouteTable, by_prefix, by_subnet
 from .common import Traced, bind_failure, error, port_range, shutdown_on_signal
 
 __all__ = ["RelayCmd"]
@@ -83,7 +83,7 @@ class RelayCmd(Traced):
             return 2
         on_end = _print_summary if self.json_out else None
         try:
-            relay = Relay(
+            relay = TFTPRelay(
                 route,
                 self.listen,
                 self.port,

@@ -154,17 +154,17 @@ def test_on_complete_reports_every_transfer(root, make_server):
     while len(results) < 2 and time.monotonic() < deadline:
         time.sleep(0.01)
     assert [r.ok for r in results] == [True, False]
-    assert results[1].error.code == tftp.ErrorCode.FILE_NOT_FOUND
+    assert results[1].error.code == tftp.TFTPErrorCode.FILE_NOT_FOUND
 
 
 @pytest.mark.parametrize(
     "name,code",
     [
-        ("missing.bin", tftp.ErrorCode.FILE_NOT_FOUND),
-        ("sub", tftp.ErrorCode.FILE_NOT_FOUND),
-        ("../outside", tftp.ErrorCode.ACCESS_VIOLATION),
-        ("sub/../../outside", tftp.ErrorCode.ACCESS_VIOLATION),
-        ("..\\outside", tftp.ErrorCode.ACCESS_VIOLATION),
+        ("missing.bin", tftp.TFTPErrorCode.FILE_NOT_FOUND),
+        ("sub", tftp.TFTPErrorCode.FILE_NOT_FOUND),
+        ("../outside", tftp.TFTPErrorCode.ACCESS_VIOLATION),
+        ("sub/../../outside", tftp.TFTPErrorCode.ACCESS_VIOLATION),
+        ("..\\outside", tftp.TFTPErrorCode.ACCESS_VIOLATION),
     ],
 )
 def test_download_errors(root, make_server, name, code):
@@ -185,12 +185,12 @@ def test_upload_policy(root, make_server):
     readonly = make_server(root)
     with pytest.raises(tftp.RemoteError) as info:
         client_for(readonly).put("new.bin", b"x")
-    assert info.value.code == tftp.ErrorCode.ACCESS_VIOLATION
+    assert info.value.code == tftp.TFTPErrorCode.ACCESS_VIOLATION
 
     writable = make_server(root, writable=True)
     with pytest.raises(tftp.RemoteError) as info:
         client_for(writable).put("one.bin", b"y")
-    assert info.value.code == tftp.ErrorCode.FILE_EXISTS
+    assert info.value.code == tftp.TFTPErrorCode.FILE_EXISTS
     assert (root / "one.bin").read_bytes() == b"x"
 
     overwriting = make_server(root, writable=True, overwrite=True)
@@ -200,7 +200,7 @@ def test_upload_policy(root, make_server):
     no_create = make_server(root, writable=True, create=False)
     with pytest.raises(tftp.RemoteError) as info:
         client_for(no_create).put("brand-new.bin", b"z")
-    assert info.value.code == tftp.ErrorCode.FILE_NOT_FOUND
+    assert info.value.code == tftp.TFTPErrorCode.FILE_NOT_FOUND
 
 
 def test_failed_upload_leaves_nothing_behind(root, make_server):
@@ -233,7 +233,7 @@ def test_max_upload(root, make_server):
     server = make_server(handler)
     with pytest.raises(tftp.RemoteError) as info:
         client_for(server).put("big-up.bin", os.urandom(2000))
-    assert info.value.code == tftp.ErrorCode.DISK_FULL
+    assert info.value.code == tftp.TFTPErrorCode.DISK_FULL
     with pytest.raises(tftp.RemoteError):
         client_for(server, tsize=False).put("big-up.bin", os.urandom(2000))
     assert not (root / "big-up.bin").exists()
@@ -248,7 +248,7 @@ def test_custom_handler_serves_generated_content(make_server):
             return io.BytesIO(body)
 
         def open_write(self, context, size):
-            raise tftp.TFTPError(tftp.ErrorCode.ACCESS_VIOLATION, "no uploads here")
+            raise tftp.TFTPError(tftp.TFTPErrorCode.ACCESS_VIOLATION, "no uploads here")
 
     server = make_server(Generated())
     client = client_for(server)
@@ -266,7 +266,7 @@ def test_handler_bug_becomes_error_0(make_server):
     server = make_server(Buggy())
     with pytest.raises(tftp.RemoteError) as info:
         client_for(server).get("x")
-    assert info.value.code == tftp.ErrorCode.NOT_DEFINED
+    assert info.value.code == tftp.TFTPErrorCode.NOT_DEFINED
 
 
 def test_timeout_against_silent_port():
@@ -274,7 +274,7 @@ def test_timeout_against_silent_port():
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
         silent.bind(("127.0.0.1", 0))
-        client = tftp.Client("127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=2)
+        client = tftp.TFTPClient("127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=2)
         with pytest.raises(tftp.TransferTimeoutError):
             client.get("x")
 
@@ -301,7 +301,7 @@ def test_many_concurrent_clients(root, make_server):
 
 
 def test_server_lifecycle(root):
-    server = tftp.Server(root, "127.0.0.1", 0)
+    server = tftp.TFTPServer(root, "127.0.0.1", 0)
     with server:
         server.start()
         with pytest.raises(RuntimeError):

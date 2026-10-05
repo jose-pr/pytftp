@@ -63,7 +63,7 @@ that allows `LISTING_OPTIONS` (`pytftp serve --listing`) answers an RRQ for a
 directory carrying `x-list=1` with a text listing, acknowledging `x-list` in
 its OACK, and puts a file's modification time in the OACK when asked for
 `x-mtime`. A server that does not know them ignores them (RFC 2347): a
-directory then reads as "file not found". `Client.stat()`, `Client.listdir()`,
+directory then reads as "file not found". `TFTPClient.stat()`, `TFTPClient.listdir()`,
 `pytftp ls` and `TftpPath.iterdir()`/`walk()`/`glob()` build on this.
 
 ## Under loss

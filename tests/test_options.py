@@ -107,4 +107,4 @@ def test_accept_oack_refuses(oack):
     requested = {"blksize": "1428", "windowsize": "8", "timeout": "1"}
     with pytest.raises(tftp.TFTPProtocolError) as info:
         accept_oack(requested, oack, is_read=True, timeout=1.0)
-    assert info.value.code == tftp.ErrorCode.OPTION_REFUSED
+    assert info.value.code == tftp.TFTPErrorCode.OPTION_REFUSED

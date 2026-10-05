@@ -7,7 +7,7 @@ With the `path` extra (`pip install tftp[path]`), TFTP files work with
 import tftp
 from pathlib_next.uri import UriPath
 
-client = tftp.Client("192.0.2.1", windowsize=8)
+client = tftp.TFTPClient("192.0.2.1", windowsize=8)
 config = client.path("pxelinux.cfg", "default")
 print(config.read_text())
 config.with_name("default.bak").write_text(new_menu)

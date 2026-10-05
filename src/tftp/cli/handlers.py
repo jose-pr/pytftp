@@ -1,6 +1,6 @@
 """Handler wrappers behind ``pytftp serve``'s deployment flags.
 
-Each is a few lines on top of the public :class:`Handler` protocol --
+Each is a few lines on top of the public :class:`TFTPHandler` protocol --
 deliberately not library API (``docs/serving.md`` shows the same pattern for
 applications that want it):
 
@@ -18,8 +18,8 @@ import re
 import typing as _ty
 
 from ..exceptions import TFTPError
-from ..packet import ErrorCode
-from ..server import FileSystemHandler, RequestContext
+from ..packet import TFTPErrorCode
+from ..server import FileSystemHandler, TFTPRequestContext
 
 __all__ = ["Remap", "PerClient", "CaseInsensitive", "parse_rule"]
 
@@ -54,14 +54,14 @@ class Remap:
                 return pattern.sub(replacement, filename)
         return filename
 
-    def _context(self, context: RequestContext) -> RequestContext:
+    def _context(self, context: TFTPRequestContext) -> TFTPRequestContext:
         name = self.rewrite(context.filename)
         return context if name == context.filename else context.with_filename(name)
 
-    def open_read(self, context: RequestContext) -> _ty.Any:
+    def open_read(self, context: TFTPRequestContext) -> _ty.Any:
         return self.inner.open_read(self._context(context))
 
-    def open_write(self, context: RequestContext, size: _ty.Optional[int]) -> _ty.Any:
+    def open_write(self, context: TFTPRequestContext, size: _ty.Optional[int]) -> _ty.Any:
         return self.inner.open_write(self._context(context), size)
 
 
@@ -92,21 +92,21 @@ class PerClient:
         self.fallback = fallback
         self._handlers: _ty.Dict[str, _ty.Any] = {}
 
-    def handler_for(self, context: RequestContext) -> _ty.Any:
+    def handler_for(self, context: TFTPRequestContext) -> _ty.Any:
         directory = os.path.join(self.root, client_directory(context.peer))
         if not os.path.isdir(directory):
             if not self.fallback:
-                raise TFTPError(ErrorCode.FILE_NOT_FOUND)
+                raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND)
             directory = self.root
         handler = self._handlers.get(directory)
         if handler is None:
             handler = self._handlers[directory] = self.make(directory)
         return handler
 
-    def open_read(self, context: RequestContext) -> _ty.Any:
+    def open_read(self, context: TFTPRequestContext) -> _ty.Any:
         return self.handler_for(context).open_read(context)
 
-    def open_write(self, context: RequestContext, size: _ty.Optional[int]) -> _ty.Any:
+    def open_write(self, context: TFTPRequestContext, size: _ty.Optional[int]) -> _ty.Any:
         return self.handler_for(context).open_write(context, size)
 
 

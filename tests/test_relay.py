@@ -12,8 +12,8 @@ import pytest
 
 import tftp
 from conftest import client_for, needs_ipv6
-from tftp import ErrorCode, Opcode, decode, encode_ack, encode_data, encode_error
-from tftp.relay import Relay, RouteTable, by_prefix, by_subnet
+from tftp import TFTPErrorCode, TFTPOpcode, decode, encode_ack, encode_data, encode_error
+from tftp.relay import TFTPRelay, RouteTable, by_prefix, by_subnet
 
 
 @pytest.fixture
@@ -21,7 +21,7 @@ def make_relay():
     relays = []
 
     def make(route, host="127.0.0.1", **kwargs):
-        relay = Relay(route, host, 0, **kwargs).start()
+        relay = TFTPRelay(route, host, 0, **kwargs).start()
         relays.append(relay)
         return relay
 
@@ -113,7 +113,7 @@ def test_unknown_options_pass_through_byte_for_byte(make_relay):
         oack, tid = client.recvfrom(2048)
         assert oack == b"\x00\x06X-Vendor\x00xyz\x00blksize\x00600\x00"  # unchanged
         client.sendto(encode_ack(0), tid)
-        assert decode(client.recvfrom(2048)[0]) == tftp.Data(1, b"ok")
+        assert decode(client.recvfrom(2048)[0]) == tftp.DataPacket(1, b"ok")
         client.sendto(encode_ack(1), tid)
     fake.thread.join(5)
     assert fake.received[0] == request  # case, order, unknown option: untouched
@@ -131,7 +131,7 @@ def test_retransmitted_request_is_forwarded_until_answered(make_relay):
 
     fake = FakeUpstream(script)
     relay = make_relay(fake.address)
-    assert tftp.Client("127.0.0.1", relay.server_address[1], timeout=0.3, backoff=1).get("f") == b"late"
+    assert tftp.TFTPClient("127.0.0.1", relay.server_address[1], timeout=0.3, backoff=1).get("f") == b"late"
     fake.thread.join(5)
     assert fake.received[0] == fake.received[1] and fake.received[2] is True
     fake.close()
@@ -147,11 +147,11 @@ def test_wrong_tids_get_error_5_on_both_legs(root, make_server, make_relay):
         for s in (client, stranger):
             s.bind(("127.0.0.1", 0))
             s.settimeout(3)
-        client.sendto(tftp.encode_request(Opcode.RRQ, "1428x3.bin"), relay.server_address)
+        client.sendto(tftp.encode_request(TFTPOpcode.RRQ, "1428x3.bin"), relay.server_address)
         _, tid = client.recvfrom(2048)
         stranger.sendto(encode_ack(1), tid)  # client-facing leg, wrong source
         error, _ = stranger.recvfrom(100)
-        assert decode(error).code == ErrorCode.UNKNOWN_TID
+        assert decode(error).code == TFTPErrorCode.UNKNOWN_TID
         client.sendto(encode_ack(1), tid)  # the real transfer carries on
         assert decode(client.recvfrom(2048)[0]).block == 2
         client.sendto(encode_error(0, "done"), tid)
@@ -173,7 +173,7 @@ def test_idle_sessions_are_cleaned_up(root, make_server, make_relay):
     relay = make_relay(upstream_of(server), idle_timeout=0.3, on_session_end=ends.append)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.settimeout(3)
-        client.sendto(tftp.encode_request(Opcode.RRQ, "big.bin"), relay.server_address)
+        client.sendto(tftp.encode_request(TFTPOpcode.RRQ, "big.bin"), relay.server_address)
         client.recvfrom(2048)  # then vanish
     assert wait_for(lambda: ends)
     assert ends[0].reason == "idle" and relay.active_sessions == 0
@@ -267,7 +267,9 @@ def test_relay_stats(root, make_server, make_relay):
 def test_relay_hears_an_upstream_named_by_a_link_local_address_with_its_zone(link_local, make_relay):
     from tftp.backends import MemoryHandler
 
-    with tftp.Server(MemoryHandler({"f": b"through the relay"}), "::", 0, timeout=0.5).start() as upstream:
+    with tftp.TFTPServer(
+        MemoryHandler({"f": b"through the relay"}), "::", 0, timeout=0.5
+    ).start() as upstream:
         relay = make_relay("[%s]:%d" % (link_local, upstream.server_address[1]))
-        client = tftp.Client("127.0.0.1", relay.server_address[1], timeout=0.5, retries=2)
+        client = tftp.TFTPClient("127.0.0.1", relay.server_address[1], timeout=0.5, retries=2)
         assert client.get("f") == b"through the relay"

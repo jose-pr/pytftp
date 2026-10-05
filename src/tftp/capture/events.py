@@ -8,7 +8,7 @@ import struct
 from typing import Any, Dict, NamedTuple, Optional, Tuple
 
 from ..exceptions import TFTPDecodeError
-from ..packet import Opcode, decode
+from ..packet import TFTPOpcode, decode
 
 __all__ = ["PacketEvent", "summarize", "new_session_id"]
 
@@ -32,25 +32,25 @@ def summarize(data: bytes) -> str:
     if len(data) < 2:
         return "short datagram (%d bytes)" % len(data)
     op = (data[0] << 8) | data[1]
-    if op == Opcode.DATA and len(data) >= 4:
+    if op == TFTPOpcode.DATA and len(data) >= 4:
         return "DATA %d (%d bytes)" % (struct.unpack_from("!H", data, 2)[0], len(data) - 4)
-    if op == Opcode.ACK and len(data) >= 4:
+    if op == TFTPOpcode.ACK and len(data) >= 4:
         return "ACK %d" % struct.unpack_from("!H", data, 2)[0]
     try:
         packet = decode(data)
     except TFTPDecodeError as exc:
         return "malformed (%s)" % exc
-    if op in (Opcode.RRQ, Opcode.WRQ):
+    if op in (TFTPOpcode.RRQ, TFTPOpcode.WRQ):
         options = " ".join("%s=%s" % item for item in packet.options.items())  # type: ignore[union-attr]
         return "%s %r %s%s" % (
-            Opcode(op).name,
+            TFTPOpcode(op).name,
             packet.filename,  # type: ignore[union-attr]
             packet.mode,  # type: ignore[union-attr]
             " " + options if options else "",
         )
-    if op == Opcode.ERROR:
+    if op == TFTPOpcode.ERROR:
         return "ERROR %d %r" % (packet.code, packet.message)  # type: ignore[union-attr]
-    if op == Opcode.OACK:
+    if op == TFTPOpcode.OACK:
         return "OACK " + " ".join("%s=%s" % item for item in packet.options.items())  # type: ignore[union-attr]
     return "opcode %d" % op
 
@@ -88,19 +88,19 @@ class PacketEvent(NamedTuple):
     def opcode_name(self) -> str:
         op = self.opcode
         try:
-            return Opcode(op).name if op is not None else "?"
+            return TFTPOpcode(op).name if op is not None else "?"
         except ValueError:
             return str(op)
 
     @property
     def block(self) -> Optional[int]:
-        if self.opcode in (Opcode.DATA, Opcode.ACK) and len(self.data) >= 4:
+        if self.opcode in (TFTPOpcode.DATA, TFTPOpcode.ACK) and len(self.data) >= 4:
             return struct.unpack_from("!H", self.data, 2)[0]
         return None
 
     @property
     def payload_size(self) -> Optional[int]:
-        return len(self.data) - 4 if self.opcode == Opcode.DATA and len(self.data) >= 4 else None
+        return len(self.data) - 4 if self.opcode == TFTPOpcode.DATA and len(self.data) >= 4 else None
 
     def decode(self) -> Any:
         """The parsed packet; raises :class:`TFTPDecodeError`."""
@@ -157,6 +157,6 @@ class PacketEvent(NamedTuple):
                 if hasattr(packet, field):
                     value = getattr(packet, field)
                     record[field] = int(value) if field == "code" else value
-        if payload and self.opcode == Opcode.DATA:
+        if payload and self.opcode == TFTPOpcode.DATA:
             record["payload"] = self.data[4:].hex()
         return record

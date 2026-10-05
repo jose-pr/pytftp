@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import enum
 
-__all__ = ["Opcode", "ErrorCode"]
+__all__ = ["TFTPOpcode", "TFTPErrorCode"]
 
 
-class Opcode(enum.IntEnum):
+class TFTPOpcode(enum.IntEnum):
     """Packet type, the first two bytes of every packet."""
 
     RRQ = 1
@@ -18,7 +18,7 @@ class Opcode(enum.IntEnum):
     OACK = 6
 
 
-class ErrorCode(enum.IntEnum):
+class TFTPErrorCode(enum.IntEnum):
     """ERROR packet codes (RFC 1350 section 5, plus RFC 2347's code 8)."""
 
     NOT_DEFINED = 0

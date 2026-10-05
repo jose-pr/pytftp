@@ -83,7 +83,7 @@ def test_a_malformed_packet_is_a_decode_error_a_value_error_and_a_package_error(
 
 def test_a_decode_error_carries_the_code_a_peer_is_answered_with():
     error = TFTPDecodeError("short")
-    assert error.code == tftp.ErrorCode.ILLEGAL_OPERATION
+    assert error.code == tftp.TFTPErrorCode.ILLEGAL_OPERATION
     assert error.message == "short"
 
 
@@ -95,7 +95,7 @@ def test_a_timeout_is_caught_as_a_package_error_and_as_a_timeout_and_has_no_errn
         with pytest.raises(catches):
             raise error
     assert error.errno is None
-    assert error.code == tftp.ErrorCode.NOT_DEFINED
+    assert error.code == tftp.TFTPErrorCode.NOT_DEFINED
     assert error.message == "slow"
 
 

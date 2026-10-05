@@ -18,10 +18,10 @@ from .._sockets import fit_window
 from ..exceptions import TFTPError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import Negotiated, ServerOptions, negotiate
-from ..packet import ErrorCode, Request, encode_ack, encode_oack
+from ..packet import TFTPErrorCode, RequestPacket, encode_ack, encode_oack
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from ..capture.events import PacketEvent, new_session_id
-from .handler import RequestContext
+from .handler import TFTPRequestContext
 
 __all__ = ["Session", "PortRange", "bind_transfer", "stream_size"]
 
@@ -144,7 +144,7 @@ class Session:
     )
 
     def __init__(
-        self, sock: socket.socket, peer: Tuple[Any, ...], context: RequestContext, started: float
+        self, sock: socket.socket, peer: Tuple[Any, ...], context: TFTPRequestContext, started: float
     ) -> None:
         self.sock = sock
         self.peer = peer
@@ -209,12 +209,12 @@ class Session:
         unsupported mode; the caller turns either into an ERROR packet. A WRQ
         is negotiated here, since ``open_write`` receives the agreed ``tsize``.
         """
-        request: Request = self.context.request
+        request: RequestPacket = self.context.request
         mode = request.mode
         if mode == "mail":
-            raise TFTPError(ErrorCode.ILLEGAL_OPERATION, "mail mode is not supported")
+            raise TFTPError(TFTPErrorCode.ILLEGAL_OPERATION, "mail mode is not supported")
         if mode not in ("octet", "netascii"):
-            raise TFTPError(ErrorCode.ILLEGAL_OPERATION, "unknown mode %r" % mode)
+            raise TFTPError(TFTPErrorCode.ILLEGAL_OPERATION, "unknown mode %r" % mode)
         if request.is_read:
             return handler.open_read(self.context)
         self._negotiated = negotiate(
@@ -237,7 +237,7 @@ class Session:
         ``engine`` goes to the transfer (``backoff``, ``max_timeout``,
         ``expires``). The first packet (OACK, DATA 1 or ACK 0) is sent here.
         """
-        request: Request = self.context.request
+        request: RequestPacket = self.context.request
         self._hook_wakeup(stream)
         if request.is_read:
             self.stream = stream

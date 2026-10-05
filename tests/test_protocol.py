@@ -11,7 +11,16 @@ import pytest
 
 import tftp
 from conftest import client_for
-from tftp import ErrorCode, Opcode, decode, encode_ack, encode_data, encode_error, encode_oack, encode_request
+from tftp import (
+    TFTPErrorCode,
+    TFTPOpcode,
+    decode,
+    encode_ack,
+    encode_data,
+    encode_error,
+    encode_oack,
+    encode_request,
+)
 
 
 def raw_socket(timeout: float = 2.0) -> socket.socket:
@@ -29,29 +38,29 @@ def expect(sock: socket.socket):
 def test_unknown_tid_gets_error_5_and_transfer_survives(root, make_server):
     server = make_server(root)
     with raw_socket() as client, raw_socket() as stranger:
-        client.sendto(encode_request(Opcode.RRQ, "513.bin"), server.server_address)
+        client.sendto(encode_request(TFTPOpcode.RRQ, "513.bin"), server.server_address)
         packet, tid = expect(client)
-        assert packet == tftp.Data(1, (root / "513.bin").read_bytes()[:512])
+        assert packet == tftp.DataPacket(1, (root / "513.bin").read_bytes()[:512])
         assert tid[1] != server.server_address[1]  # a fresh transfer ID
 
         stranger.sendto(encode_ack(1), tid)
         error, source = expect(stranger)
-        assert error.code == ErrorCode.UNKNOWN_TID and source == tid
+        assert error.code == TFTPErrorCode.UNKNOWN_TID and source == tid
 
         client.sendto(encode_ack(1), tid)
         packet, _ = expect(client)
-        assert packet == tftp.Data(2, (root / "513.bin").read_bytes()[512:])
+        assert packet == tftp.DataPacket(2, (root / "513.bin").read_bytes()[512:])
         client.sendto(encode_ack(2), tid)
 
 
 def test_duplicate_request_does_not_start_a_second_transfer(root, make_server):
     server = make_server(root)
     with raw_socket() as client:
-        request = encode_request(Opcode.RRQ, "one.bin")
+        request = encode_request(TFTPOpcode.RRQ, "one.bin")
         client.sendto(request, server.server_address)
         client.sendto(request, server.server_address)
         first, tid = expect(client)
-        assert first == tftp.Data(1, b"x")
+        assert first == tftp.DataPacket(1, b"x")
         client.sendto(encode_ack(1), tid)
         client.settimeout(0.3)
         with pytest.raises(socket.timeout):
@@ -62,10 +71,10 @@ def test_server_retransmits_on_timeout_and_ignores_duplicate_acks(root, make_ser
     server = make_server(root, timeout=0.2)
     data = (root / "1428x3.bin").read_bytes()
     with raw_socket() as client:
-        client.sendto(encode_request(Opcode.RRQ, "1428x3.bin"), server.server_address)
+        client.sendto(encode_request(TFTPOpcode.RRQ, "1428x3.bin"), server.server_address)
         first, tid = expect(client)
         again, _ = expect(client)  # no ACK sent: the same block comes back
-        assert first == again == tftp.Data(1, data[:512])
+        assert first == again == tftp.DataPacket(1, data[:512])
         client.sendto(encode_ack(1), tid)
         client.sendto(encode_ack(1), tid)  # duplicate: must not cause a resend
         second, _ = expect(client)
@@ -73,21 +82,21 @@ def test_server_retransmits_on_timeout_and_ignores_duplicate_acks(root, make_ser
         client.settimeout(0.1)
         with pytest.raises(socket.timeout):
             expect(client)  # Sorcerer's Apprentice would have sent DATA 2 again
-        client.sendto(encode_error(ErrorCode.NOT_DEFINED, "bye"), tid)
+        client.sendto(encode_error(TFTPErrorCode.NOT_DEFINED, "bye"), tid)
 
 
 def test_oack_then_ack0_handshake(root, make_server):
     server = make_server(root)
     with raw_socket() as client:
         client.sendto(
-            encode_request(Opcode.RRQ, "513.bin", "octet", {"blksize": 600, "tsize": 0, "bogus": 1}),
+            encode_request(TFTPOpcode.RRQ, "513.bin", "octet", {"blksize": 600, "tsize": 0, "bogus": 1}),
             server.server_address,
         )
         oack, tid = expect(client)
-        assert oack == tftp.OptionAck({"blksize": "600", "tsize": "513"})
+        assert oack == tftp.OptionAckPacket({"blksize": "600", "tsize": "513"})
         client.sendto(encode_ack(0), tid)
         data, _ = expect(client)
-        assert data == tftp.Data(1, (root / "513.bin").read_bytes())
+        assert data == tftp.DataPacket(1, (root / "513.bin").read_bytes())
         client.sendto(encode_ack(1), tid)
 
 
@@ -95,9 +104,11 @@ def test_client_refusing_the_oack_ends_the_transfer(root, make_server):
     results = []
     server = make_server(root, on_complete=results.append)
     with raw_socket() as client:
-        client.sendto(encode_request(Opcode.RRQ, "513.bin", "octet", {"blksize": 600}), server.server_address)
+        client.sendto(
+            encode_request(TFTPOpcode.RRQ, "513.bin", "octet", {"blksize": 600}), server.server_address
+        )
         _, tid = expect(client)
-        client.sendto(encode_error(ErrorCode.OPTION_REFUSED), tid)
+        client.sendto(encode_error(TFTPErrorCode.OPTION_REFUSED), tid)
         client.settimeout(0.3)
         with pytest.raises(socket.timeout):
             expect(client)
@@ -106,22 +117,22 @@ def test_client_refusing_the_oack_ends_the_transfer(root, make_server):
 def test_write_dally_reacknowledges_last_block(root, make_server):
     server = make_server(root, writable=True)
     with raw_socket() as client:
-        client.sendto(encode_request(Opcode.WRQ, "dally.bin"), server.server_address)
+        client.sendto(encode_request(TFTPOpcode.WRQ, "dally.bin"), server.server_address)
         ack0, tid = expect(client)
-        assert ack0 == tftp.Ack(0)
+        assert ack0 == tftp.AckPacket(0)
         client.sendto(encode_data(1, b"short"), tid)
-        assert expect(client)[0] == tftp.Ack(1)
+        assert expect(client)[0] == tftp.AckPacket(1)
         client.sendto(encode_data(1, b"short"), tid)  # as if our ACK was lost
-        assert expect(client)[0] == tftp.Ack(1)
+        assert expect(client)[0] == tftp.AckPacket(1)
     assert (root / "dally.bin").read_bytes() == b"short"
 
 
 @pytest.mark.parametrize(
     "request_bytes,code",
     [
-        (encode_request(Opcode.RRQ, "one.bin", "mail"), ErrorCode.ILLEGAL_OPERATION),
-        (encode_request(Opcode.RRQ, "one.bin", "weird"), ErrorCode.ILLEGAL_OPERATION),
-        (b"\x00\x01\x00octet\x00", ErrorCode.ILLEGAL_OPERATION),
+        (encode_request(TFTPOpcode.RRQ, "one.bin", "mail"), TFTPErrorCode.ILLEGAL_OPERATION),
+        (encode_request(TFTPOpcode.RRQ, "one.bin", "weird"), TFTPErrorCode.ILLEGAL_OPERATION),
+        (b"\x00\x01\x00octet\x00", TFTPErrorCode.ILLEGAL_OPERATION),
     ],
 )
 def test_bad_requests_are_answered(root, make_server, request_bytes, code):
@@ -145,11 +156,11 @@ def test_non_requests_to_the_listener_are_ignored(root, make_server, junk):
 def test_server_busy(root, make_server):
     server = make_server(root, max_sessions=1, timeout=2)
     with raw_socket() as first, raw_socket() as second:
-        first.sendto(encode_request(Opcode.RRQ, "513.bin"), server.server_address)
+        first.sendto(encode_request(TFTPOpcode.RRQ, "513.bin"), server.server_address)
         _, tid = expect(first)  # holds the only session
-        second.sendto(encode_request(Opcode.RRQ, "513.bin"), server.server_address)
+        second.sendto(encode_request(TFTPOpcode.RRQ, "513.bin"), server.server_address)
         error, _ = expect(second)
-        assert error.code == ErrorCode.NOT_DEFINED and "busy" in error.message
+        assert error.code == TFTPErrorCode.NOT_DEFINED and "busy" in error.message
         first.sendto(encode_error(0, "done"), tid)
 
 
@@ -171,9 +182,9 @@ def test_reply_comes_from_the_address_the_request_was_sent_to(root, make_server)
     elif not server.supports_pktinfo:
         pytest.skip("no pktinfo on this platform")
     with raw_socket() as client:
-        client.sendto(encode_request(Opcode.RRQ, "one.bin"), ("127.0.0.2", server.server_address[1]))
+        client.sendto(encode_request(TFTPOpcode.RRQ, "one.bin"), ("127.0.0.2", server.server_address[1]))
         packet, source = expect(client)
-        assert packet == tftp.Data(1, b"x")
+        assert packet == tftp.DataPacket(1, b"x")
         assert source[0] == "127.0.0.2"
         client.sendto(encode_ack(1), source)
 
@@ -185,7 +196,7 @@ def test_reply_address_on_dual_stack_listener(root, make_server):
     if not server.dual_stack:
         pytest.skip("no dual-stack sockets here")
     with raw_socket() as client:
-        client.sendto(encode_request(Opcode.RRQ, "one.bin"), ("127.0.0.2", server.server_address[1]))
+        client.sendto(encode_request(TFTPOpcode.RRQ, "one.bin"), ("127.0.0.2", server.server_address[1]))
         _, source = expect(client)
         if server.supports_pktinfo:
             assert source[0] == "127.0.0.2"
@@ -220,35 +231,37 @@ class FakeServer:
 
 def test_client_falls_back_when_options_are_refused():
     def script(packet):
-        if isinstance(packet, tftp.Request):
+        if isinstance(packet, tftp.RequestPacket):
             if packet.options:
-                return [encode_error(ErrorCode.OPTION_REFUSED)]
+                return [encode_error(TFTPErrorCode.OPTION_REFUSED)]
             return [encode_data(1, b"hi")]
         return []
 
     fake = FakeServer(script)
     try:
-        assert tftp.Client(*fake.address, timeout=0.5).get("f") == b"hi"
-        assert [bool(r.options) for r in fake.requests if isinstance(r, tftp.Request)] == [True, False]
+        assert tftp.TFTPClient(*fake.address, timeout=0.5).get("f") == b"hi"
+        assert [bool(r.options) for r in fake.requests if isinstance(r, tftp.RequestPacket)] == [True, False]
         with pytest.raises(tftp.RemoteError):
-            tftp.Client(*fake.address, timeout=0.5, fallback=False).get("f")
+            tftp.TFTPClient(*fake.address, timeout=0.5, fallback=False).get("f")
     finally:
         fake.close()
 
 
 def test_client_refuses_an_oack_it_did_not_ask_for():
     def script(packet):
-        if isinstance(packet, tftp.Request):
+        if isinstance(packet, tftp.RequestPacket):
             return [encode_oack({"blksize": "9000"})]
         return []
 
     fake = FakeServer(script)
     try:
         with pytest.raises(tftp.TFTPProtocolError) as info:
-            tftp.Client(*fake.address, timeout=0.5, blksize=1428).get("f")
-        assert info.value.code == ErrorCode.OPTION_REFUSED
+            tftp.TFTPClient(*fake.address, timeout=0.5, blksize=1428).get("f")
+        assert info.value.code == TFTPErrorCode.OPTION_REFUSED
         fake.thread.join(0.5)
-        assert any(isinstance(p, tftp.Error) and p.code == ErrorCode.OPTION_REFUSED for p in fake.requests)
+        assert any(
+            isinstance(p, tftp.ErrorPacket) and p.code == TFTPErrorCode.OPTION_REFUSED for p in fake.requests
+        )
     finally:
         fake.close()
 
@@ -256,25 +269,27 @@ def test_client_refuses_an_oack_it_did_not_ask_for():
 def test_client_reports_remote_errors():
     def script(packet):
         return (
-            [encode_error(ErrorCode.ACCESS_VIOLATION, "go away")] if isinstance(packet, tftp.Request) else []
+            [encode_error(TFTPErrorCode.ACCESS_VIOLATION, "go away")]
+            if isinstance(packet, tftp.RequestPacket)
+            else []
         )
 
     fake = FakeServer(script)
     try:
         with pytest.raises(tftp.RemoteError) as info:
-            tftp.Client(*fake.address, timeout=0.5).get("f")
-        assert (info.value.code, info.value.message) == (ErrorCode.ACCESS_VIOLATION, "go away")
+            tftp.TFTPClient(*fake.address, timeout=0.5).get("f")
+        assert (info.value.code, info.value.message) == (TFTPErrorCode.ACCESS_VIOLATION, "go away")
     finally:
         fake.close()
 
 
 def test_client_accepts_host_with_port():
     def script(packet):
-        return [encode_data(1, b"ok")] if isinstance(packet, tftp.Request) else []
+        return [encode_data(1, b"ok")] if isinstance(packet, tftp.RequestPacket) else []
 
     fake = FakeServer(script)
     try:
-        assert tftp.Client("127.0.0.1:%d" % fake.address[1], 1).get("f") == b"ok"
+        assert tftp.TFTPClient("127.0.0.1:%d" % fake.address[1], 1).get("f") == b"ok"
     finally:
         fake.close()
 
@@ -302,8 +317,8 @@ def test_tftp_error_refuses_what_no_error_packet_can_carry(args, exc):
 def test_tftp_error_keeps_codes_the_wire_can_carry():
     assert tftp.TFTPError(0).code == 0
     assert tftp.TFTPError(65535, "far").code == 65535
-    assert tftp.TFTPError(ErrorCode.FILE_NOT_FOUND).message == "file not found"
-    assert tftp.TFTPError(1).code is ErrorCode.FILE_NOT_FOUND
+    assert tftp.TFTPError(TFTPErrorCode.FILE_NOT_FOUND).message == "file not found"
+    assert tftp.TFTPError(1).code is TFTPErrorCode.FILE_NOT_FOUND
 
 
 def test_encode_error_is_total():
@@ -393,11 +408,11 @@ def test_one_failing_dispatch_ends_that_transfer_and_not_the_loop(root, make_ser
 
     server._on_packet = failing
     with raw_socket() as first:
-        first.sendto(encode_request(Opcode.RRQ, "513.bin"), server.server_address)
+        first.sendto(encode_request(TFTPOpcode.RRQ, "513.bin"), server.server_address)
         _, tid = expect(first)
         first.sendto(encode_ack(1), tid)  # this datagram's dispatch raises
         error, _ = expect(first)
-        assert error.code == ErrorCode.NOT_DEFINED
+        assert error.code == TFTPErrorCode.NOT_DEFINED
     assert server._thread.is_alive()
     assert client_for(server).get("one.bin") == b"x"
     assert sum("a bug in one dispatch" in (r.exc_text or "") for r in caplog.records) == 1
@@ -410,7 +425,7 @@ def test_a_max_sessions_the_selector_cannot_hold_is_refused_at_construction():
     if sys.platform != "win32":
         pytest.skip("select() has a descriptor limit on Windows only")
     with pytest.raises(ValueError, match="510"):
-        tftp.Server(".", "127.0.0.1", 0, max_sessions=600)
+        tftp.TFTPServer(".", "127.0.0.1", 0, max_sessions=600)
 
 
 # -- a receiver that follows RFC 7440 to the letter ---------------------------------------------
@@ -432,7 +447,7 @@ def test_a_windowed_download_costs_one_window_after_a_duplicated_ack(make_server
     )
     with raw_socket(5.0) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
-        request = encode_request(Opcode.RRQ, "f", options={"blksize": blksize, "windowsize": windowsize})
+        request = encode_request(TFTPOpcode.RRQ, "f", options={"blksize": blksize, "windowsize": windowsize})
         sock.sendto(request, server.server_address)
         packet, tid = sock.recvfrom(70000)
         assert decode(packet).options["windowsize"] == str(windowsize)
@@ -506,11 +521,11 @@ def test_a_datagram_longer_than_the_blocks_is_answered_and_does_not_end_the_tran
 
         thread = threading.Thread(target=serve, daemon=True)
         thread.start()
-        data = tftp.Client("127.0.0.1", listen.getsockname()[1], timeout=2, retries=1).get("f")
+        data = tftp.TFTPClient("127.0.0.1", listen.getsockname()[1], timeout=2, retries=1).get("f")
         thread.join(5)
     assert data == b"p" * 512 + b"end"
-    assert decode(outcome["stray"]).code == ErrorCode.UNKNOWN_TID
-    assert outcome["ack"] == tftp.Ack(2)
+    assert decode(outcome["stray"]).code == TFTPErrorCode.UNKNOWN_TID
+    assert outcome["ack"] == tftp.AckPacket(2)
 
 
 def test_an_oversized_data_from_the_server_is_a_protocol_error_and_not_an_oserror():
@@ -524,7 +539,7 @@ def test_an_oversized_data_from_the_server_is_a_protocol_error_and_not_an_oserro
 
         threading.Thread(target=serve, daemon=True).start()
         with pytest.raises(tftp.TFTPProtocolError):
-            tftp.Client("127.0.0.1", listen.getsockname()[1], timeout=2, retries=1).get("f")
+            tftp.TFTPClient("127.0.0.1", listen.getsockname()[1], timeout=2, retries=1).get("f")
 
 
 def test_hosts_are_compared_by_address_and_scope_and_not_by_text():
@@ -542,22 +557,24 @@ def test_hosts_are_compared_by_address_and_scope_and_not_by_text():
 def test_a_server_named_by_a_link_local_address_with_its_zone_is_heard(link_local):
     from tftp.backends import MemoryHandler
 
-    with tftp.Server(MemoryHandler({"f": b"link-local"}), link_local, 0, timeout=0.5).start() as server:
-        client = tftp.Client(link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=True)
+    with tftp.TFTPServer(MemoryHandler({"f": b"link-local"}), link_local, 0, timeout=0.5).start() as server:
+        client = tftp.TFTPClient(
+            link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=True
+        )
         assert client.get("f") == b"link-local"
         assert client.get("f") == b"link-local"
 
 
 def test_a_request_context_copies_itself_with_another_filename():
-    from tftp.server import RequestContext
+    from tftp.server import TFTPRequestContext
 
-    request = tftp.Request(Opcode.RRQ, "alias", "octet", {"x-list": "1"}, b"raw")
-    context = RequestContext(request, ("10.0.0.5", 4000), "10.0.0.1", 7)
+    request = tftp.RequestPacket(TFTPOpcode.RRQ, "alias", "octet", {"x-list": "1"}, b"raw")
+    context = TFTPRequestContext(request, ("10.0.0.5", 4000), "10.0.0.1", 7)
     context.interface = object()
     context.listing = True
     copy = context.with_filename("real")
     assert copy.filename == "real" and context.filename == "alias"
     assert copy.options == {"x-list": "1"} and copy.mode == "octet"
-    for name in RequestContext.__slots__:
+    for name in TFTPRequestContext.__slots__:
         if name != "request":
             assert getattr(copy, name) is getattr(context, name), name

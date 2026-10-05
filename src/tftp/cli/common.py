@@ -34,7 +34,7 @@ else:
             pass
 
 
-from ..client import Client
+from ..client import TFTPClient
 from ..options import PROFILES
 from ..result import TransferResult
 
@@ -57,7 +57,7 @@ PROFILE_NAMES = tuple(PROFILES)
 
 @_contextlib.contextmanager
 def shutdown_on_signal(server: _ty.Any) -> _ty.Iterator[None]:
-    """Stop ``server`` (``Server`` or ``Relay``) on Ctrl-C, Ctrl-Break and SIGTERM.
+    """Stop ``server`` (``TFTPServer`` or ``TFTPRelay``) on Ctrl-C, Ctrl-Break and SIGTERM.
 
     A signal handler only runs when the main thread executes bytecode, and a
     loop blocked in ``select`` does not, on Windows even for Ctrl-C. The
@@ -242,7 +242,7 @@ class ClientCmd(Traced):
     "Use IPv6"
     ("-6",)
 
-    def _client(self, host: str, port: _ty.Optional[int] = None) -> Client:
+    def _client(self, host: str, port: _ty.Optional[int] = None) -> TFTPClient:
         family = 0
         if self.ipv4:
             family = _socket.AF_INET
@@ -264,7 +264,7 @@ class ClientCmd(Traced):
                 tsize=not (plain or self.no_tsize),
                 timeout_option=not plain,
             )
-        return Client(host, self.port if port is None else port, **settings)
+        return TFTPClient(host, self.port if port is None else port, **settings)
 
     def _report(self, result: TransferResult) -> None:
         if self.json_out:

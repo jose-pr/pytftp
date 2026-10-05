@@ -12,7 +12,16 @@ import pytest
 import tftp
 from conftest import client_for
 from test_engine import Link, neg
-from tftp import ErrorCode, Opcode, decode, encode_ack, encode_data, encode_error, encode_oack, encode_request
+from tftp import (
+    TFTPErrorCode,
+    TFTPOpcode,
+    decode,
+    encode_ack,
+    encode_data,
+    encode_error,
+    encode_oack,
+    encode_request,
+)
 from tftp.exceptions import WouldBlock
 from tftp.transfer import as_readinto, as_write
 
@@ -52,13 +61,13 @@ def test_client_download_survives_lost_ack0(root, make_server):
                 tid.sendto(oack, client)
                 tid.recvfrom(100)  # ACK 0 -- "lost": answer with the OACK again
                 tid.sendto(oack, client)
-                assert decode(tid.recvfrom(100)[0]) == tftp.Ack(0)
+                assert decode(tid.recvfrom(100)[0]) == tftp.AckPacket(0)
                 tid.sendto(encode_data(1, b"done"), client)
-                assert decode(tid.recvfrom(100)[0]) == tftp.Ack(1)
+                assert decode(tid.recvfrom(100)[0]) == tftp.AckPacket(1)
 
         thread = threading.Thread(target=serve)
         thread.start()
-        client = tftp.Client("127.0.0.1", fake.getsockname()[1], blksize=600, timeout=2)
+        client = tftp.TFTPClient("127.0.0.1", fake.getsockname()[1], blksize=600, timeout=2)
         assert client.get("f") == b"done"
         thread.join(5)
 
@@ -123,7 +132,7 @@ def test_expiry_ends_a_transfer():
 def test_client_max_duration(root):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
         silent.bind(("127.0.0.1", 0))
-        client = tftp.Client(
+        client = tftp.TFTPClient(
             "127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=100, max_duration=0.3
         )
         with pytest.raises(tftp.TransferTimeoutError):
@@ -289,11 +298,11 @@ def test_shutdown_aborts_running_transfers(root, make_server):
     server = make_server(root, on_complete=results.append, timeout=5)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as raw:
         raw.settimeout(2)
-        raw.sendto(encode_request(Opcode.RRQ, "big.bin"), server.server_address)
+        raw.sendto(encode_request(TFTPOpcode.RRQ, "big.bin"), server.server_address)
         raw.recvfrom(2048)
         server.stop()
         error = decode(raw.recvfrom(2048)[0])
-        assert error.code == ErrorCode.NOT_DEFINED and "shutting down" in error.message
+        assert error.code == TFTPErrorCode.NOT_DEFINED and "shutting down" in error.message
 
 
 # -- limits and broadcast --------------------------------------------------
@@ -302,10 +311,10 @@ def test_shutdown_aborts_running_transfers(root, make_server):
 @pytest.mark.parametrize(
     "request_bytes,fragment",
     [
-        (encode_request(Opcode.RRQ, "a" * 600), "filename"),
-        (encode_request(Opcode.RRQ, "f", "octet", {"opt%d" % i: 1 for i in range(20)}), "options"),
-        (encode_request(Opcode.RRQ, "f", "octet", {"blksize": "1" * 300}), "option"),
-        (encode_request(Opcode.RRQ, "f" * 1100), "too large"),
+        (encode_request(TFTPOpcode.RRQ, "a" * 600), "filename"),
+        (encode_request(TFTPOpcode.RRQ, "f", "octet", {"opt%d" % i: 1 for i in range(20)}), "options"),
+        (encode_request(TFTPOpcode.RRQ, "f", "octet", {"blksize": "1" * 300}), "option"),
+        (encode_request(TFTPOpcode.RRQ, "f" * 1100), "too large"),
     ],
 )
 def test_request_limits(root, make_server, request_bytes, fragment):
@@ -314,7 +323,7 @@ def test_request_limits(root, make_server, request_bytes, fragment):
         raw.settimeout(2)
         raw.sendto(request_bytes, server.server_address)
         error = decode(raw.recvfrom(2048)[0])
-    assert error.code == ErrorCode.ILLEGAL_OPERATION and fragment in error.message
+    assert error.code == TFTPErrorCode.ILLEGAL_OPERATION and fragment in error.message
 
 
 def test_sessions_per_client(root, make_server):
@@ -326,11 +335,11 @@ def test_sessions_per_client(root, make_server):
         for raw in (a, b):
             raw.settimeout(2)
             raw.bind(("127.0.0.1", 0))
-        a.sendto(encode_request(Opcode.RRQ, "big.bin"), server.server_address)
+        a.sendto(encode_request(TFTPOpcode.RRQ, "big.bin"), server.server_address)
         a.recvfrom(2048)
-        b.sendto(encode_request(Opcode.RRQ, "big.bin"), server.server_address)
+        b.sendto(encode_request(TFTPOpcode.RRQ, "big.bin"), server.server_address)
         error = decode(b.recvfrom(2048)[0])
-        assert error.code == ErrorCode.NOT_DEFINED and "busy" in error.message
+        assert error.code == TFTPErrorCode.NOT_DEFINED and "busy" in error.message
 
 
 def _arrival(local, interface=None):
@@ -372,8 +381,8 @@ def test_subnet_broadcast_is_detected_from_the_arrival_interface():
 def _random_packets(seed: int, count: int):
     rng = random.Random(seed)
     templates = [
-        encode_request(Opcode.RRQ, "file", "octet", {"blksize": 1024, "tsize": 0}),
-        encode_request(Opcode.WRQ, "file"),
+        encode_request(TFTPOpcode.RRQ, "file", "octet", {"blksize": 1024, "tsize": 0}),
+        encode_request(TFTPOpcode.WRQ, "file"),
         encode_data(1, b"abc"),
         encode_ack(3),
         tftp.encode_error(1, "x"),
@@ -446,7 +455,7 @@ def test_unconnected_udp_survives_port_unreachable():
         closed.bind(("127.0.0.1", 0))
         dead = closed.getsockname()
     listener = Listener("127.0.0.1", 0)
-    client = tftp.Client("127.0.0.1", 69)
+    client = tftp.TFTPClient("127.0.0.1", 69)
     makers = {
         "client": lambda: client._socket(socket.AF_INET),
         "transfer": lambda: bind_transfer("127.0.0.1", socket.AF_INET),
@@ -588,7 +597,7 @@ def test_the_default_bounds_are_finite():
     with pytest.raises(ValueError):
         tftp.ServerLimits(max_idle=0)
     assert tftp.ServerLimits(max_idle=None).max_idle is None
-    server = tftp.Server(".", "127.0.0.1", 0)
+    server = tftp.TFTPServer(".", "127.0.0.1", 0)
     try:
         assert server.max_sessions == 500
     finally:
@@ -676,7 +685,7 @@ def test_a_request_nothing_follows_up_is_released_after_max_idle(root, make_serv
         raw.bind(("127.0.0.1", 0))
         raw.settimeout(2)
         options = {"blksize": 8000, "windowsize": 8, "timeout": 255}
-        raw.sendto(encode_request(Opcode.RRQ, "big.bin", options=options), server.server_address)
+        raw.sendto(encode_request(TFTPOpcode.RRQ, "big.bin", options=options), server.server_address)
         assert decode(raw.recvfrom(70000)[0]).options["timeout"] == "255"
         deadline = time.monotonic() + 5
         while server.active_sessions and time.monotonic() < deadline:
@@ -698,7 +707,9 @@ def test_a_slow_client_is_not_cut_off_by_max_idle(root, make_server):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as raw:
         raw.bind(("127.0.0.1", 0))
         raw.settimeout(3)
-        raw.sendto(encode_request(Opcode.RRQ, "big.bin", options={"blksize": 8192}), server.server_address)
+        raw.sendto(
+            encode_request(TFTPOpcode.RRQ, "big.bin", options={"blksize": 8192}), server.server_address
+        )
         _, tid = raw.recvfrom(70000)
         raw.sendto(encode_ack(0), tid)
         started = time.monotonic()

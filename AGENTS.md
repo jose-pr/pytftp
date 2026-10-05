@@ -11,7 +11,7 @@ does not ship.
 src/tftp/
 ├── __init__.py        # flat public surface (re-exports)
 ├── AGENTS.md          # shipped API header -- update it with any API change
-├── packet/            # wire format: enums.py (Opcode, ErrorCode), codec.py (types, encode/decode)
+├── packet/            # wire format: enums.py (TFTPOpcode, TFTPErrorCode), codec.py (types, encode/decode)
 ├── options/           # negotiation: base, builtin handlers, registry, policy, negotiate, profiles
 ├── netascii.py        # streaming netascii reader/writer
 ├── listing.py         # x-list directory listing format (DirectoryListing, parse/format)
@@ -19,15 +19,15 @@ src/tftp/
 ├── errors.py          # exceptions, OSError -> ERROR code mapping
 ├── result.py          # TransferResult
 ├── transfer/          # I/O-free engine: base.py, sender.py, receiver.py
-├── client.py          # Client: request phase + blocking transfer loop
+├── client.py          # TFTPClient: request phase + blocking transfer loop
 ├── aio/               # asyncio: client.py, server.py, bridge.py (async streams <-> engine)
 ├── path/              # pathlib-next: local.py (TftpPath), uri.py (TftpUriPath), _stream.py
 ├── server/
 │   ├── base.py        # ServerBase: config, admission, refusal, reporting (shared with aio)
-│   ├── core.py        # Server: lifecycle, selectors loop, timers, completion
+│   ├── core.py        # TFTPServer: lifecycle, selectors loop, timers, completion
 │   ├── listener.py    # listening socket: bind (host or interface), netimps UDPEndpoint, reply sockets
 │   ├── session.py     # one transfer: PortRange, handler -> engine
-│   ├── handler.py     # Handler protocol, FileSystemHandler, AtomicWriter
+│   ├── handler.py     # TFTPHandler protocol, FileSystemHandler, AtomicWriter
 │   ├── policy.py      # ServerLimits
 │   └── stats.py       # Stats counters (server and relay)
 ├── backends/          # memory.py, http.py (urllib gateway), proxy.py (upstream TFTP), pipe.py

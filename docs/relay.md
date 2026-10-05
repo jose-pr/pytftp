@@ -1,6 +1,6 @@
 # Relaying
 
-There is no standard TFTP relay (nothing like DHCP's), so `tftp.relay.Relay`
+There is no standard TFTP relay (nothing like DHCP's), so `tftp.relay.TFTPRelay`
 is an application-level one. The request is forwarded **byte for byte** to an
 upstream server from a fresh socket; the upstream's transfer ID is learned
 from its first answer; then datagrams cross unchanged:
@@ -17,7 +17,7 @@ never heard of still work end to end, and the client negotiates directly with
 the upstream.
 
 ```python
-from tftp.relay import Relay, RouteTable, by_prefix, by_subnet
+from tftp.relay import TFTPRelay, RouteTable, by_prefix, by_subnet
 
 route = RouteTable(
     [
@@ -26,7 +26,7 @@ route = RouteTable(
     ],
     default="10.0.0.20",
 )
-Relay(route, on_session_end=print).serve_forever()
+TFTPRelay(route, on_session_end=print).serve_forever()
 ```
 
 A route is any callable `route(request, context)` returning an upstream
@@ -44,7 +44,7 @@ error).
 
 ## Relay or proxy?
 
-| | `Relay` | `UpstreamHandler` + `Server` |
+| | `TFTPRelay` | `UpstreamHandler` + `TFTPServer` |
 | --- | --- | --- |
 | packets | forwarded unchanged | each side is its own transfer |
 | options | client and upstream negotiate directly | each side negotiates its own |

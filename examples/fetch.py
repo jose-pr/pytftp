@@ -16,6 +16,6 @@ def progress(done, total):
         print("\r%5.1f%%" % (100.0 * done / total), end="", flush=True)
 
 
-client = tftp.Client(host, port, blksize=1428, windowsize=16)
+client = tftp.TFTPClient(host, port, blksize=1428, windowsize=16)
 result = client.download(name, name.replace("\\", "/").rsplit("/", 1)[-1], progress=progress)
 print("\n%d bytes in %.2fs, %r" % (result.bytes, result.duration, result.negotiated))

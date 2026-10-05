@@ -1,6 +1,6 @@
 """What every server front end shares: configuration, admission, reporting.
 
-:class:`tftp.Server` (a ``selectors`` loop) and :class:`tftp.aio.AsyncServer`
+:class:`tftp.TFTPServer` (a ``selectors`` loop) and :class:`tftp.aio.AsyncTFTPServer`
 (asyncio) differ only in how they wait for sockets and timers; deciding
 whether a request becomes a transfer, refusing it, and reporting the outcome
 live here so the two cannot drift apart.
@@ -20,10 +20,10 @@ if TYPE_CHECKING:
 from ..capture.events import PacketEvent
 from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, error_for_exception
 from ..options import Negotiated, ServerOptions
-from ..packet import ErrorCode, Opcode, Request, decode, encode_error
+from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode, encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Transfer
-from .handler import FileSystemHandler, RequestContext
+from .handler import FileSystemHandler, TFTPRequestContext
 from .listener import Arrival, Listener
 from .policy import ServerLimits
 from .session import PortRange, Session
@@ -134,7 +134,7 @@ class ServerBase:
         ``None`` when the datagram was dropped or refused.
         """
         data, sender, local, ifindex = arrival[:4]
-        if len(data) < 2 or data[0] != 0 or data[1] not in (Opcode.RRQ, Opcode.WRQ):
+        if len(data) < 2 or data[0] != 0 or data[1] not in (TFTPOpcode.RRQ, TFTPOpcode.WRQ):
             return None  # not a request: never answer, never amplify
         if self.ignore_broadcast and self._listener.is_broadcast(arrival):
             log.debug("ignoring broadcast request from %s to %s", sender[:2], local)
@@ -142,7 +142,7 @@ class ServerBase:
         self.stats.add("requests")
         if len(data) > self.limits.max_request_size:
             self.stats.add("refused")
-            self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, "request too large")
+            self._listener.reply_error(sender, TFTPErrorCode.ILLEGAL_OPERATION, "request too large")
             return None
         from netimps import unmap
 
@@ -153,9 +153,9 @@ class ServerBase:
             request = decode(data)
         except TFTPDecodeError as exc:
             self.stats.add("refused")
-            self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, str(exc))
+            self._listener.reply_error(sender, TFTPErrorCode.ILLEGAL_OPERATION, str(exc))
             return None
-        assert isinstance(request, Request)
+        assert isinstance(request, RequestPacket)
         try:
             self.limits.check(request)
         except TFTPError as exc:
@@ -167,7 +167,7 @@ class ServerBase:
             per_client is not None and self._per_client.get(key[0], 0) >= per_client
         ):
             self.stats.add("refused")
-            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
+            self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "server busy")
             return None
 
         try:
@@ -175,9 +175,9 @@ class ServerBase:
         except OSError as exc:
             log.warning("no transfer socket for %s: %s", sender[:2], exc)
             self.stats.add("refused")
-            self._listener.reply_error(sender, ErrorCode.NOT_DEFINED, "server busy")
+            self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "server busy")
             return None
-        context = RequestContext(request, peer, local, ifindex)
+        context = TFTPRequestContext(request, peer, local, ifindex)
         context.interface = arrival.interface
         context.listing = (
             request.is_read
@@ -326,7 +326,7 @@ class ServerBase:
         declined = (
             transfer is not None
             and isinstance(error, RemoteError)
-            and error.code == ErrorCode.OPTION_REFUSED
+            and error.code == TFTPErrorCode.OPTION_REFUSED
             and transfer.bytes == 0
         )
         if transfer is not None:

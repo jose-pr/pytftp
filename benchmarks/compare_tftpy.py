@@ -35,7 +35,7 @@ def _free_port() -> int:
 def _serve_pytftp(root: str, port: int) -> None:
     import tftp
 
-    tftp.Server(root, "127.0.0.1", port).serve_forever()
+    tftp.TFTPServer(root, "127.0.0.1", port).serve_forever()
 
 
 def _serve_tftpy(root: str, port: int) -> None:
@@ -49,7 +49,9 @@ def _pytftp_download(port: int, blksize, size: int) -> None:
     import tftp
 
     sink = io.BytesIO()
-    tftp.Client("127.0.0.1", port, blksize=blksize, tsize=False, timeout_option=False).download("f.bin", sink)
+    tftp.TFTPClient("127.0.0.1", port, blksize=blksize, tsize=False, timeout_option=False).download(
+        "f.bin", sink
+    )
     assert sink.tell() == size
 
 

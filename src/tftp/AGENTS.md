@@ -37,7 +37,7 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 
 ## Client
 
-**`Client(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, max_duration=None, strict_source=True, utimeout=False, extra_options=None, registry=None, on_negotiated=None)`**
+**`TFTPClient(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, max_duration=None, strict_source=True, utimeout=False, extra_options=None, registry=None, on_negotiated=None)`**
 
 - `host` — a string (name or address; `"[v6]"`, `"host:port"` and
   `"[v6]:port"` are accepted, and a port written there overrides `port`), an
@@ -89,7 +89,7 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
   DATA for one timeout. Costs that much time per download.
 - Options are validated at construction: an out-of-range `blksize`,
   `windowsize` or `rollover` raises `ValueError` there.
-- **Not thread-safe**: one `Client` per thread. Each transfer opens its own
+- **Not thread-safe**: one `TFTPClient` per thread. Each transfer opens its own
   socket, so sequential transfers on one client are fine.
 
 Methods (each returns a `TransferResult` unless noted):
@@ -134,13 +134,13 @@ Methods (each returns a `TransferResult` unless noted):
 
 **`download(host, filename, dest, *, port=69, mode="octet", progress=None, **client_options)`**
 and **`upload(host, filename, source, ...)`** — one-shot wrappers;
-`client_options` go to `Client`.
+`client_options` go to `TFTPClient`.
 
 **`MODES`** — `("octet", "netascii")`.
 
 ## Server
 
-**`Server(root_or_handler, host=None, port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None, interface=None)`**
+**`TFTPServer(root_or_handler, host=None, port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None, interface=None)`**
 
 - `root_or_handler` — a directory (wrapped in `FileSystemHandler` with
   `writable`, `create`, `overwrite`) or any handler object (see below).
@@ -170,7 +170,7 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 - `ignore_broadcast` — silently drop requests addressed to a broadcast
   (limited or subnet) or multicast address. Needs pktinfo to see the
   destination; without it every request looks unicast.
-- `backoff`, `max_timeout` — as for `Client`, per transfer.
+- `backoff`, `max_timeout` — as for `TFTPClient`, per transfer.
 - `open_in_thread`, `workers` — call the handler's `open_read`/`open_write`
   in a pool of `workers` threads so a handler that blocks (HTTP, an upstream
   server) never stalls other transfers. `None` decides per handler: one
@@ -199,7 +199,7 @@ Lifecycle:
 - **`shutdown()`** — stop `serve_forever`; safe from any thread, a handler or
   `on_complete`. Transfers in flight get ERROR 0 `"server shutting down"`
   (their result's `error` is `TransferAbortedError`).
-- **`start() -> Server`** — run `serve_forever` in a daemon thread.
+- **`start() -> TFTPServer`** — run `serve_forever` in a daemon thread.
 - **`stop(timeout=5.0)`** — `shutdown()` and join the `start()` thread.
 - **`close()`** — stop and release every socket. Also the context-manager
   exit. A closed server cannot serve again.
@@ -208,7 +208,7 @@ Statistics: **`stats`** (a `Stats`: `stats["completed"]`, `snapshot()`)
 counts `requests`, `refused` (refused before a transfer, including limits
 and `server busy`), `started`, `completed`, `failed`, `bytes_sent`,
 `bytes_received`, `retransmits`; **`stats_snapshot()`** returns them plus
-`active`. Thread-safe; meant for a metrics exporter. A `Relay` has the same,
+`active`. Thread-safe; meant for a metrics exporter. A `TFTPRelay` has the same,
 with `bytes_to_clients`/`bytes_from_clients`.
 
 Properties: `server_address` (the bound `(host, port, ...)`, valid after
@@ -295,7 +295,7 @@ the stream's `mtime` attribute or `fstat` time, whole seconds; omitted when
 unknown). `stream_mtime(stream)` is that lookup.
 
 **Profiles** — `Profile(name, server, client)`: `.server` is a
-`ServerOptions`, `.client` a fresh dict of `Client` keyword arguments.
+`ServerOptions`, `.client` a fresh dict of `TFTPClient` keyword arguments.
 `PROFILES` maps names to the five presets:
 
 | profile | server | client |
@@ -307,8 +307,8 @@ unknown). `stream_mtime(stream)` is that lookup.
 | `LEGACY` | standard, `windowsize` refused | no options at all, `strict_source=False` |
 
 ```python
-tftp.Server("/srv/tftp", options=tftp.PXE.server)
-tftp.Client("192.0.2.1", **tftp.LEGACY.client)
+tftp.TFTPServer("/srv/tftp", options=tftp.PXE.server)
+tftp.TFTPClient("192.0.2.1", **tftp.LEGACY.client)
 ```
 
 ## Handlers
@@ -345,7 +345,7 @@ on the event-loop thread: **a slow handler stalls every transfer**.
 standard file object (`io.IOBase`) or declares `_tftp_copies_ = True`, and
 `bytes` otherwise — so a writer that keeps references is safe by default.
 
-**`RequestContext`** — `request` (the `Request`), `peer` (client address
+**`TFTPRequestContext`** — `request` (the `RequestPacket`), `peer` (client address
 tuple), `local_address` (the destination address as text, or `None` without
 pktinfo), `interface_index` (or 0), `interface` (that interface as a
 `netimps.Interface` — name, addresses, MTU — or `None`), `listing` (the RRQ asks for `x-list=1`
@@ -389,7 +389,7 @@ outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
 
 ## asyncio (`tftp.aio`)
 
-**`AsyncClient(...)`** — `Client`'s arguments and rules (options, backoff,
+**`AsyncTFTPClient(...)`** — `TFTPClient`'s arguments and rules (options, backoff,
 fallback, `trace`, `on_negotiated`); coroutine methods `download(filename,
 dest, *, mode, progress)`, `get`, `upload(filename, source, *, mode,
 progress)`, `put`, `size`, `stat` (both in the executor), `listdir`, and the async generator **`stream(filename, *, mode,
@@ -403,9 +403,9 @@ path, bytes, a binary file, or an **async reader** (`async read(n)`) or async
 iterable of bytes. Cancelling the task sends the server ERROR 0. Each
 attempt (including the option fallback) uses a fresh socket.
 
-**`AsyncServer(root_or_handler, host=None, port=69, *, executor=None, **server_options)`**
-— `Server`'s arguments except `open_in_thread`/`workers`. `async with
-AsyncServer(...) as server: await server.serve_forever()`, or `await
+**`AsyncTFTPServer(root_or_handler, host=None, port=69, *, executor=None, **server_options)`**
+— `TFTPServer`'s arguments except `open_in_thread`/`workers`. `async with
+AsyncTFTPServer(...) as server: await server.serve_forever()`, or `await
 server.start()` … `await server.stop()`; `shutdown()` is thread-safe; `await
 close()`. Handlers:
 
@@ -435,22 +435,22 @@ objects they take.
 loads it.
 
 **`TftpPath(*segments, client, mode="octet")`** — a `pathlib_next.Path`
-bound to a `Client` (`client.path("boot", "x")`). Joined like a
+bound to a `TFTPClient` (`client.path("boot", "x")`). Joined like a
 `PurePosixPath` (`\` counts as `/`); the path text is the filename sent,
 so `/boot/x` and `boot/x` stay distinct. Joining onto a `TftpPath` keeps its
 client; `with_client()`, `with_mode()`; `client`, `transfer_mode`. Equality
 and hashing include the server (host, port). `as_uri()` is the `tftp://`
 URL. `relative_to()` works on the path text. A path is synchronous: binding
-it to an `AsyncClient` (`TftpPath(..., client=)`, `with_client()`) raises
-`TypeError`, and so does `AsyncClient.path()`.
+it to an `AsyncTFTPClient` (`TftpPath(..., client=)`, `with_client()`) raises
+`TypeError`, and so does `AsyncTFTPClient.path()`.
 
 **`TftpUriPath`** — the `tftp://host[:port]/path[;mode=netascii]` scheme
 for `pathlib_next.uri.UriPath`, registered through the
 `pathlib_next.schemes` entry point, so `UriPath("tftp://...")` returns one
 without importing `tftp`. `filename`, `transfer_mode`;
 `with_options(**client_options)` / `with_client(client)` choose the
-`Client` (default: the URI's host and port, library defaults). The URI host
-may be an address object; `Client` accepts one.
+`TFTPClient` (default: the URI's host and port, library defaults). The URI host
+may be an address object; `TFTPClient` accepts one.
 
 Both support what TFTP can do, plus listing against a server speaking
 `x-list`:
@@ -464,7 +464,7 @@ Both support what TFTP can do, plus listing against a server speaking
   read sends the server an ERROR.
 - `read_bytes`, `read_text`, `write_bytes`, `write_text` (text newline
   handling is pathlib's), `copy()`/`move()` to and from any pathlib_next path.
-- `stat()` is one `Client.stat()` probe (`FileStat`: `st_size` and
+- `stat()` is one `TFTPClient.stat()` probe (`FileStat`: `st_size` and
   `st_mtime` 0 when unknown, directory mode for a listed directory);
   `exists()`, `is_file()`, `is_dir()`.
 - `iterdir()`, `walk()`, `glob()`/`rglob()` and `copy(..., recursive=True)`
@@ -492,7 +492,7 @@ Both support what TFTP can do, plus listing against a server speaking
   — terminating proxy: `upstream` is `"host"`, `"host:port"`, an address
   object or `netimps.Host`, `(host, port)`, or `upstream(context)` returning
   one. Each side
-  negotiates independently (`client_options` for the upstream `Client`);
+  negotiates independently (`client_options` for the upstream `TFTPClient`);
   only bytes cross, through a bounded pipe, so a slow client slows the
   upstream. The RRQ is answered after the upstream answers: its ERROR
   reaches the client with the same code and text, its `tsize` passes
@@ -507,7 +507,7 @@ Both support what TFTP can do, plus listing against a server speaking
 
 ## Relay (`tftp.relay`)
 
-**`Relay(route, host=None, port=69, *, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None, interface=None)`**
+**`TFTPRelay(route, host=None, port=69, *, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None, interface=None)`**
 — a transparent application relay (there is no standard TFTP relay). The
 request is forwarded **byte for byte** from a fresh upstream-side socket; the
 upstream's TID is learned from its first answer (from the address asked,
@@ -519,8 +519,8 @@ library does not know work end to end. Each side negotiates nothing with the
 relay — the client sees the upstream's OACK. For different settings per side
 use `UpstreamHandler` (a terminating proxy) instead.
 
-- `interface` — listen on one adapter, as for `Server`.
-- `port_range` — as for `Server`, for both sockets of each relayed transfer
+- `interface` — listen on one adapter, as for `TFTPServer`.
+- `port_range` — as for `TFTPServer`, for both sockets of each relayed transfer
   (client side and upstream side).
 - `route` — an upstream (`"host"`, `"host:port"`, `"[v6]:port"`, an address
   object or `netimps.Host`, `(host, port)`, `Upstream`) or `route(request, context) -> upstream | None`;
@@ -540,7 +540,7 @@ use `UpstreamHandler` (a terminating proxy) instead.
   `bytes_from_client`, `packets`, `duration`, `reason` (`"complete"`,
   `"error"`, `"idle"`, `"lifetime"`, `"shutdown"`), `error` (`(code,
   message)` of an ERROR that passed through, or `None`).
-- Lifecycle and properties as for `Server`: `serve_forever`, `shutdown`,
+- Lifecycle and properties as for `TFTPServer`: `serve_forever`, `shutdown`,
   `start`, `stop`, `close`, context manager; `server_address`,
   `supports_pktinfo`, `active_sessions`.
 
@@ -568,7 +568,7 @@ methods `decode()`, `format()` (a human line), `to_dict(payload=False)` (JSON-
 ready metadata; DATA payloads only as hex with `payload=True`).
 `summarize(data)` is the one-line description on its own.
 
-**Trace hooks** — `Client(trace=)`, `Server(trace=)`, `Relay(trace=)` take
+**Trace hooks** — `TFTPClient(trace=)`, `TFTPServer(trace=)`, `TFTPRelay(trace=)` take
 `trace(PacketEvent)`, called for every datagram received and sent, on the
 thread doing the I/O; exceptions it raises are logged, never propagated.
 Roles are `"client"`, `"server"`, `"relay"`; one `session` id per transfer
@@ -577,7 +577,7 @@ listening address. Requests a server refuses before a transfer exists are
 not traced. Off (`None`) costs nothing per packet.
 
 **`PcapWriter(path_or_binary_file)`** — writes events (it is a ready trace
-hook: `Server(..., trace=PcapWriter("t.pcap"))`) or `write(time, source,
+hook: `TFTPServer(..., trace=PcapWriter("t.pcap"))`) or `write(time, source,
 destination, payload)` as pcap, link type RAW, with synthesized IPv4/IPv6 and
 UDP headers and valid checksums, so Wireshark/tshark decode it as TFTP
 (v4-mapped addresses are written as IPv4). Context manager; `close()`.
@@ -643,7 +643,7 @@ not one of these. `TFTPError` plays three roles, told apart by the subclass:
 
 - *What a handler raises to refuse a request*: **`TFTPError(code=0,
   message="")`** itself, or `TFTPProtocolError`; the code and message become
-  the ERROR the client receives. `.code` is an `ErrorCode` when the value is
+  the ERROR the client receives. `.code` is a `TFTPErrorCode` when the value is
   known, `.message` defaults to the code's standard text; `code` must be an
   `int` in 0..65535 and `message` text, else `TypeError` or `ValueError` at
   construction, so `TFTPError("no such file")` is refused rather than built
@@ -677,16 +677,16 @@ disclose server paths).
 
 ## Wire format
 
-`Opcode` (`RRQ`=1 … `OACK`=6) and `ErrorCode` (`NOT_DEFINED`=0 …
+`TFTPOpcode` (`RRQ`=1 … `OACK`=6) and `TFTPErrorCode` (`NOT_DEFINED`=0 …
 `OPTION_REFUSED`=8) are `IntEnum`s. Packet types are `NamedTuple`s:
-`Request(opcode, filename, mode, options, raw=b"")` (`.is_read`; option
+`RequestPacket(opcode, filename, mode, options, raw=b"")` (`.is_read`; option
 names lower-cased, first occurrence wins, mode lower-cased; `raw` is the
 datagram as received, `.raw_options` every pair as sent — original case,
 order, duplicates — and `.encode()` returns `raw` or a fresh encoding, so a
-relay forwards unknown options untouched), `Data(block, data)`, `Ack(block)`,
-`Error(code, message)`, `OptionAck(options)`.
+relay forwards unknown options untouched), `DataPacket(block, data)`, `AckPacket(block)`,
+`ErrorPacket(code, message)`, `OptionAckPacket(options)`.
 
-- **`decode(bytes) -> Packet`** — raises `TFTPDecodeError`. Tolerates a
+- **`decode(bytes) -> TFTPPacket`** — raises `TFTPDecodeError`. Tolerates a
   missing final NUL and drops a dangling option name.
 - **`encode_request(opcode, filename, mode="octet", options=None)`**,
   **`encode_data(block, data)`**, **`encode_ack(block)`**,
@@ -815,7 +815,7 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
 
 `netimps` (required, no dependencies of its own; imported lazily, on the
 first transfer or server): pktinfo receive and reply sockets (`UDPEndpoint`,
-also `arecv` for `AsyncServer`), broadcast/multicast checks, MTU payload
+also `arecv` for `AsyncTFTPServer`), broadcast/multicast checks, MTU payload
 sizing, the retransmission timer (`Backoff`), socket binding,
 host:port parsing, address/network types (`HostLike`, `IPNetworkLike`,
 `Host`, `Interface`: what the address-taking parameters accept), bind-error

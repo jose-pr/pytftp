@@ -1,7 +1,7 @@
 """pathlib-style access to TFTP files (``path`` extra: ``pip install tftp[path]``).
 
 - :class:`TftpPath` -- a :mod:`pathlib_next` ``Path`` bound to a
-  :class:`~tftp.Client`: ``client.path("boot/pxelinux.0").read_bytes()``.
+  :class:`~tftp.TFTPClient`: ``client.path("boot/pxelinux.0").read_bytes()``.
 - :class:`TftpUriPath` -- the ``tftp://`` scheme for ``pathlib_next.uri.UriPath``:
   ``UriPath("tftp://192.0.2.1/boot/x").copy("s3://bucket/x")``.
 

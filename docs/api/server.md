@@ -1,6 +1,6 @@
 # `tftp.server`
 
-::: tftp.server.core.Server
+::: tftp.server.core.TFTPServer
 
 ::: tftp.server.policy
 

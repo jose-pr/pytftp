@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 from ..netascii import decode as netascii_decode
 from ..options import DEFAULT_BLKSIZE
 from ..exceptions import TFTPDecodeError
-from ..packet import Opcode, decode
+from ..packet import TFTPOpcode, decode
 from .events import PacketEvent, new_session_id
 from .frames import UdpDatagram
 
@@ -260,15 +260,15 @@ class FlowTracker:
             return
         op = payload[1]
         from_client = datagram.source == transfer.client
-        if op == Opcode.DATA:
+        if op == TFTPOpcode.DATA:
             wire = struct.unpack_from("!H", payload, 2)[0]
             if self.keep_payloads:
                 transfer.add_data(wire, payload[4:])
             else:
                 transfer.add_data(wire, payload[4:], keep=False)
-        elif op == Opcode.ACK:
+        elif op == TFTPOpcode.ACK:
             transfer.add_ack(struct.unpack_from("!H", payload, 2)[0])
-        elif op == Opcode.OACK and not from_client:
+        elif op == TFTPOpcode.OACK and not from_client:
             try:
                 options = decode(payload).options  # type: ignore[union-attr]
             except TFTPDecodeError:
@@ -283,7 +283,7 @@ class FlowTracker:
                 transfer.tsize = int(options["tsize"])
             if options.get("rollover", "").strip() in ("0", "1"):
                 transfer._rollover = int(options["rollover"])
-        elif op == Opcode.ERROR and transfer.error is None:
+        elif op == TFTPOpcode.ERROR and transfer.error is None:
             try:
                 packet = decode(payload)
                 transfer.error = (int(packet.code), packet.message, "client" if from_client else "server")  # type: ignore[union-attr]

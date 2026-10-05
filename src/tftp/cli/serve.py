@@ -15,7 +15,7 @@ import typing as _ty
 
 from ..options import LISTING_OPTIONS, PROFILES, STANDARD_OPTIONS, ServerOptions
 from ..result import TransferResult
-from ..server import Server, ServerLimits
+from ..server import TFTPServer, ServerLimits
 from .common import (
     PROFILE_NAMES,
     Choice,
@@ -200,7 +200,7 @@ class Serve(Traced):
         if self.json_out:
             on_complete = _print_json
         try:
-            server = Server(
+            server = TFTPServer(
                 handler,
                 self.listen,
                 self.port,

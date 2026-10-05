@@ -93,7 +93,7 @@ class Listener:
     :param pktinfo: report each request's destination address, through
         :class:`netimps.UDPEndpoint`, where the platform allows it; replies
         then leave from that address.
-    :param interface: listen on this adapter's address (see ``Server``).
+    :param interface: listen on this adapter's address (see ``TFTPServer``).
     """
 
     def __init__(

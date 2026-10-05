@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from .core import Server
-from .handler import AtomicWriter, FileSystemHandler, Handler, RequestContext
+from .core import TFTPServer
+from .handler import AtomicWriter, FileSystemHandler, TFTPHandler, TFTPRequestContext
 from .policy import ServerLimits
 from .session import PortRange
 from .stats import Stats
 
 __all__ = [
-    "Server",
+    "TFTPServer",
     "ServerLimits",
     "PortRange",
     "Stats",
-    "Handler",
+    "TFTPHandler",
     "FileSystemHandler",
     "AtomicWriter",
-    "RequestContext",
+    "TFTPRequestContext",
 ]

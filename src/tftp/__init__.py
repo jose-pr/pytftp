@@ -8,9 +8,9 @@ rollover::
 
     import tftp
 
-    tftp.Client("192.0.2.1").download("pxelinux.0", "pxelinux.0")
+    tftp.TFTPClient("192.0.2.1").download("pxelinux.0", "pxelinux.0")
 
-    with tftp.Server("/srv/tftp", port=6969) as server:
+    with tftp.TFTPServer("/srv/tftp", port=6969) as server:
         server.serve_forever()
 
 Everything public is importable from ``tftp`` directly. The subpackages
@@ -24,13 +24,13 @@ group it for reading: :mod:`tftp.packet` (wire format), :mod:`tftp.options`
 from __future__ import annotations
 
 from .packet import (
-    Ack,
-    Data,
-    Error,
-    ErrorCode,
-    Opcode,
-    OptionAck,
-    Request,
+    AckPacket,
+    DataPacket,
+    ErrorPacket,
+    TFTPErrorCode,
+    TFTPOpcode,
+    OptionAckPacket,
+    RequestPacket,
     decode,
     encode_ack,
     encode_data,
@@ -56,9 +56,17 @@ from .exceptions import (
     UnknownTransferID,
     WouldBlock,
 )
-from .client import MODES, Client, RemoteStat, download, upload
+from .client import MODES, TFTPClient, RemoteStat, download, upload
 from .listing import ListEntry
-from .server import AtomicWriter, FileSystemHandler, Handler, PortRange, RequestContext, Server, ServerLimits
+from .server import (
+    AtomicWriter,
+    FileSystemHandler,
+    TFTPHandler,
+    PortRange,
+    TFTPRequestContext,
+    TFTPServer,
+    ServerLimits,
+)
 from .netascii import NetasciiReader, NetasciiWriter
 from .options import (
     DEFAULT,
@@ -90,7 +98,7 @@ from .uri import TftpURL, download_url, format_url, parse_url, upload_url
 __all__ = [
     "__version__",
     # Client
-    "Client",
+    "TFTPClient",
     "RemoteStat",
     "ListEntry",
     "download",
@@ -102,14 +110,14 @@ __all__ = [
     "download_url",
     "upload_url",
     # Server
-    "Server",
+    "TFTPServer",
     "ServerOptions",
     "ServerLimits",
     "PortRange",
-    "Handler",
+    "TFTPHandler",
     "FileSystemHandler",
     "AtomicWriter",
-    "RequestContext",
+    "TFTPRequestContext",
     # Results and errors
     "TransferResult",
     "Negotiated",
@@ -130,13 +138,13 @@ __all__ = [
     "OptionNegotiationError",
     "WouldBlock",
     # Protocol
-    "Opcode",
-    "ErrorCode",
-    "Request",
-    "Data",
-    "Ack",
-    "Error",
-    "OptionAck",
+    "TFTPOpcode",
+    "TFTPErrorCode",
+    "RequestPacket",
+    "DataPacket",
+    "AckPacket",
+    "ErrorPacket",
+    "OptionAckPacket",
     "decode",
     "encode_request",
     "encode_data",

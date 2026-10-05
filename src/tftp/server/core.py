@@ -26,14 +26,14 @@ if TYPE_CHECKING:
 
 from ..capture.events import PacketEvent
 from ..options import ServerOptions
-from ..packet import ErrorCode, encode_error
+from ..packet import TFTPErrorCode, encode_error
 from ..result import TransferResult
 from ..transfer import Transfer
 from .base import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
 from .policy import ServerLimits
 from .session import Session
 
-__all__ = ["Server"]
+__all__ = ["TFTPServer"]
 
 log = logging.getLogger("tftp.server")
 
@@ -42,7 +42,7 @@ _DRAIN = 64  # packets read per readiness event before yielding to others
 _WAKE_BYTE = bytes(1)
 
 
-class Server(ServerBase):
+class TFTPServer(ServerBase):
     """A TFTP server.
 
     :param root_or_handler: a directory to serve (wrapped in
@@ -220,7 +220,7 @@ class Server(ServerBase):
         self._stopping = True
         self._wake()
 
-    def start(self) -> "Server":
+    def start(self) -> "TFTPServer":
         """Run :meth:`serve_forever` in a daemon thread; returns ``self``."""
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError("server already running")
@@ -252,14 +252,14 @@ class Server(ServerBase):
         for sock in (self._wake_r, self._wake_w):
             sock.close()
 
-    def __enter__(self) -> "Server":
+    def __enter__(self) -> "TFTPServer":
         return self
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
 
     def __repr__(self) -> str:
-        return "Server(%r, %d active)" % (self.server_address[:2], len(self._sessions))
+        return "TFTPServer(%r, %d active)" % (self.server_address[:2], len(self._sessions))
 
     # -- event loop ---------------------------------------------------------
 
@@ -370,7 +370,7 @@ class Server(ServerBase):
                 session.emit(view[:n], "in", addr)
             if addr[1] != port or addr[0] != host:
                 try:
-                    stray = encode_error(ErrorCode.UNKNOWN_TID)
+                    stray = encode_error(TFTPErrorCode.UNKNOWN_TID)
                     session.sock.sendto(stray, addr)
                     if trace is not None:
                         session.emit(stray, "out", addr)

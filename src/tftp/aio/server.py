@@ -1,4 +1,4 @@
-"""The asyncio server: :class:`Server`'s behaviour on an asyncio event loop.
+"""The asyncio server: :class:`TFTPServer`'s behaviour on an asyncio event loop.
 
 Handlers may be ``async def``: ``open_read``/``open_write`` are awaited when
 they return an awaitable, and the streams they return may be asynchronous
@@ -23,19 +23,19 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
-from ..packet import ErrorCode, encode_error
+from ..packet import TFTPErrorCode, encode_error
 from ..server.base import ServerBase
 from ..server.listener import _RECV_SIZE, Arrival
 from ..server.session import Session
 from .bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
 
-__all__ = ["AsyncServer"]
+__all__ = ["AsyncTFTPServer"]
 
 log = logging.getLogger("tftp.server")
 
 
 class _SessionProtocol(asyncio.DatagramProtocol):
-    def __init__(self, server: "AsyncServer", session: Session) -> None:
+    def __init__(self, server: "AsyncTFTPServer", session: Session) -> None:
         self.server = server
         self.session = session
 
@@ -57,11 +57,11 @@ class _Timer:
         self.transport: Optional[asyncio.DatagramTransport] = None
 
 
-class AsyncServer(ServerBase):
-    """:class:`Server` for asyncio; same arguments except ``open_in_thread``/``workers``.
+class AsyncTFTPServer(ServerBase):
+    """:class:`TFTPServer` for asyncio; same arguments except ``open_in_thread``/``workers``.
 
     ``executor`` (default: the loop's) runs blocking handler opens.
-    Use as ``async with AsyncServer(...) as server: await server.serve_forever()``,
+    Use as ``async with AsyncTFTPServer(...) as server: await server.serve_forever()``,
     or ``await server.start()`` ... ``await server.stop()``.
     """
 
@@ -111,7 +111,7 @@ class AsyncServer(ServerBase):
         if loop is not None and stopped is not None:
             loop.call_soon_threadsafe(stopped.set)
 
-    async def start(self) -> "AsyncServer":
+    async def start(self) -> "AsyncTFTPServer":
         """Serve in a background task; returns once listening."""
         self._task = asyncio.ensure_future(self.serve_forever())
         while self._stopped is None:
@@ -131,7 +131,7 @@ class AsyncServer(ServerBase):
         self._closed = True
         self._listener.close()
 
-    async def __aenter__(self) -> "AsyncServer":
+    async def __aenter__(self) -> "AsyncTFTPServer":
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
@@ -232,7 +232,7 @@ class AsyncServer(ServerBase):
         if session.trace is not None:
             session.emit(data, "in", addr)
         if addr[1] != session.port or addr[0] != session.host:
-            stray = encode_error(ErrorCode.UNKNOWN_TID)
+            stray = encode_error(TFTPErrorCode.UNKNOWN_TID)
             try:
                 session.sock.sendto(stray, addr)
             except OSError:

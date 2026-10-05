@@ -50,7 +50,7 @@ def make_server():
 
     def make(root_or_handler, host="127.0.0.1", **kwargs):
         kwargs.setdefault("timeout", 0.5)
-        server = tftp.Server(root_or_handler, host, 0, **kwargs).start()
+        server = tftp.TFTPServer(root_or_handler, host, 0, **kwargs).start()
         servers.append(server)
         return server
 
@@ -59,7 +59,7 @@ def make_server():
         server.close()
 
 
-def client_for(server, host=None, **kwargs) -> tftp.Client:
+def client_for(server, host=None, **kwargs) -> tftp.TFTPClient:
     address = server.server_address
     if host is None:
         host = address[0]
@@ -67,7 +67,7 @@ def client_for(server, host=None, **kwargs) -> tftp.Client:
             host = "127.0.0.1"
     kwargs.setdefault("timeout", 0.5)
     kwargs.setdefault("retries", 3)
-    return tftp.Client(host, address[1], **kwargs)
+    return tftp.TFTPClient(host, address[1], **kwargs)
 
 
 def _link_local():

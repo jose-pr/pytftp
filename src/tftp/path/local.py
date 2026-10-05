@@ -11,7 +11,7 @@ from typing import Any, Callable, Iterator, Optional, Tuple
 from pathlib_next import Path, Pathname
 from pathlib_next.utils.stat import FileStat
 
-from ..client import Client
+from ..client import TFTPClient
 from ..exceptions import FileNotFound, TFTPError
 from ._stream import open_reader, open_writer, os_error
 
@@ -19,7 +19,7 @@ __all__ = ["TftpPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir
 
 
 def check_client(client: Any) -> Any:
-    """``client``, if it is the synchronous :class:`Client`; ``TypeError`` for an asyncio one.
+    """``client``, if it is the synchronous :class:`TFTPClient`; ``TypeError`` for an asyncio one.
 
     A path's reads and writes run in the calling thread. An asyncio client's
     methods return coroutines that nothing here would await, so every
@@ -27,16 +27,16 @@ def check_client(client: Any) -> Any:
     """
     if inspect.iscoroutinefunction(getattr(client, "download", None)):
         raise TypeError(
-            "a path needs the synchronous tftp.Client, not %s, whose methods are coroutines"
+            "a path needs the synchronous tftp.TFTPClient, not %s, whose methods are coroutines"
             % type(client).__name__
         )
     return client
 
 
-def client_factory(client: Client) -> Callable[..., Client]:
+def client_factory(client: TFTPClient) -> Callable[..., TFTPClient]:
     """A function returning a copy of ``client`` with some settings changed."""
 
-    def make(**overrides: Any) -> Client:
+    def make(**overrides: Any) -> TFTPClient:
         derived = copy.copy(client)
         for name, value in overrides.items():
             setattr(derived, name, value)
@@ -45,8 +45,8 @@ def client_factory(client: Client) -> Callable[..., Client]:
     return make
 
 
-def tftp_stat(client: Client, filename: str, mode: str, path: Any) -> FileStat:
-    """A ``FileStat`` from :meth:`Client.stat`: one probe, nothing transferred.
+def tftp_stat(client: TFTPClient, filename: str, mode: str, path: Any) -> FileStat:
+    """A ``FileStat`` from :meth:`TFTPClient.stat`: one probe, nothing transferred.
 
     ``st_size`` is 0 and ``st_mtime`` 0 when the server reports none; a
     directory is recognised only by a server speaking ``x-list``.
@@ -58,7 +58,7 @@ def tftp_stat(client: Client, filename: str, mode: str, path: Any) -> FileStat:
     return FileStat(st_size=info.size or 0, st_mtime=info.mtime or 0, is_dir=info.is_dir)
 
 
-def tftp_scandir(client: Client, dirname: str, path: Any) -> Iterator[Tuple[str, FileStat]]:
+def tftp_scandir(client: TFTPClient, dirname: str, path: Any) -> Iterator[Tuple[str, FileStat]]:
     """``(name, FileStat)`` per entry, from one ``x-list`` listing."""
     try:
         entries = client.listdir(dirname)
@@ -68,7 +68,7 @@ def tftp_scandir(client: Client, dirname: str, path: Any) -> Iterator[Tuple[str,
         yield entry.name, FileStat(st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir)
 
 
-def tftp_open(client: Client, filename: str, transfer_mode: str, mode: str, path: Any) -> Any:
+def tftp_open(client: TFTPClient, filename: str, transfer_mode: str, mode: str, path: Any) -> Any:
     """pathlib_next's ``_open()``: ``r`` streams a download, ``w``/``x`` an upload.
 
     ``x`` checks existence with a size probe first, which is not atomic: TFTP
@@ -95,7 +95,7 @@ def tftp_open(client: Client, filename: str, transfer_mode: str, mode: str, path
 class TftpPath(Path):
     """A file on a TFTP server, addressed like a ``PurePosixPath``.
 
-    ``TftpPath("boot/pxelinux.0", client=tftp.Client("192.0.2.1"))``, or
+    ``TftpPath("boot/pxelinux.0", client=tftp.TFTPClient("192.0.2.1"))``, or
     ``client.path("boot", "pxelinux.0")``. The path text is the filename sent
     to the server, so ``/boot/x`` and ``boot/x`` stay distinct (some servers
     resolve them differently). ``mode="netascii"`` selects the transfer mode.
@@ -113,7 +113,7 @@ class TftpPath(Path):
 
     __slots__ = ("_client", "_segments", "_mode")
 
-    def __init__(self, *segments: Any, client: Optional[Client] = None, mode: str = "octet") -> None:
+    def __init__(self, *segments: Any, client: Optional[TFTPClient] = None, mode: str = "octet") -> None:
         text = ""
         inherited = None
         for segment in segments:
@@ -146,7 +146,7 @@ class TftpPath(Path):
     # -- pure path ---------------------------------------------------------------
 
     @property
-    def client(self) -> Client:
+    def client(self) -> TFTPClient:
         return self._client
 
     @property
@@ -175,7 +175,7 @@ class TftpPath(Path):
             segments = ("/".join(segments),)
         return type(self)(*segments, client=self._client, mode=self._mode)
 
-    def with_client(self, client: Client) -> "TftpPath":
+    def with_client(self, client: TFTPClient) -> "TftpPath":
         return type(self)(self.as_posix(), client=client, mode=self._mode)
 
     def with_mode(self, mode: str) -> "TftpPath":

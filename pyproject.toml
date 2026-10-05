@@ -33,7 +33,7 @@ classifiers = [
 # UdpEndpoint, normalize_host, get_ip and interface_for (UDPEndpoint,
 # split_host, Host.ip, get_interface) without aliases, and made options
 # keyword-only (Backoff, max_udp_payload), so no range spans both. It also
-# carries the link-local IPv6 bind fixes that Server/Relay interface= with host
+# carries the link-local IPv6 bind fixes that TFTPServer/TFTPRelay interface= with host
 # '::' and replies to a link-local IPv6 client need.
 dependencies = ["netimps>=0.4.0,<0.5"]
 

@@ -8,7 +8,7 @@ import time
 import pytest
 
 import tftp
-from tftp.relay import Relay
+from tftp.relay import TFTPRelay
 from conftest import client_for
 
 
@@ -80,7 +80,7 @@ def test_relay_port_range(root, make_server):
     ports = _free_ports(4)
     upstream = make_server(root)
     events = []
-    relay = Relay(
+    relay = TFTPRelay(
         ("127.0.0.1", upstream.server_address[1]), "127.0.0.1", 0, port_range=ports, trace=events.append
     ).start()
     try:
@@ -155,8 +155,8 @@ def test_v4_client_of_dual_stack_listener_without_pktinfo(root, make_server):
     if not server.dual_stack:
         pytest.skip("no dual-stack listener here")
     assert not server.supports_pktinfo
-    client = tftp.Client("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
+    client = tftp.TFTPClient("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
     assert client.get("one.bin") == b"x"
     ports = _free_ports(2)
     ranged = make_server(root, "::", reply_from_request_address=False, port_range=ports)
-    assert tftp.Client("127.0.0.1", ranged.server_address[1], timeout=0.5).get("one.bin") == b"x"
+    assert tftp.TFTPClient("127.0.0.1", ranged.server_address[1], timeout=0.5).get("one.bin") == b"x"

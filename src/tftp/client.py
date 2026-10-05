@@ -35,7 +35,7 @@ from .options import (
     accept_oack,
     request_options,
 )
-from .packet import ErrorCode, Opcode, encode_ack, encode_error, encode_request, decode
+from .packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_error, encode_request, decode
 from .result import TransferResult
 from ._sockets import fit_window, same_host, sockaddr
 from .capture.events import PacketEvent, new_session_id
@@ -44,7 +44,7 @@ from .transfer import Receiver, Sender, Transfer, as_readinto, as_write
 if TYPE_CHECKING:  # netimps is imported lazily at run time
     from netimps import HostLike
 
-__all__ = ["Client", "RemoteStat", "download", "upload", "MODES"]
+__all__ = ["TFTPClient", "RemoteStat", "download", "upload", "MODES"]
 
 #: Receive buffer: longer than any UDP datagram, so a stray one is read whole.
 _RECV_BUFFER = 65536
@@ -70,7 +70,7 @@ def _mode(mode: str) -> str:
 
 
 class RemoteStat(NamedTuple):
-    """What :meth:`Client.stat` learnt about a name on the server.
+    """What :meth:`TFTPClient.stat` learnt about a name on the server.
 
     ``size`` is ``None`` when the server reports none (and for a directory);
     ``mtime`` (seconds since the epoch) needs a server speaking ``x-mtime``;
@@ -127,7 +127,7 @@ def _mtu_blksize(server: Any) -> int:
     return max(MIN_BLKSIZE, min(fits, MAX_BLKSIZE))
 
 
-class Client:
+class TFTPClient:
     """A TFTP client bound to one server.
 
     :param host: server name or address: a string (``"name"``, ``"10.0.0.1"``,
@@ -337,7 +337,7 @@ class Client:
     ) -> TransferResult:
         writer: Any = NetasciiWriter(sink) if mode == "netascii" else sink
         write = as_write(writer)
-        result = self._run(Opcode.RRQ, filename, mode, None, write, None, progress)
+        result = self._run(TFTPOpcode.RRQ, filename, mode, None, write, None, progress)
         if mode == "netascii":
             writer.flush()
         return result
@@ -353,11 +353,11 @@ class Client:
             size = _source_size(source)
             reader = source
         read = as_readinto(reader)
-        return self._run(Opcode.WRQ, filename, mode, size, None, read, progress)
+        return self._run(TFTPOpcode.WRQ, filename, mode, size, None, read, progress)
 
     def _run(self, opcode, filename, mode, size, write, read, progress) -> TransferResult:
         family, server, address = self._endpoint()
-        options = self._options(opcode == Opcode.RRQ, size, address)
+        options = self._options(opcode == TFTPOpcode.RRQ, size, address)
         with self._socket(family) as sock:
             started = time.monotonic()
             try:
@@ -368,7 +368,7 @@ class Client:
                 # Only a refusal of the request itself: nothing has been
                 # read or written yet, so asking again is safe.
                 if (
-                    exc.code == ErrorCode.OPTION_REFUSED
+                    exc.code == TFTPErrorCode.OPTION_REFUSED
                     and options
                     and self.fallback
                     and getattr(exc, "_in_request", False)
@@ -388,12 +388,12 @@ class Client:
         other opcode (after sending ERROR 4).
         """
         op = view[1] if n >= 2 and view[0] == 0 else -1
-        if op == Opcode.ERROR:
+        if op == TFTPOpcode.ERROR:
             packet = decode(view[:n])
             refused = RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
             refused._in_request = True  # type: ignore[attr-defined]
             raise refused
-        if op == Opcode.OACK:
+        if op == TFTPOpcode.OACK:
             oack = decode(view[:n]).options  # type: ignore[union-attr]
             try:
                 negotiated = accept_oack(
@@ -403,11 +403,11 @@ class Client:
                 send(encode_error(exc.code, exc.message))
                 raise
             return negotiated, False
-        if (is_read and op == Opcode.DATA) or (
-            not is_read and op == Opcode.ACK and view[2] == 0 and view[3] == 0
+        if (is_read and op == TFTPOpcode.DATA) or (
+            not is_read and op == TFTPOpcode.ACK and view[2] == 0 and view[3] == 0
         ):
             return Negotiated(timeout=self.timeout), is_read
-        send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
+        send(encode_error(TFTPErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
         raise TFTPProtocolError("unexpected opcode %d in response to the request" % op)
 
     def _emitter(self, sock) -> Optional[Callable[[Any, str, Tuple[Any, ...]], None]]:
@@ -511,9 +511,9 @@ class Client:
         try:
             oack, small = self._probe(filename, mode, asked)
         except RemoteError as exc:
-            if exc.code != ErrorCode.OPTION_REFUSED or not self.fallback:
+            if exc.code != TFTPErrorCode.OPTION_REFUSED or not self.fallback:
                 raise
-            return RemoteStat(Client.size(self, filename, mode=mode))
+            return RemoteStat(TFTPClient.size(self, filename, mode=mode))
         if oack is None:
             return RemoteStat(small)
         is_dir = oack.get(LIST_OPTION, "").strip() == "1"
@@ -523,7 +523,7 @@ class Client:
     def listdir(self, dirname: str = "") -> List[ListEntry]:
         """The entries of directory ``dirname`` (``""`` is the server's root).
 
-        Needs a server speaking pytftp's ``x-list`` extension (``tftp.Server``
+        Needs a server speaking pytftp's ``x-list`` extension (``tftp.TFTPServer``
         allowing :data:`LISTING_OPTIONS`); there is no standard way to list
         in TFTP. Raises ``NotADirectoryError`` when the name is a file (the
         transfer is abandoned at once), and :class:`FileNotFound` when it does
@@ -538,7 +538,7 @@ class Client:
             raise NotADirectoryError(errno.ENOTDIR, "not a directory", dirname) from None
         return parse_listing(sink.getvalue())
 
-    def _lister(self) -> "Client":
+    def _lister(self) -> "TFTPClient":
         """A copy of this client whose download is a listing or fails with _NotListing."""
         lister = copy.copy(self)
         lister.extra_options = dict(self.extra_options, **{LIST_OPTION: "1"})
@@ -547,7 +547,7 @@ class Client:
 
         def check(negotiated: Negotiated, peer: Tuple[Any, ...]) -> None:
             if not negotiated.extra.get(LIST_OPTION):
-                raise _NotListing("not a directory", ErrorCode.OPTION_REFUSED)
+                raise _NotListing("not a directory", TFTPErrorCode.OPTION_REFUSED)
             if outer is not None:
                 outer(negotiated, peer)
 
@@ -566,7 +566,7 @@ class Client:
             if isinstance(exc, TFTPError):
                 packet = encode_error(exc.code, exc.message)
             else:
-                packet = encode_error(ErrorCode.NOT_DEFINED, "transfer cancelled")
+                packet = encode_error(TFTPErrorCode.NOT_DEFINED, "transfer cancelled")
             try:
                 send(packet)
             except OSError:
@@ -585,7 +585,7 @@ class Client:
         """
         family, server, _ = self._endpoint()
         with self._socket(family) as sock:
-            request = encode_request(Opcode.RRQ, filename, mode, options)
+            request = encode_request(TFTPOpcode.RRQ, filename, mode, options)
             buf = bytearray(_RECV_BUFFER)
             view = memoryview(buf)
             emit = self._emitter(sock)
@@ -597,26 +597,26 @@ class Client:
                     emit(packet, "out", peer)
 
             op = view[1] if view[0] == 0 else -1
-            if op == Opcode.ERROR:
+            if op == TFTPOpcode.ERROR:
                 packet = decode(view[:n])
                 raise RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
-            if op == Opcode.OACK:
-                send(encode_error(ErrorCode.OPTION_REFUSED, "size probe only"))
+            if op == TFTPOpcode.OACK:
+                send(encode_error(TFTPErrorCode.OPTION_REFUSED, "size probe only"))
                 return dict(decode(view[:n]).options), None  # type: ignore[union-attr]
-            if op == Opcode.DATA and n >= 4:
+            if op == TFTPOpcode.DATA and n >= 4:
                 size = n - 4
                 if size < DEFAULT_BLKSIZE:
                     send(encode_ack(1))  # the whole file: finish politely
                     return None, size
-                send(encode_error(ErrorCode.NOT_DEFINED, "size probe only"))
+                send(encode_error(TFTPErrorCode.NOT_DEFINED, "size probe only"))
                 return None, None
-            send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
+            send(encode_error(TFTPErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
             raise TFTPProtocolError("unexpected opcode %d in response to the request" % op)
 
     def _exchange(
         self, sock, server, opcode, filename, mode, options, write, read, progress, started
     ) -> TransferResult:
-        is_read = opcode == Opcode.RRQ
+        is_read = opcode == TFTPOpcode.RRQ
         request = encode_request(opcode, filename, mode, options)
         requested_blksize = int(options.get("blksize", DEFAULT_BLKSIZE))
         # Whatever a datagram's length: Windows reports one longer than the
@@ -699,7 +699,7 @@ class Client:
                 emit(view[:n], "in", addr)
             if addr[1] != peer_port or addr[0] != peer_host:
                 try:
-                    stray = encode_error(ErrorCode.UNKNOWN_TID)
+                    stray = encode_error(TFTPErrorCode.UNKNOWN_TID)
                     sock.sendto(stray, addr)
                     if trace is not None:
                         emit(stray, "out", addr)
@@ -754,8 +754,8 @@ def download(
     progress: Optional[Progress] = None,
     **client_options: Any,
 ) -> TransferResult:
-    """One-shot :meth:`Client.download`; ``client_options`` go to :class:`Client`."""
-    return Client(host, port, **client_options).download(filename, dest, mode=mode, progress=progress)
+    """One-shot :meth:`TFTPClient.download`; ``client_options`` go to :class:`TFTPClient`."""
+    return TFTPClient(host, port, **client_options).download(filename, dest, mode=mode, progress=progress)
 
 
 def upload(
@@ -768,5 +768,5 @@ def upload(
     progress: Optional[Progress] = None,
     **client_options: Any,
 ) -> TransferResult:
-    """One-shot :meth:`Client.upload`; ``client_options`` go to :class:`Client`."""
-    return Client(host, port, **client_options).upload(filename, source, mode=mode, progress=progress)
+    """One-shot :meth:`TFTPClient.upload`; ``client_options`` go to :class:`TFTPClient`."""
+    return TFTPClient(host, port, **client_options).upload(filename, source, mode=mode, progress=progress)

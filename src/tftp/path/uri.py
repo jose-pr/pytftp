@@ -12,14 +12,14 @@ from typing import Any, Tuple
 
 from pathlib_next.uri import UriPath
 
-from ..client import Client
+from ..client import TFTPClient
 from .local import check_client, tftp_open, tftp_scandir, tftp_stat
 
 __all__ = ["TftpUriPath", "TftpBackend"]
 
 
 class TftpBackend:
-    """Per-endpoint state of a ``TftpUriPath``: the :class:`Client` settings to use.
+    """Per-endpoint state of a ``TftpUriPath``: the :class:`TFTPClient` settings to use.
 
     Created from the URI's host and port with default settings, or supplied
     with ``path.with_options(blksize=8192, windowsize=16)`` /
@@ -28,7 +28,7 @@ class TftpBackend:
 
     __slots__ = ("client", "__weakref__")
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, client: TFTPClient) -> None:
         self.client = check_client(client)
 
 
@@ -47,14 +47,14 @@ class TftpUriPath(UriPath):
 
     def _initbackend(self) -> TftpBackend:
         source = self.source
-        return TftpBackend(Client(source.host, source.port or 69))
+        return TftpBackend(TFTPClient(source.host, source.port or 69))
 
     def with_options(self, **client_options: Any) -> "TftpUriPath":
-        """This path with a ``Client`` built from ``client_options`` (blksize, windowsize...)."""
+        """This path with a ``TFTPClient`` built from ``client_options`` (blksize, windowsize...)."""
         source = self.source
-        return self.with_backend(TftpBackend(Client(source.host, source.port or 69, **client_options)))
+        return self.with_backend(TftpBackend(TFTPClient(source.host, source.port or 69, **client_options)))
 
-    def with_client(self, client: Client) -> "TftpUriPath":
+    def with_client(self, client: TFTPClient) -> "TftpUriPath":
         return self.with_backend(TftpBackend(client))
 
     def _target(self) -> Tuple[str, str]:

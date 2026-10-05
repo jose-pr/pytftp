@@ -17,9 +17,9 @@ server, and shows you what crossed the wire.
 ```python
 import tftp
 
-tftp.Client("192.0.2.1").download("pxelinux.0", "pxelinux.0")
+tftp.TFTPClient("192.0.2.1").download("pxelinux.0", "pxelinux.0")
 
-with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
+with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
     server.serve_forever()
 ```
 
@@ -56,11 +56,11 @@ with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
   relay; write Wireshark-readable pcaps; read pcap/pcapng files or a live
   `tcpdump` pipe, reconstruct each transfer and extract its file.
 - **Directory listings** — an opt-in extension between pytftp peers: `pytftp ls`,
-  `Client.listdir()`, and `iterdir`/`walk`/`glob` on paths; other servers
+  `TFTPClient.listdir()`, and `iterdir`/`walk`/`glob` on paths; other servers
   simply ignore it.
 - **Deployment** — transfer ports pinned to a range for firewalls; per-client
   roots, case-insensitive names and filename remapping in `pytftp serve`.
-- **asyncio** — `AsyncClient` and `AsyncServer` with async handlers and streams.
+- **asyncio** — `AsyncTFTPClient` and `AsyncTFTPServer` with async handlers and streams.
 - **pathlib** — `client.path("boot/x").read_bytes()`, and `tftp://` URLs in
   [pathlib-next](https://github.com/jose-pr/pathlib-next), so
   `UriPath("tftp://h/x").copy("s3://bucket/x")` just works (optional extra).
@@ -92,7 +92,7 @@ Client:
 ```python
 import tftp
 
-client = tftp.Client("boot.example.net", blksize=1428, windowsize=16)
+client = tftp.TFTPClient("boot.example.net", blksize=1428, windowsize=16)
 result = client.download("images/vmlinuz", "vmlinuz")
 print(result.bytes, result.duration, result.negotiated)
 
@@ -105,7 +105,7 @@ Server with uploads, a bounded window and a completion hook:
 ```python
 import tftp
 
-server = tftp.Server(
+server = tftp.TFTPServer(
     "/srv/tftp",
     "::",
     69,
@@ -128,7 +128,7 @@ class Menu(tftp.FileSystemHandler):
             return io.BytesIO(b"client %s\n" % context.peer[0].encode())
         return super().open_read(context)
 
-tftp.Server(Menu("/srv/tftp")).serve_forever()
+tftp.TFTPServer(Menu("/srv/tftp")).serve_forever()
 ```
 
 Command line:
@@ -143,13 +143,13 @@ Relay, capture and asyncio:
 
 ```python
 import tftp
-from tftp.relay import Relay, RouteTable, by_subnet
+from tftp.relay import TFTPRelay, RouteTable, by_subnet
 from tftp.capture import PcapWriter, analyze
 
 # Forward requests to per-subnet boot servers, recording everything.
 with PcapWriter("relay.pcap") as pcap:
     route = RouteTable([by_subnet({"10.1.0.0/16": "10.1.0.5"})], default="10.0.0.20")
-    Relay(route, trace=pcap).serve_forever()
+    TFTPRelay(route, trace=pcap).serve_forever()
 
 # What happened in a capture (yours, or tcpdump's)?
 for transfer in analyze("boot.pcapng").transfers:
@@ -157,7 +157,7 @@ for transfer in analyze("boot.pcapng").transfers:
 
 # asyncio
 async def fetch():
-    async for chunk in tftp.aio.AsyncClient("192.0.2.1").stream("vmlinuz"):
+    async for chunk in tftp.aio.AsyncTFTPClient("192.0.2.1").stream("vmlinuz"):
         ...
 ```
 
@@ -171,14 +171,14 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 
 | Module | Purpose |
 | --- | --- |
-| `tftp.client` | `Client`, `download`, `upload` |
-| `tftp.server` | `Server`, `ServerLimits`, `FileSystemHandler`, `AtomicWriter`, `RequestContext` |
+| `tftp.client` | `TFTPClient`, `download`, `upload` |
+| `tftp.server` | `TFTPServer`, `ServerLimits`, `FileSystemHandler`, `AtomicWriter`, `TFTPRequestContext` |
 | `tftp.backends` | `MemoryHandler`, `HttpHandler`, `UpstreamHandler` (proxy), `Pipe` |
-| `tftp.relay` | `Relay` and routing helpers |
-| `tftp.aio` | `AsyncClient`, `AsyncServer` |
+| `tftp.relay` | `TFTPRelay` and routing helpers |
+| `tftp.aio` | `AsyncTFTPClient`, `AsyncTFTPServer` |
 | `tftp.capture` | trace events, `PcapWriter`, pcap/pcapng reading, `analyze`, filters |
 | `tftp.options` | `ServerOptions`, option registry, profiles, `Negotiated` |
-| `tftp.packet` | `Opcode`, `ErrorCode`, packet types, `encode_*`/`decode` |
+| `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |
 | `tftp.uri` | `tftp://` URLs |
 | `tftp.path` | `TftpPath`, `TftpUriPath` (`path` extra) |

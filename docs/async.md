@@ -4,10 +4,10 @@
 
 ```python
 import asyncio
-from tftp.aio import AsyncClient, AsyncServer
+from tftp.aio import AsyncTFTPClient, AsyncTFTPServer
 
 async def main():
-    client = AsyncClient("192.0.2.1", windowsize=8)
+    client = AsyncTFTPClient("192.0.2.1", windowsize=8)
     data = await client.get("pxelinux.0")
     await client.put("logs/boot.txt", b"ok\n")
     async for chunk in client.stream("images/large.img"):   # backpressure: a slow
@@ -28,14 +28,14 @@ class Images:
     async def open_read(self, context):
         record = await db.fetch_image(context.peer[0], context.filename)
         if record is None:
-            raise tftp.TFTPError(tftp.ErrorCode.FILE_NOT_FOUND)
+            raise tftp.TFTPError(tftp.TFTPErrorCode.FILE_NOT_FOUND)
         return await storage.open(record.path)          # an async reader
 
     async def open_write(self, context, size):
         return await storage.create(context.filename)   # an async writer
 
 async def serve():
-    async with AsyncServer(Images(), port=69) as server:
+    async with AsyncTFTPServer(Images(), port=69) as server:
         await server.serve_forever()
 ```
 

@@ -32,7 +32,7 @@ from __future__ import annotations
 import errno
 from typing import Tuple
 
-from .packet.enums import ErrorCode
+from .packet.enums import TFTPErrorCode
 
 __all__ = [
     "TFTPError",
@@ -70,7 +70,7 @@ class TFTPError(Exception):
         and a long text cut when the ERROR is encoded.
     """
 
-    def __init__(self, code: int = ErrorCode.NOT_DEFINED, message: str = "") -> None:
+    def __init__(self, code: int = TFTPErrorCode.NOT_DEFINED, message: str = "") -> None:
         if isinstance(code, bool) or not isinstance(code, int):
             raise TypeError(
                 "an error code is an int, not %s (the message is the second argument)" % type(code).__name__
@@ -80,7 +80,7 @@ class TFTPError(Exception):
         if not isinstance(message, str):
             raise TypeError("an error message is text, not %s" % type(message).__name__)
         try:
-            code = ErrorCode(code)
+            code = TFTPErrorCode(code)
         except ValueError:
             pass
         self.code = code
@@ -96,14 +96,14 @@ class TFTPError(Exception):
         return (self.code, self.message)
 
     def __str__(self) -> str:
-        name = self.code.name if isinstance(self.code, ErrorCode) else str(self.code)
+        name = self.code.name if isinstance(self.code, TFTPErrorCode) else str(self.code)
         return "%s: %s" % (name, self.message)
 
 
 class TFTPProtocolError(TFTPError):
     """The peer broke the protocol (malformed packet, bad option ack...)."""
 
-    def __init__(self, message: str, code: int = ErrorCode.ILLEGAL_OPERATION) -> None:
+    def __init__(self, message: str, code: int = TFTPErrorCode.ILLEGAL_OPERATION) -> None:
         super().__init__(code, message)
 
     def _constructor_args(self) -> Tuple[object, ...]:
@@ -135,49 +135,49 @@ class RemoteError(TFTPError):
 class FileNotFound(RemoteError):
     """ERROR 1."""
 
-    _CODE = ErrorCode.FILE_NOT_FOUND
+    _CODE = TFTPErrorCode.FILE_NOT_FOUND
 
 
 class AccessViolation(RemoteError):
     """ERROR 2."""
 
-    _CODE = ErrorCode.ACCESS_VIOLATION
+    _CODE = TFTPErrorCode.ACCESS_VIOLATION
 
 
 class DiskFull(RemoteError):
     """ERROR 3: disk full or allocation exceeded."""
 
-    _CODE = ErrorCode.DISK_FULL
+    _CODE = TFTPErrorCode.DISK_FULL
 
 
 class IllegalOperation(RemoteError):
     """ERROR 4."""
 
-    _CODE = ErrorCode.ILLEGAL_OPERATION
+    _CODE = TFTPErrorCode.ILLEGAL_OPERATION
 
 
 class UnknownTransferID(RemoteError):
     """ERROR 5."""
 
-    _CODE = ErrorCode.UNKNOWN_TID
+    _CODE = TFTPErrorCode.UNKNOWN_TID
 
 
 class FileAlreadyExists(RemoteError):
     """ERROR 6."""
 
-    _CODE = ErrorCode.FILE_EXISTS
+    _CODE = TFTPErrorCode.FILE_EXISTS
 
 
 class NoSuchUser(RemoteError):
     """ERROR 7."""
 
-    _CODE = ErrorCode.NO_SUCH_USER
+    _CODE = TFTPErrorCode.NO_SUCH_USER
 
 
 class OptionNegotiationError(RemoteError):
     """ERROR 8: the peer refused option negotiation."""
 
-    _CODE = ErrorCode.OPTION_REFUSED
+    _CODE = TFTPErrorCode.OPTION_REFUSED
 
 
 _REMOTE_CLASSES = {
@@ -203,7 +203,7 @@ class TransferTimeoutError(TFTPError, TimeoutError):
     """
 
     def __init__(self, message: str = "timed out") -> None:
-        super().__init__(ErrorCode.NOT_DEFINED, message)
+        super().__init__(TFTPErrorCode.NOT_DEFINED, message)
 
     def _constructor_args(self) -> Tuple[object, ...]:
         return (self.message,)
@@ -213,7 +213,7 @@ class TransferAbortedError(TFTPError):
     """Cancelled locally (``abort()``, a server shutting down)."""
 
     def __init__(self, message: str = "transfer aborted") -> None:
-        super().__init__(ErrorCode.NOT_DEFINED, message)
+        super().__init__(TFTPErrorCode.NOT_DEFINED, message)
 
     def _constructor_args(self) -> Tuple[object, ...]:
         return (self.message,)
@@ -226,7 +226,7 @@ class TFTPValueError(TFTPError, ValueError):
     Also a :class:`ValueError`, so ``except ValueError`` keeps catching it.
     """
 
-    _CODE = ErrorCode.NOT_DEFINED
+    _CODE = TFTPErrorCode.NOT_DEFINED
 
     def __init__(self, message: str = "") -> None:
         super().__init__(self._CODE, message)
@@ -244,7 +244,7 @@ class TFTPDecodeError(TFTPValueError):
     Carries ERROR 4 (illegal operation), the code a peer is answered with.
     """
 
-    _CODE = ErrorCode.ILLEGAL_OPERATION
+    _CODE = TFTPErrorCode.ILLEGAL_OPERATION
 
 
 class CaptureFormatError(TFTPValueError):
@@ -267,15 +267,15 @@ class WouldBlock(BlockingIOError):
 
 
 _MESSAGES = {
-    ErrorCode.NOT_DEFINED: "error",
-    ErrorCode.FILE_NOT_FOUND: "file not found",
-    ErrorCode.ACCESS_VIOLATION: "access violation",
-    ErrorCode.DISK_FULL: "disk full or allocation exceeded",
-    ErrorCode.ILLEGAL_OPERATION: "illegal TFTP operation",
-    ErrorCode.UNKNOWN_TID: "unknown transfer ID",
-    ErrorCode.FILE_EXISTS: "file already exists",
-    ErrorCode.NO_SUCH_USER: "no such user",
-    ErrorCode.OPTION_REFUSED: "option negotiation refused",
+    TFTPErrorCode.NOT_DEFINED: "error",
+    TFTPErrorCode.FILE_NOT_FOUND: "file not found",
+    TFTPErrorCode.ACCESS_VIOLATION: "access violation",
+    TFTPErrorCode.DISK_FULL: "disk full or allocation exceeded",
+    TFTPErrorCode.ILLEGAL_OPERATION: "illegal TFTP operation",
+    TFTPErrorCode.UNKNOWN_TID: "unknown transfer ID",
+    TFTPErrorCode.FILE_EXISTS: "file already exists",
+    TFTPErrorCode.NO_SUCH_USER: "no such user",
+    TFTPErrorCode.OPTION_REFUSED: "option negotiation refused",
 }
 
 
@@ -284,18 +284,18 @@ def _default_message(code: int) -> str:
 
 
 _ERRNO_CODES = {
-    errno.ENOENT: ErrorCode.FILE_NOT_FOUND,
-    errno.ENOTDIR: ErrorCode.FILE_NOT_FOUND,
-    errno.EISDIR: ErrorCode.ACCESS_VIOLATION,
-    errno.EACCES: ErrorCode.ACCESS_VIOLATION,
-    errno.EPERM: ErrorCode.ACCESS_VIOLATION,
-    errno.EROFS: ErrorCode.ACCESS_VIOLATION,
-    errno.EEXIST: ErrorCode.FILE_EXISTS,
-    errno.ENOSPC: ErrorCode.DISK_FULL,
-    errno.EFBIG: ErrorCode.DISK_FULL,
+    errno.ENOENT: TFTPErrorCode.FILE_NOT_FOUND,
+    errno.ENOTDIR: TFTPErrorCode.FILE_NOT_FOUND,
+    errno.EISDIR: TFTPErrorCode.ACCESS_VIOLATION,
+    errno.EACCES: TFTPErrorCode.ACCESS_VIOLATION,
+    errno.EPERM: TFTPErrorCode.ACCESS_VIOLATION,
+    errno.EROFS: TFTPErrorCode.ACCESS_VIOLATION,
+    errno.EEXIST: TFTPErrorCode.FILE_EXISTS,
+    errno.ENOSPC: TFTPErrorCode.DISK_FULL,
+    errno.EFBIG: TFTPErrorCode.DISK_FULL,
 }
 if hasattr(errno, "EDQUOT"):
-    _ERRNO_CODES[errno.EDQUOT] = ErrorCode.DISK_FULL
+    _ERRNO_CODES[errno.EDQUOT] = TFTPErrorCode.DISK_FULL
 
 
 def error_for_exception(exc: BaseException) -> TFTPError:
@@ -312,12 +312,12 @@ def error_for_exception(exc: BaseException) -> TFTPError:
         code = _ERRNO_CODES.get(exc.errno or 0)
         if code is None:
             if isinstance(exc, FileNotFoundError):
-                code = ErrorCode.FILE_NOT_FOUND
+                code = TFTPErrorCode.FILE_NOT_FOUND
             elif isinstance(exc, PermissionError):
-                code = ErrorCode.ACCESS_VIOLATION
+                code = TFTPErrorCode.ACCESS_VIOLATION
             elif isinstance(exc, FileExistsError):
-                code = ErrorCode.FILE_EXISTS
+                code = TFTPErrorCode.FILE_EXISTS
             else:
-                code = ErrorCode.NOT_DEFINED
+                code = TFTPErrorCode.NOT_DEFINED
         return TFTPError(code)
-    return TFTPError(ErrorCode.NOT_DEFINED)
+    return TFTPError(TFTPErrorCode.NOT_DEFINED)

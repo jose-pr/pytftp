@@ -9,7 +9,7 @@ download instead of the proxy buffering the file.
 Use it when the two sides need different settings (an old boot ROM at 512
 bytes in front of a fast upstream at 8 KiB windows), or to put TFTP in front
 of another TFTP server with policy in between. To forward packets unchanged,
-use :class:`tftp.relay.Relay` instead.
+use :class:`tftp.relay.TFTPRelay` instead.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import threading
 from typing import Any, Callable, Mapping, Optional, Tuple, Union
 
 from ..exceptions import RemoteError, TFTPError
-from ..packet import ErrorCode
+from ..packet import TFTPErrorCode
 from .pipe import Pipe
 
 __all__ = ["UpstreamHandler"]
@@ -57,8 +57,8 @@ def _relayable(exc: BaseException) -> TFTPError:
     if isinstance(exc, RemoteError):
         return TFTPError(exc.code, exc.message)  # same code, same text
     if isinstance(exc, TFTPError):
-        return TFTPError(ErrorCode.NOT_DEFINED, "upstream: %s" % exc.message)
-    return TFTPError(ErrorCode.NOT_DEFINED, "upstream unreachable")
+        return TFTPError(TFTPErrorCode.NOT_DEFINED, "upstream: %s" % exc.message)
+    return TFTPError(TFTPErrorCode.NOT_DEFINED, "upstream unreachable")
 
 
 class UpstreamHandler:
@@ -68,7 +68,7 @@ class UpstreamHandler:
         callable ``upstream(context)`` returning one of those -- route by
         client address, filename, the interface the request arrived on.
     :param client_options: keyword arguments for the upstream
-        :class:`tftp.Client` (``blksize``, ``windowsize``, ``timeout``...).
+        :class:`tftp.TFTPClient` (``blksize``, ``windowsize``, ``timeout``...).
     :param buffer: bytes buffered between the two transfers.
     :param stall_timeout: seconds one side may wait on the other before the
         transfer is abandoned.
@@ -97,7 +97,7 @@ class UpstreamHandler:
         self.writable = writable
 
     def _client(self, context: Any, on_negotiated: Callable[..., Any]):
-        from ..client import Client
+        from ..client import TFTPClient
 
         target = self.upstream(context) if callable(self.upstream) else self.upstream
         if isinstance(target, tuple):
@@ -106,7 +106,7 @@ class UpstreamHandler:
             host, port = target, 69
         options = dict(self.client_options)
         options["on_negotiated"] = on_negotiated
-        return Client(host, port, **options)
+        return TFTPClient(host, port, **options)
 
     def _start(self, context: Any, work: Callable[[Any], None], pipe: Pipe) -> Pipe:
         """Run ``work(client)`` in a thread; return once the upstream has answered."""
@@ -138,7 +138,7 @@ class UpstreamHandler:
         threading.Thread(target=run, name="tftp-upstream", daemon=True).start()
         if not answered.wait(self.stall_timeout):
             pipe.abort()
-            raise TFTPError(ErrorCode.NOT_DEFINED, "upstream did not answer")
+            raise TFTPError(TFTPErrorCode.NOT_DEFINED, "upstream did not answer")
         if failure and not pipe._upload and pipe.size is None and not pipe._buffer:
             raise _relayable(failure[0])  # refused before any data: same ERROR
         if failure and pipe._upload:
@@ -154,7 +154,7 @@ class UpstreamHandler:
 
     def open_write(self, context: Any, size: Optional[int]) -> Pipe:
         if not self.writable:
-            raise TFTPError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
+            raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION, "server is read-only")
         pipe = Pipe(self.buffer, size).for_upload()
         source = _PipeSource(pipe, self.stall_timeout)
         return self._start(

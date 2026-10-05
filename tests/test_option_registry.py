@@ -187,7 +187,7 @@ def test_client_blksize_mtu(root, make_server):
     result = client_for(server, blksize="mtu").download("big.bin", io.BytesIO())
     assert 8 <= result.negotiated.blksize <= 65464
     with pytest.raises(ValueError):
-        tftp.Client("127.0.0.1", blksize="huge")
+        tftp.TFTPClient("127.0.0.1", blksize="huge")
 
 
 def test_server_fit_mtu_end_to_end(root, make_server):

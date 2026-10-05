@@ -72,7 +72,7 @@ class Lab:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        self.server = tftp.Server(
+        self.server = tftp.TFTPServer(
             self.workdir,
             "0.0.0.0",
             69,

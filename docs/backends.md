@@ -8,7 +8,7 @@ Besides a directory (`FileSystemHandler`), `tftp.backends` has:
 from tftp.backends import MemoryHandler
 
 files = MemoryHandler({"pxelinux.cfg/default": b"DEFAULT linux\n"}, writable=True)
-tftp.Server(files).serve_forever()       # uploads land in files.files when complete
+tftp.TFTPServer(files).serve_forever()       # uploads land in files.files when complete
 ```
 
 ## HTTP(S) gateway
@@ -18,7 +18,7 @@ Boot ROMs speak TFTP; images often live behind HTTP.
 ```python
 from tftp.backends import HttpHandler
 
-tftp.Server(HttpHandler("https://images.example.com/pxe/")).serve_forever()
+tftp.TFTPServer(HttpHandler("https://images.example.com/pxe/")).serve_forever()
 ```
 
 `boot/vmlinuz` is fetched from `https://images.example.com/pxe/boot/vmlinuz`
@@ -34,7 +34,7 @@ an `opener` for proxies and TLS settings. Only the standard library is used.
 from tftp.backends import UpstreamHandler
 
 proxy = UpstreamHandler("10.0.0.20", client_options={"blksize": 8192, "windowsize": 16})
-tftp.Server(proxy, options=tftp.LEGACY.server).serve_forever()
+tftp.TFTPServer(proxy, options=tftp.LEGACY.server).serve_forever()
 ```
 
 Each side negotiates on its own, and they are joined by a bounded buffer: a

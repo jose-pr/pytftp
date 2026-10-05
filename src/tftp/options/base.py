@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping, Optional
 
 from ..exceptions import TFTPProtocolError
-from ..packet import ErrorCode
+from ..packet import TFTPErrorCode
 
 __all__ = [
     "DEFAULT_BLKSIZE",
@@ -79,7 +79,7 @@ def parse_int(text: str) -> Optional[int]:
 
 def refuse(message: str) -> TFTPProtocolError:
     """The ERROR 8 a client sends for an OACK it cannot accept."""
-    return TFTPProtocolError(message, ErrorCode.OPTION_REFUSED)
+    return TFTPProtocolError(message, TFTPErrorCode.OPTION_REFUSED)
 
 
 class ServerContext:

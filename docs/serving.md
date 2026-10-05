@@ -5,7 +5,7 @@
 ```python
 import tftp
 
-server = tftp.Server("/srv/tftp", "::", 69, writable=True, overwrite=False)
+server = tftp.TFTPServer("/srv/tftp", "::", 69, writable=True, overwrite=False)
 server.serve_forever()
 ```
 
@@ -80,7 +80,7 @@ Every transfer runs on its own UDP port. Pin them to a range a firewall can
 allow:
 
 ```python
-tftp.Server("/srv/tftp", port_range=(50000, 50100))
+tftp.TFTPServer("/srv/tftp", port_range=(50000, 50100))
 ```
 
 (`pytftp serve --port-range 50000:50100`; the relay takes the same.) A
@@ -89,7 +89,7 @@ request arriving with every port in use is answered "server busy".
 ## One network adapter
 
 ```python
-tftp.Server("/srv/tftp", interface="eth0")   # eth0's IPv4 address
+tftp.TFTPServer("/srv/tftp", interface="eth0")   # eth0's IPv4 address
 ```
 
 `interface` takes a name, a `netimps.Interface`, a MAC or one of the
@@ -109,7 +109,7 @@ modification times; see [Paths](paths.md).
 def report(result):
     print(result.operation, result.filename, result.peer[0], result.bytes, result.error or "ok")
 
-tftp.Server("/srv/tftp", on_complete=report).serve_forever()
+tftp.TFTPServer("/srv/tftp", on_complete=report).serve_forever()
 ```
 
 `on_complete` sees every transfer, including refused and failed ones.
@@ -117,7 +117,7 @@ tftp.Server("/srv/tftp", on_complete=report).serve_forever()
 ## Running in the background
 
 ```python
-server = tftp.Server("/srv/tftp", port=0).start()   # daemon thread
+server = tftp.TFTPServer("/srv/tftp", port=0).start()   # daemon thread
 print(server.server_address)
 ...
 server.close()

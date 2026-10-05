@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from .codec import (
     FILENAME_ENCODING,
-    Ack,
-    Data,
-    Error,
-    OptionAck,
-    Packet,
-    Request,
+    AckPacket,
+    DataPacket,
+    ErrorPacket,
+    OptionAckPacket,
+    TFTPPacket,
+    RequestPacket,
     decode,
     encode_ack,
     encode_data,
@@ -17,17 +17,17 @@ from .codec import (
     encode_oack,
     encode_request,
 )
-from .enums import ErrorCode, Opcode
+from .enums import TFTPErrorCode, TFTPOpcode
 
 __all__ = [
-    "Opcode",
-    "ErrorCode",
-    "Request",
-    "Data",
-    "Ack",
-    "Error",
-    "OptionAck",
-    "Packet",
+    "TFTPOpcode",
+    "TFTPErrorCode",
+    "RequestPacket",
+    "DataPacket",
+    "AckPacket",
+    "ErrorPacket",
+    "OptionAckPacket",
+    "TFTPPacket",
     "decode",
     "encode_request",
     "encode_data",

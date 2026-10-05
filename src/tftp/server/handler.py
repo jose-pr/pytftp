@@ -17,14 +17,14 @@ import tempfile
 from typing import Any, BinaryIO, Optional, Tuple
 
 from ..exceptions import TFTPError
-from ..packet import ErrorCode, Request
+from ..packet import TFTPErrorCode, RequestPacket
 
 try:  # Python 3.8+: typing.Protocol
     from typing import Protocol
 except ImportError:  # pragma: no cover
     Protocol = object  # type: ignore[assignment,misc]
 
-__all__ = ["Handler", "RequestContext", "FileSystemHandler", "AtomicWriter"]
+__all__ = ["TFTPHandler", "TFTPRequestContext", "FileSystemHandler", "AtomicWriter"]
 
 _WINDOWS = sys.platform == "win32"
 #: Read buffer of a served file: an open file costs this much until it ends,
@@ -35,13 +35,13 @@ _RESERVED = frozenset(
 )
 
 
-class RequestContext:
+class TFTPRequestContext:
     """Everything known about a request when a handler is asked to open it.
 
     :ivar request: the parsed RRQ/WRQ (``filename``, ``mode``, ``options``).
     :ivar peer: the client's ``(host, port, ...)``.
     :ivar local_address: the address the request was sent to, when the
-        platform reports it (see ``Server.supports_pktinfo``), else ``None``.
+        platform reports it (see ``TFTPServer.supports_pktinfo``), else ``None``.
     :ivar interface_index: the interface it arrived on, or ``0``.
     :ivar interface: that interface as a ``netimps.Interface`` (name,
         addresses, MTU), or ``None`` when unknown.
@@ -54,7 +54,7 @@ class RequestContext:
 
     def __init__(
         self,
-        request: Request,
+        request: RequestPacket,
         peer: Tuple[Any, ...],
         local_address: Optional[str] = None,
         interface_index: int = 0,
@@ -66,7 +66,7 @@ class RequestContext:
         self.interface: Any = None
         self.listing = False
 
-    def with_filename(self, filename: str) -> "RequestContext":
+    def with_filename(self, filename: str) -> "TFTPRequestContext":
         """A copy of this context for a request naming ``filename`` instead.
 
         Everything else is carried over (the listing flag, the interface), so
@@ -89,7 +89,7 @@ class RequestContext:
         return self.request.options
 
     def __repr__(self) -> str:
-        return "RequestContext(%s %r from %s to %s)" % (
+        return "TFTPRequestContext(%s %r from %s to %s)" % (
             "RRQ" if self.request.is_read else "WRQ",
             self.filename,
             self.peer[:2],
@@ -97,7 +97,7 @@ class RequestContext:
         )
 
 
-class Handler(Protocol):
+class TFTPHandler(Protocol):
     """What a server needs from a handler.
 
     ``open_read`` returns a binary reader (``readinto`` or ``read``, plus
@@ -118,9 +118,9 @@ class Handler(Protocol):
     long.
     """
 
-    def open_read(self, context: RequestContext) -> BinaryIO: ...
+    def open_read(self, context: TFTPRequestContext) -> BinaryIO: ...
 
-    def open_write(self, context: RequestContext, size: Optional[int]) -> Any: ...
+    def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> Any: ...
 
 
 class AtomicWriter:
@@ -150,7 +150,7 @@ class AtomicWriter:
         try:
             self._file.close()
             if not self.overwrite and os.path.exists(self.path):
-                raise TFTPError(ErrorCode.FILE_EXISTS)
+                raise TFTPError(TFTPErrorCode.FILE_EXISTS)
             os.replace(self._tmp, self.path)
         except BaseException:
             self._discard()
@@ -219,13 +219,13 @@ class FileSystemHandler:
             if part in ("", "."):
                 continue
             if part == ".." or "\0" in part:
-                raise TFTPError(ErrorCode.ACCESS_VIOLATION)
+                raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION)
             if _WINDOWS:
                 if ":" in part or part.split(".", 1)[0].upper() in _RESERVED:
-                    raise TFTPError(ErrorCode.ACCESS_VIOLATION)
+                    raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION)
             parts.append(part)
         if not parts:
-            raise TFTPError(ErrorCode.FILE_NOT_FOUND)
+            raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND)
         path = os.path.join(self.root, *parts)
         real = os.path.realpath(path)
         try:
@@ -233,10 +233,10 @@ class FileSystemHandler:
         except ValueError:  # different drives on Windows
             inside = False
         if not inside:
-            raise TFTPError(ErrorCode.ACCESS_VIOLATION)
+            raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION)
         return real
 
-    def open_read(self, context: RequestContext) -> BinaryIO:
+    def open_read(self, context: TFTPRequestContext) -> BinaryIO:
         if context.listing and _is_root(context.filename, self.backslash):
             path = self.root
         else:
@@ -246,29 +246,29 @@ class FileSystemHandler:
 
             return DirectoryListing(path, self.root)  # type: ignore[return-value]
         if not os.path.isfile(path):
-            raise TFTPError(ErrorCode.FILE_NOT_FOUND)
+            raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND)
         return open(path, "rb", buffering=_READ_BUFFER)
 
-    def open_write(self, context: RequestContext, size: Optional[int]) -> Any:
+    def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> Any:
         if not self.writable:
-            raise TFTPError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
+            raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION, "server is read-only")
         path = self.resolve(context.filename)
         if os.path.isdir(path):
-            raise TFTPError(ErrorCode.ACCESS_VIOLATION)
+            raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION)
         exists = os.path.exists(path)
         if exists and not self.overwrite:
-            raise TFTPError(ErrorCode.FILE_EXISTS)
+            raise TFTPError(TFTPErrorCode.FILE_EXISTS)
         if not exists and not self.create:
-            raise TFTPError(ErrorCode.FILE_NOT_FOUND)
+            raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND)
         directory = os.path.dirname(path)
         if not os.path.isdir(directory):
-            raise TFTPError(ErrorCode.FILE_NOT_FOUND, "directory not found")
+            raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND, "directory not found")
         if size is not None:
             if self.max_upload is not None and size > self.max_upload:
-                raise TFTPError(ErrorCode.DISK_FULL, "file too large")
+                raise TFTPError(TFTPErrorCode.DISK_FULL, "file too large")
             try:
                 if shutil.disk_usage(directory).free < size:
-                    raise TFTPError(ErrorCode.DISK_FULL)
+                    raise TFTPError(TFTPErrorCode.DISK_FULL)
             except OSError:
                 pass
         writer = AtomicWriter(path, overwrite=self.overwrite)
@@ -294,7 +294,7 @@ class _Capped:
     def write(self, data) -> int:
         self._left -= len(data)
         if self._left < 0:
-            raise TFTPError(ErrorCode.DISK_FULL, "file too large")
+            raise TFTPError(TFTPErrorCode.DISK_FULL, "file too large")
         return self._inner.write(data)
 
     def close(self) -> None:

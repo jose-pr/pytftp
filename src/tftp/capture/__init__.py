@@ -2,7 +2,7 @@
 
 Three sources of :class:`PacketEvent`:
 
-- ``trace=`` hooks on ``Client``, ``Server`` and ``Relay`` -- what this
+- ``trace=`` hooks on ``TFTPClient``, ``TFTPServer`` and ``TFTPRelay`` -- what this
   library sent and received, with session ids;
 - pcap/pcapng captures (:func:`read_datagrams` + :class:`FlowTracker`, or
   :func:`analyze`), from a file or a live ``tcpdump -w -`` pipe;

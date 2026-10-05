@@ -82,7 +82,7 @@ def test_serve_end_to_end(root, tmp_path):
             if match:
                 port = int(match.group(1))
         assert port, "server never reported its port"
-        client = tftp.Client("127.0.0.1", port)
+        client = tftp.TFTPClient("127.0.0.1", port)
         assert client.get("one.bin") == b"x"
         report = json.loads(proc.stdout.readline())
         assert report["ok"] and report["filename"] == "one.bin" and report["operation"] == "read"
@@ -159,14 +159,14 @@ def test_relay_and_proxy_commands(root, make_server):
     target = "127.0.0.1:%d" % upstream.server_address[1]
     relay, relay_port = _serve_subprocess(["relay", target, "-l", "127.0.0.1", "-p", "0", "--json"])
     try:
-        assert tftp.Client("127.0.0.1", relay_port).get("513.bin") == (root / "513.bin").read_bytes()
+        assert tftp.TFTPClient("127.0.0.1", relay_port).get("513.bin") == (root / "513.bin").read_bytes()
         summary = json.loads(relay.stdout.readline())
         assert summary["filename"] == "513.bin" and summary["reason"] == "complete"
     finally:
         _stop(relay)
     proxy, proxy_port = _serve_subprocess(["serve", "--upstream", target, "-l", "127.0.0.1", "-p", "0"])
     try:
-        client = tftp.Client("127.0.0.1", proxy_port, blksize=None)
+        client = tftp.TFTPClient("127.0.0.1", proxy_port, blksize=None)
         assert client.get("big.bin") == (root / "big.bin").read_bytes()
     finally:
         _stop(proxy)
@@ -185,7 +185,7 @@ def test_capture_command(root, make_server, tmp_path_factory, capsys):
     with PcapWriter(pcap) as writer:
         server = make_server(root, trace=writer)
         port = _port(server)
-        client_for_cli = __import__("tftp").Client("127.0.0.1", int(port))
+        client_for_cli = __import__("tftp").TFTPClient("127.0.0.1", int(port))
         client_for_cli.get("1428x3.bin")
         try:
             client_for_cli.get("missing")
@@ -225,7 +225,7 @@ def test_serve_deployment_flags(root):
     proc, port = _serve_subprocess(args)
     try:
         events = []
-        client = tftp.Client("127.0.0.1", port, trace=events.append)
+        client = tftp.TFTPClient("127.0.0.1", port, trace=events.append)
         assert client.get("pxelinux/menu.cfg") == b"per-client menu"
         assert all(45100 <= e.remote[1] <= 45120 for e in events if e.direction == "in")
     finally:
@@ -270,7 +270,7 @@ def test_serve_on_interface(root):
         pytest.skip("no loopback interface reported")
     proc, port = _serve_subprocess(["serve", str(root), "--interface", iface.name, "-p", "0"])
     try:
-        assert tftp.Client(str(iface.primary_ip(ipv6=False).ip), port).get("one.bin") == b"x"
+        assert tftp.TFTPClient(str(iface.primary_ip(ipv6=False).ip), port).get("one.bin") == b"x"
     finally:
         _stop(proc)
 
@@ -287,7 +287,7 @@ def test_serve_remap_alone_on_a_plain_directory(root):
         ["serve", str(root), "-l", "127.0.0.1", "-p", "0", "--remap", "^alias=real", "--listing"]
     )
     try:
-        client = tftp.Client("127.0.0.1", port)
+        client = tftp.TFTPClient("127.0.0.1", port)
         assert client.get("alias/a.txt") == b"remapped"  # a name a rule rewrites
         assert client.get("one.bin") == b"x"  # a name no rule touches
         assert [entry.name for entry in client.listdir("real")] == ["a.txt"]
@@ -307,7 +307,7 @@ def test_serve_per_client_and_ignore_case_each_on_their_own(root, flag, name, ex
     (root / "127.0.0.1" / "Own.cfg").write_bytes(b"own")
     proc, port = _serve_subprocess(["serve", str(root), "-l", "127.0.0.1", "-p", "0", flag])
     try:
-        assert tftp.Client("127.0.0.1", port).get(name) == expected
+        assert tftp.TFTPClient("127.0.0.1", port).get(name) == expected
     finally:
         _stop(proc)
 

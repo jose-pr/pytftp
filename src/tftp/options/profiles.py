@@ -1,10 +1,10 @@
 """Named compatibility profiles: one switch for a coherent set of behaviours.
 
 Each profile carries a server policy (``.server``, a :class:`ServerOptions`)
-and client settings (``.client``, keyword arguments for ``Client``)::
+and client settings (``.client``, keyword arguments for ``TFTPClient``)::
 
-    tftp.Server("/srv/tftp", options=tftp.PXE.server)
-    tftp.Client("192.0.2.1", **tftp.LEGACY.client)
+    tftp.TFTPServer("/srv/tftp", options=tftp.PXE.server)
+    tftp.TFTPClient("192.0.2.1", **tftp.LEGACY.client)
 
 ========  ===================================================================
 profile   for
@@ -41,7 +41,7 @@ class Profile:
 
     @property
     def client(self) -> Dict[str, Any]:
-        """Keyword arguments for ``Client`` (a fresh dict each time)."""
+        """Keyword arguments for ``TFTPClient`` (a fresh dict each time)."""
         return dict(self._client)
 
     def __repr__(self) -> str:

@@ -15,13 +15,13 @@ from typing import Any, NamedTuple, Optional, Tuple
 
 from ..options import DEFAULT_BLKSIZE
 from ..exceptions import TFTPDecodeError
-from ..packet import Opcode, Request, decode
+from ..packet import TFTPOpcode, RequestPacket, decode
 
 __all__ = ["RelaySession", "RelaySummary"]
 
 
 class RelaySummary(NamedTuple):
-    """What :class:`Relay` reports when a relayed transfer ends.
+    """What :class:`TFTPRelay` reports when a relayed transfer ends.
 
     ``reason`` is ``"complete"``, ``"error"`` (an ERROR passed through, see
     ``error``), ``"idle"``, ``"lifetime"`` or ``"shutdown"``.
@@ -73,7 +73,7 @@ class RelaySession:
         down: socket.socket,
         up: socket.socket,
         upstream: Tuple[Any, ...],
-        request: Request,
+        request: RequestPacket,
         context: Any,
         now: float,
     ) -> None:
@@ -116,7 +116,7 @@ class RelaySession:
         if len(data) < 4 or data[0]:
             return
         op = data[1]
-        if op == Opcode.DATA:
+        if op == TFTPOpcode.DATA:
             size = len(data) - 4
             if from_client:
                 self.bytes_from_client += size
@@ -124,12 +124,12 @@ class RelaySession:
                 self.bytes_to_client += size
             if size < self.blksize:
                 self.final_block = struct.unpack_from("!H", data, 2)[0]
-        elif op == Opcode.ACK:
+        elif op == TFTPOpcode.ACK:
             if self.final_block is not None and struct.unpack_from("!H", data, 2)[0] == self.final_block:
                 if self.closing_at is None:
                     self.reason = "complete"
                 self.closing_at = now + linger
-        elif op == Opcode.OACK and not from_client:
+        elif op == TFTPOpcode.OACK and not from_client:
             try:
                 options = decode(data).options  # type: ignore[union-attr]
             except TFTPDecodeError:
@@ -138,7 +138,7 @@ class RelaySession:
                 value = options.get(name, "")
                 if value.strip().isdigit():
                     self.blksize = int(value)
-        elif op == Opcode.ERROR:
+        elif op == TFTPOpcode.ERROR:
             try:
                 packet = decode(data)
                 self.error = (int(packet.code), packet.message)  # type: ignore[union-attr]

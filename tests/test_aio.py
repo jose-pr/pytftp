@@ -11,7 +11,7 @@ import pytest
 
 import tftp
 from conftest import client_for
-from tftp.aio import AsyncClient, AsyncServer
+from tftp.aio import AsyncTFTPClient, AsyncTFTPServer
 from tftp.backends import HttpHandler, MemoryHandler
 
 
@@ -32,10 +32,10 @@ def async_client(server, **kwargs):
     kwargs.setdefault("retries", 3)
     address = server.server_address
     host = address[0] if address[0] not in ("::", "0.0.0.0") else "127.0.0.1"
-    return AsyncClient(host, address[1], **kwargs)
+    return AsyncTFTPClient(host, address[1], **kwargs)
 
 
-# -- AsyncClient against the threaded server -------------------------------------------------------
+# -- AsyncTFTPClient against the threaded server -------------------------------------------------------
 
 
 @pytest.mark.parametrize("shape", [{}, {"blksize": None}, {"blksize": 8192, "windowsize": 8}])
@@ -119,7 +119,7 @@ def test_async_client_timeout_and_cancel(root, make_server):
     async def main():
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
             silent.bind(("127.0.0.1", 0))
-            client = AsyncClient("127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=2)
+            client = AsyncTFTPClient("127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=2)
             with pytest.raises(tftp.TransferTimeoutError):
                 await client.get("x")
         server = make_server(root, timeout=2)
@@ -145,7 +145,7 @@ def test_async_client_trace_and_fallback(root, make_server):
     from tftp import encode_data, encode_error
 
     def script(packet):
-        if isinstance(packet, tftp.Request):
+        if isinstance(packet, tftp.RequestPacket):
             return [encode_error(8)] if packet.options else [encode_data(1, b"plain")]
         return []
 
@@ -153,7 +153,7 @@ def test_async_client_trace_and_fallback(root, make_server):
     events = []
 
     async def main():
-        client = AsyncClient(*fake.address, timeout=0.5, trace=events.append)
+        client = AsyncTFTPClient(*fake.address, timeout=0.5, trace=events.append)
         assert await client.get("f") == b"plain"
 
     try:
@@ -164,15 +164,15 @@ def test_async_client_trace_and_fallback(root, make_server):
     assert {e.role for e in events} == {"client"}
 
 
-# -- AsyncServer ---------------------------------------------------------------------------------------
+# -- AsyncTFTPServer ---------------------------------------------------------------------------------------
 
 
 def serve(handler, coro_factory, loop_factory=None, **kwargs):
-    """Run an AsyncServer and the test coroutine on one loop."""
+    """Run an AsyncTFTPServer and the test coroutine on one loop."""
 
     async def main():
         kwargs.setdefault("timeout", 0.5)
-        async with AsyncServer(handler, "127.0.0.1", 0, **kwargs) as server:
+        async with AsyncTFTPServer(handler, "127.0.0.1", 0, **kwargs) as server:
             await server.start()
             await coro_factory(server)
 
@@ -203,7 +203,7 @@ def test_async_handler_and_async_streams():
         async def open_read(self, context):
             await asyncio.sleep(0.01)  # e.g. an async database lookup
             if context.filename == "gone":
-                raise tftp.TFTPError(tftp.ErrorCode.FILE_NOT_FOUND, "async says no")
+                raise tftp.TFTPError(tftp.TFTPErrorCode.FILE_NOT_FOUND, "async says no")
             return AsyncSource(b"generated:" + context.filename.encode() * 1000)
 
         async def open_write(self, context, size):
@@ -287,7 +287,7 @@ def test_async_server_shutdown_aborts_transfers(root):
         raw.settimeout(2)
         raw.bind(("127.0.0.1", 0))
         try:
-            request = tftp.encode_request(tftp.Opcode.RRQ, "big.bin")
+            request = tftp.encode_request(tftp.TFTPOpcode.RRQ, "big.bin")
             raw.sendto(request, server.server_address)
             await loop.run_in_executor(None, raw.recvfrom, 2048)  # DATA 1 / OACK
             server.shutdown()
@@ -356,9 +356,9 @@ def test_async_client_hears_a_server_named_by_a_link_local_address_with_its_zone
     link_local, loop_factory, strict
 ):
     async def main():
-        async with AsyncServer(MemoryHandler({"f": b"link-local"}), link_local, 0, timeout=0.5) as server:
+        async with AsyncTFTPServer(MemoryHandler({"f": b"link-local"}), link_local, 0, timeout=0.5) as server:
             await server.start()
-            client = AsyncClient(
+            client = AsyncTFTPClient(
                 link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=strict
             )
             assert await client.get("f") == b"link-local"
@@ -374,7 +374,7 @@ def test_a_send_the_host_refuses_ends_the_request_and_an_icmp_report_does_not():
 
     async def main():
         loop = asyncio.get_running_loop()
-        driver = _Transfer(AsyncClient("127.0.0.1", 9), loop)
+        driver = _Transfer(AsyncTFTPClient("127.0.0.1", 9), loop)
         protocol = _Protocol(driver)
         protocol.error_received(ConnectionRefusedError(errno.ECONNREFUSED, "port closed"))
         protocol.error_received(ConnectionResetError(10054, "ICMP port unreachable"))

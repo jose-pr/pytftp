@@ -49,7 +49,7 @@ class MemoryHandler:
 
 
 def serve(payload: bytes, host: str, ports) -> None:
-    with tftp.Server(MemoryHandler(payload), host, 0, writable=True) as server:
+    with tftp.TFTPServer(MemoryHandler(payload), host, 0, writable=True) as server:
         ports.put(server.server_address[1])
         server.serve_forever()
 
@@ -84,7 +84,7 @@ def main() -> int:
     port = ports.get(timeout=30)
     try:
         for name, blksize, windowsize in CASES:
-            client = tftp.Client(args.host, port, blksize=blksize, windowsize=windowsize, timeout=1.0)
+            client = tftp.TFTPClient(args.host, port, blksize=blksize, windowsize=windowsize, timeout=1.0)
 
             def download():
                 sink = io.BytesIO()

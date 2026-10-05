@@ -26,10 +26,10 @@ class BootMenu(tftp.FileSystemHandler):
         return super().open_read(context)
 
     def open_write(self, context, size):
-        raise tftp.TFTPError(tftp.ErrorCode.ACCESS_VIOLATION, "read-only server")
+        raise tftp.TFTPError(tftp.TFTPErrorCode.ACCESS_VIOLATION, "read-only server")
 
 
 root = sys.argv[1] if len(sys.argv) > 1 else "."
 port = int(sys.argv[2]) if len(sys.argv) > 2 else 69
-with tftp.Server(BootMenu(root), "::", port) as server:
+with tftp.TFTPServer(BootMenu(root), "::", port) as server:
     server.serve_forever()
