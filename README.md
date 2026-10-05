@@ -32,8 +32,9 @@ with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 - **Fast** — windowed transfers move hundreds of MiB/s over loopback in pure
   Python (see [benchmarks](https://github.com/jose-pr/pytftp/blob/main/benchmarks/README.md)); the hot path reads into
   preallocated buffers and keeps a sent window in memory instead of re-reading.
-- **Correct under loss** — Sorcerer's Apprentice fix, exponential backoff,
-  gap detection inside a window, repeated OACKs tolerated, ERROR 5 for stray
+- **Correct under loss** — Sorcerer's Apprentice fix (with a window, one
+  duplicated, lost or late ACK costs at most one window of DATA, never every
+  window after it), exponential backoff, gap detection inside a window, repeated OACKs tolerated, ERROR 5 for stray
   packets without disturbing the transfer, dallying on the last ACK. The
   engine is tested over a simulated lossy link and fuzzed.
 - **IPv4 and IPv6** — dual-stack listening by default; v4 clients are served

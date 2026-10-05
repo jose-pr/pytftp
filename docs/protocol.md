@@ -75,9 +75,14 @@ directory then reads as "file not found". `Client.stat()`, `Client.listdir()`,
   tolerated: a downloading client re-acknowledges, an uploading one waits for
   its own timeout.
 - **Windows**: the receiver acknowledges every `windowsize` blocks. On a gap
-  it immediately acknowledges the last block it has, once per gap, and the
-  sender restarts right after it. The sender keeps the window in memory, so
-  a resend never re-reads the source.
+  it acknowledges the last block it has in order, twice at most per gap (the
+  first report may move the sender's window on; the second asks for the blocks
+  from the hole), and once for a run of blocks it already has. An ACK that
+  moves the window sends only the blocks that now fit; a duplicate ACK or a
+  timeout resends the blocks in flight, and an ACK resends them at most once
+  per two windows of progress, so one duplicated, lost or late ACK costs one
+  window of DATA and not every window after it. The sender keeps the window
+  in memory, so a resend never re-reads the source.
 - **Stray packets**: anything from an address or port other than the peer's
   gets ERROR 5 and is otherwise ignored.
 - **Dallying**: the server keeps a finished upload open for one timeout to

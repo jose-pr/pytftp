@@ -40,7 +40,7 @@ class Receiver(Transfer):
         "_expected",
         "_expected_wire",
         "_in_window",
-        "_nacked",
+        "_nacks",
         "_reply",
         "_final",
         "_pending",
@@ -64,7 +64,7 @@ class Receiver(Transfer):
         self._expected = 1
         self._expected_wire = 1
         self._in_window = 0
-        self._nacked = False
+        self._nacks = 0  # ACKs sent for out-of-sequence DATA since the last in-order block
         self._reply = reply
         self._final: Optional[bytes] = None
         #: (payload, wire, written) of a block held by a stalled sink.
@@ -108,7 +108,7 @@ class Receiver(Transfer):
         self._expected = block + 1
         self._expected_wire = self._wire(block + 1)
         self._progress()
-        self._nacked = False
+        self._nacks = 0
         if size < self.blksize:
             self._final = _ACK_HDR.pack(_ACK, wire)
             self._send(self._final)
@@ -144,7 +144,7 @@ class Receiver(Transfer):
             self._dropped = False
             if self._in_window:
                 self._in_window = 0
-                self._nacked = True
+                self._nacks = 1
                 self._ack_last()
 
     def handle(self, packet: memoryview, n: int, now: float) -> None:
@@ -183,11 +183,20 @@ class Receiver(Transfer):
                 self.handle(packet, n, now)
                 return
             # Out of order: a duplicate (our ACK was lost) or a gap (DATA
-            # was lost). Either way re-acknowledge the last in-order block,
-            # once per gap when windowing so a burst does not become an ACK
-            # storm.
-            if self.windowsize == 1 or not self._nacked:
-                self._nacked = True
+            # was lost). Either way re-acknowledge the last in-order block.
+            # With a window that is once for a run of duplicates, and twice
+            # for a gap: the first report may advance the sender's window
+            # (which does not resend), and the second repeats it, which asks
+            # for the blocks from the hole. No more than that, so a burst
+            # does not become an ACK storm.
+            if self.windowsize == 1:
+                limit = 1 << 30
+            elif (wire - self._expected_wire) % self._period < self.windowsize:
+                limit = 2
+            else:
+                limit = 1
+            if self._nacks < limit:
+                self._nacks += 1
                 self._in_window = 0
                 self.retransmits += 1
                 self._ack_last()
@@ -208,7 +217,7 @@ class Receiver(Transfer):
         if self.stalled:
             return  # only reached through the time limit
         self._in_window = 0
-        self._nacked = False
+        self._nacks = 0
         self.retransmits += 1
         self._ack_last()
         self._arm(now)

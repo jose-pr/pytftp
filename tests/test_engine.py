@@ -140,18 +140,24 @@ def test_random_loss_and_duplication(windowsize, seed):
     assert got == data
 
 
-def test_sorcerers_apprentice_does_not_double_traffic():
+@pytest.mark.parametrize("windowsize", [1, 2, 4, 16])
+def test_sorcerers_apprentice_does_not_double_traffic(windowsize):
     """Every ACK delivered twice must not make the sender send DATA twice."""
     data = os.urandom(64 * 200)
 
     def rule(direction, packet, count):
         return 2 if direction == "r" else 1
 
-    got, sender, _, link = run(data, neg(blksize=64), rule=rule)
+    got, sender, _, link = run(data, neg(blksize=64, windowsize=windowsize), rule=rule)
     assert got == data
     sent = blocks_of(link)
-    assert len(sent) == len(set(sent)) == 201
-    assert sender.retransmits == 0
+    if windowsize == 1:
+        assert len(sent) == len(set(sent)) == 201
+        assert sender.retransmits == 0
+    else:
+        # A duplicated ACK may cost one window, and one window per two
+        # windows of progress at most: the traffic is bounded, not doubled.
+        assert len(sent) <= 1.5 * 201 + windowsize, len(sent)
 
 
 def test_delayed_first_data_triggers_one_retransmit_only():
@@ -284,3 +290,123 @@ def test_receiver_follows_a_sender_that_wraps_to_one():
     data = os.urandom(blksize * 66_000)
     got, sender, receiver, _ = run(data, neg(blksize=blksize, rollover=1), receiver_neg=neg(blksize=blksize))
     assert receiver.error is None and got == data
+
+
+# -- traffic after one event, with delay and reordering --------------------------------------
+
+import heapq
+
+LATENCY = 0.005
+
+
+class TimedLink:
+    """A link with a delivery time per packet.
+
+    ``rule(direction, packet, count)`` returns the extra delay of each copy to
+    deliver: ``[0.0]`` is normal, ``[]`` is loss, ``[0.0, 0.0]`` a duplicate,
+    ``[1.5]`` a late packet, and a delay of a few latencies on one DATA lets
+    the next overtake it.
+    """
+
+    def __init__(self, rule=None):
+        self.rule = rule or (lambda *_: [0.0])
+        self.queue: list = []
+        self.sent = {"s": [], "r": []}
+        self.now = 0.0
+        self._seq = 0
+
+    def _put(self, direction, packet):
+        packet = bytes(packet)
+        log = self.sent[direction]
+        log.append(packet)
+        for extra in self.rule(direction, packet, len(log) - 1):
+            self._seq += 1
+            heapq.heappush(self.queue, (self.now + LATENCY + extra, self._seq, direction, packet))
+
+    def from_sender(self, packet):
+        self._put("s", packet)
+
+    def from_receiver(self, packet):
+        self._put("r", packet)
+
+
+def run_timed(blocks, windowsize, rule, blksize=64, retries=20):
+    """Transfer ``blocks`` full blocks (plus the empty last one); returns the counts."""
+    data = os.urandom(blksize * blocks)
+    link = TimedLink(rule)
+    n = neg(blksize=blksize, windowsize=windowsize)
+    sink = io.BytesIO()
+    receiver = Receiver(link.from_receiver, as_write(sink), n, retries, 0.0)
+    sender = Sender(link.from_sender, as_readinto(io.BytesIO(data)), n, retries, 0.0)
+    steps = 0
+    while not (sender.done and receiver.done) and steps < 200_000:
+        steps += 1
+        deadlines = [t.deadline for t in (sender, receiver) if not t.done and t.deadline is not None]
+        due = min(deadlines) if deadlines else None
+        if link.queue and (due is None or link.queue[0][0] <= due):
+            link.now, _, direction, packet = heapq.heappop(link.queue)
+            target = receiver if direction == "s" else sender
+            target.handle(memoryview(packet), len(packet), link.now)
+        elif due is not None:
+            link.now = due
+            for side in (sender, receiver):
+                if not side.done and side.deadline is not None and side.deadline <= link.now:
+                    side.on_timeout(link.now)
+        else:
+            break
+    assert sender.error is None and receiver.error is None
+    assert sink.getvalue() == data
+    return {
+        "data": len(link.sent["s"]),
+        "acks": len(link.sent["r"]),
+        "seconds": link.now,
+    }
+
+
+def _event(kind):
+    def rule(direction, packet, count):
+        if kind == "dup" and direction == "r" and count == 4:
+            return [0.0, 0.0]
+        if kind == "lost" and direction == "r" and count == 4:
+            return []
+        if kind == "late" and direction == "r" and count == 4:
+            return [1.5]
+        if kind == "lostdata" and direction == "s" and count == 10:
+            return []
+        if kind == "reorder" and direction == "s" and count == 10:
+            return [3 * LATENCY]  # DATA 11 overtakes DATA 10 (block 9 is the 10th, offset by the window)
+        return [0.0]
+
+    return rule
+
+
+BLOCKS = 400
+
+
+@pytest.mark.parametrize("windowsize", [1, 2, 4, 16])
+@pytest.mark.parametrize("event", ["dup", "lost", "late", "reorder", "lostdata"])
+def test_one_event_costs_at_most_a_window_of_traffic(windowsize, event):
+    control = run_timed(BLOCKS, windowsize, _event("none"))
+    assert control["data"] == BLOCKS + 1
+    got = run_timed(BLOCKS, windowsize, _event(event))
+    # Each of these events costs the retransmission of one window and a few
+    # ACKs; none may be paid again for every window that follows.
+    assert got["data"] <= control["data"] + 2 * windowsize, (event, windowsize, got, control)
+    assert got["acks"] <= control["acks"] + 2 * windowsize + 2, (event, windowsize, got, control)
+    if event in ("lostdata", "reorder") and windowsize > 1:
+        # A hole is repaired from the receiver's report, not from a timeout.
+        assert got["seconds"] < control["seconds"] + 0.5, (event, windowsize, got, control)
+
+
+def test_an_ack_that_advances_the_window_sends_only_the_blocks_that_now_fit():
+    sent = []
+    sender = Sender(
+        sent.append, as_readinto(io.BytesIO(os.urandom(64 * 100))), neg(blksize=64, windowsize=8), 5, 0.0
+    )
+    assert len(sent) == 8
+    for acked in (1, 2, 3):
+        before = len(sent)
+        sender.handle(memoryview(encode_ack(acked)), 4, 0.1)
+        assert len(sent) == before + 1
+        assert struct.unpack("!H", sent[-1][2:4])[0] == 8 + acked  # the one block that fits
+    assert sender.retransmits == 0

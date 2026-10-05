@@ -43,6 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **With a window above 1, one duplicated, lost or late ACK, or one reordered
+  DATA pair, made every remaining window be sent and acknowledged twice** (a
+  3001-block transfer at `windowsize=16` sent 5922 DATA datagrams). An ACK
+  that moves the sender's window on now sends only the blocks that fit
+  (an ACK asking `blksize=65464 windowsize=64` for one block used to draw 64
+  DATA, 4 MiB, per 4-octet ACK), and ACKs resend blocks already in flight at
+  most once per two windows of progress; timeouts are unchanged. The
+  receiver reports a gap twice at most. After one such event the traffic is
+  the control's plus one window, at windowsize 1, 2, 4 and 16; windowsize 1
+  is unchanged.
 - A request nothing follows up no longer costs the whole negotiated window: a
   transfer allocates the buffer for a block when it first reads it, where a
   single 53-octet request asking `blksize=65464 windowsize=64` made the server

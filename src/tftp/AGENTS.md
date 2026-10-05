@@ -20,7 +20,7 @@ extra). Modules starting with `_` are internal.
 | Spec | What | Notes |
 | --- | --- | --- |
 | RFC 1350 | RRQ, WRQ, DATA, ACK, ERROR; octet and netascii | `mail` mode is refused with ERROR 4 |
-| RFC 1123 4.2.3.1 | Sorcerer's Apprentice fix | duplicate ACKs never trigger a resend (windowsize 1) |
+| RFC 1123 4.2.3.1 | Sorcerer's Apprentice fix | duplicate ACKs never trigger a resend (windowsize 1); with a window, an ACK that moves it on sends only the new blocks, and an ACK resends blocks in flight at most once per two windows of progress, so one duplicated, lost or late ACK costs one window of DATA, not every window after it |
 | RFC 1123 4.2.3.2 | exponential backoff | each consecutive retransmission waits `backoff` times longer, capped |
 | RFC 1123 4.2.3.4 | broadcast requests ignored | server, when pktinfo reports the destination |
 | RFC 2347 | option extension, OACK, ERROR 8 | unknown options are ignored, as the RFC requires |

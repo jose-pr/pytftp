@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 import sys
 import threading
@@ -410,3 +411,66 @@ def test_a_max_sessions_the_selector_cannot_hold_is_refused_at_construction():
         pytest.skip("select() has a descriptor limit on Windows only")
     with pytest.raises(ValueError, match="510"):
         tftp.Server(".", "127.0.0.1", 0, max_sessions=600)
+
+
+# -- a receiver that follows RFC 7440 to the letter ---------------------------------------------
+
+
+@pytest.mark.parametrize("windowsize", [4, 16])
+@pytest.mark.parametrize("behaviour", ["acks every duplicate", "silent for a duplicate"])
+def test_a_windowed_download_costs_one_window_after_a_duplicated_ack(make_server, windowsize, behaviour):
+    """An independent receiver: ACK the last block of a window, and the last in-order block
+    once per run of out-of-sequence DATA. One of its ACKs is sent twice."""
+    import struct
+
+    from tftp.backends import MemoryHandler
+
+    blksize, blocks = 512, 1500
+    payload = os.urandom(blksize * blocks)
+    server = make_server(
+        MemoryHandler({"f": payload}), options=tftp.ServerOptions(max_windowsize=windowsize), timeout=2
+    )
+    with raw_socket(5.0) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+        request = encode_request(Opcode.RRQ, "f", options={"blksize": blksize, "windowsize": windowsize})
+        sock.sendto(request, server.server_address)
+        packet, tid = sock.recvfrom(70000)
+        assert decode(packet).options["windowsize"] == str(windowsize)
+        sock.sendto(encode_ack(0), tid)
+        received, expected, in_window, notified, data_datagrams = bytearray(), 1, 0, False, 0
+        while True:
+            packet, address = sock.recvfrom(70000)
+            if address != tid or packet[1] != 3:
+                continue
+            data_datagrams += 1
+            block = struct.unpack("!H", packet[2:4])[0]
+            if block == expected:
+                received += packet[4:]
+                expected += 1
+                in_window += 1
+                notified = False
+                final = len(packet) - 4 < blksize
+                if in_window == windowsize or final:
+                    in_window = 0
+                    sock.sendto(encode_ack(block), tid)
+                    if block == 5 * windowsize:
+                        sock.sendto(encode_ack(block), tid)  # the duplicate
+                if final:
+                    break
+                continue
+            if behaviour == "silent for a duplicate" and block < expected:
+                continue
+            if not notified:
+                notified = True
+                in_window = 0
+                sock.sendto(encode_ack(expected - 1), tid)
+        sock.settimeout(0.3)
+        try:
+            while True:
+                packet, address = sock.recvfrom(70000)
+                data_datagrams += address == tid and packet[1] == 3
+        except socket.timeout:
+            pass
+    assert bytes(received) == payload
+    # blocks, the empty last one, and the one window the duplicate may cost.
+    assert data_datagrams <= blocks + 1 + 2 * windowsize, data_datagrams

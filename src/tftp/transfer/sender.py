@@ -33,7 +33,7 @@ class Sender(Transfer):
         "_hi",
         "_last",
         "_control",
-        "_dup_base",
+        "_resent_at",
     )
 
     def __init__(
@@ -57,7 +57,7 @@ class Sender(Transfer):
         self._next = 1  # next block to transmit in the current window pass
         self._hi = 0  # highest block read into the ring
         self._last: Optional[int] = None  # the final block, once read
-        self._dup_base = -1
+        self._resent_at = -(1 << 30)  # base when blocks in flight were last resent
         self._control = oack
         if oack is not None:
             send(oack)
@@ -121,6 +121,7 @@ class Sender(Transfer):
     def _restart(self, now: float) -> None:
         """(Re)send the window from the first unacknowledged block (RFC 7440)."""
         self._next = self._base
+        self._resent_at = self._base
         self._pump(now)
 
     def resume(self, now: float) -> None:
@@ -146,20 +147,31 @@ class Sender(Transfer):
             if acked > self._hi:
                 return  # stale or bogus: outside anything sent
             if acked == ref:
-                # Duplicate ACK. Never resend on it with windowsize 1
-                # (Sorcerer's Apprentice); with a window, the first one says
-                # the receiver lost the block after it.
-                if self.windowsize == 1 or self._dup_base == self._base:
+                # A duplicate ACK is never a reason to resend with windowsize
+                # 1 (RFC 1123 4.2.3.1). With a window it says the receiver
+                # saw a block out of sequence, so the blocks after ``acked``
+                # are resent -- but a duplicate the network or the receiver
+                # made, answered by a resend, makes the receiver acknowledge
+                # that copy too, which is a duplicate again, and the window
+                # is then sent twice for the rest of the transfer. Blocks
+                # are therefore resent for an ACK at most once per two
+                # windows of progress; the timeout covers the rest.
+                if self.windowsize == 1 or self._base < self._resent_at + 2 * self.windowsize:
                     return
-                self._dup_base = self._base
+                self._restart(now)
             else:
+                # The window moved: send the blocks that now fit. Blocks
+                # already in flight are not sent again (an ACK is 4 octets;
+                # one that costs a window of DATA is an amplifier).
                 self._base = acked + 1
                 self._progress()
                 if self._last is not None and acked >= self._last:
                     self.done = True
                     self.deadline = None
                     return
-            self._restart(now)
+                if self._next < self._base:
+                    self._next = self._base
+                self._pump(now)
         elif op == _OACK:
             # A WRQ client sees the server's OACK again when DATA 1 was lost.
             # Resending on it would be Sorcerer's Apprentice; our own timeout
