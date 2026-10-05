@@ -400,7 +400,7 @@ close()`. Handlers:
   (WRQ); a writer is closed after the last block, and the final ACK waits
   until everything is written.
 - pktinfo is kept on every loop: the listener is read with netimps'
-  `UdpEndpoint.arecv` (`add_reader`, or a readiness thread where the loop
+  `UDPEndpoint.arecv` (`add_reader`, or a readiness thread where the loop
   has none — Windows' Proactor loop).
 - On Windows the default `max_sessions` is 500 (a selector loop's
   `select()`).
@@ -523,8 +523,8 @@ use `UpstreamHandler` (a terminating proxy) instead.
   `supports_pktinfo`, `active_sessions`.
 
 Routing helpers (`tftp.relay`): **`upstream(value) -> Upstream(host, port)`**
-(`host` normalised by `netimps.normalize_host`: brackets dropped, a
-`"host:port"` split);
+(`host` read by `netimps.split_host`: brackets dropped, a `"host:port"`
+split, the port ASCII digits only);
 **`by_subnet({network: upstream})`** (keys: anything `netimps.parse(...,
 IPNetwork)` takes — CIDR strings, `ipaddress` networks, interfaces, addresses
 as /32 or /128, `(address, prefix)`; client address, longest prefix; mapped
@@ -755,11 +755,12 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
 ## Dependencies
 
 `netimps` (required, no dependencies of its own; imported lazily, on the
-first transfer or server): pktinfo receive and reply sockets (`UdpEndpoint`,
+first transfer or server): pktinfo receive and reply sockets (`UDPEndpoint`,
 also `arecv` for `AsyncServer`), broadcast/multicast checks, MTU payload
 sizing, the retransmission timer (`Backoff`), socket binding,
-host:port parsing, address/network types (`AddressLike`, `IPNetworkLike`,
+host:port parsing, address/network types (`HostLike`, `IPNetworkLike`,
 `Host`, `Interface`: what the address-taking parameters accept), bind-error
 hints. Importing netimps installs its additive `recvmsg`/`sendmsg`
-socket patch on Windows unless `NETIMPS_NO_SOCKET_PATCH=1` is set first.
+socket patch on Windows unless `NETIMPS_SOCKET_PATCH=0` is set first (pktinfo
+does not depend on it).
 `duho` (optional, `cli` extra).

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Requires `netimps>=0.4.0,<0.5`; netimps 0.3 is no longer supported.
+- `Client(timeout=..., max_timeout=...)` raises `ValueError` when
+  `max_timeout` is below `timeout`, where it used to be raised to `timeout`
+  silently.
+- Host text is read by netimps' stricter rules, for `Client`, `Server`,
+  `Relay` and `upstream`: a port is ASCII digits only
+  (`"host:+70"` is refused) and brackets hold an IPv6 literal only
+  (`"[10.0.0.5]"` is refused), each raising `ValueError`
+  (`netimps.NetimpsValueError`); a host that is not text, an address, a `Host`
+  or an `FQDN` (`None`, say) raises `TypeError` where it raised `ValueError`.
+- `format_url` raises `TypeError` for a port that is not an `int` (a `str` or
+  a `bool`).
+- A socket-buffer shortfall on a windowed transfer is logged by netimps, once
+  per process for each distinct request and grant, at `WARNING` on the logger
+  `netimps._sockets`; `tftp` no longer logs it at `DEBUG`.
+- On Windows an address the system marks tentative or duplicate (the
+  169.254.x.x of a media-disconnected adapter) is no longer one of an
+  adapter's addresses, so `Server(interface=...)` does not consider it.
+
+### Fixed
+
+- The shipped API header named `NETIMPS_NO_SOCKET_PATCH`, which netimps 0.4
+  rejects at import; the variable is `NETIMPS_SOCKET_PATCH=0`.
+
 ## [0.0.0] - 2026-10-03
 
 ### Added

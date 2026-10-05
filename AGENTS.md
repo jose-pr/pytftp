@@ -25,7 +25,7 @@ src/tftp/
 ├── server/
 │   ├── base.py        # ServerBase: config, admission, refusal, reporting (shared with aio)
 │   ├── core.py        # Server: lifecycle, selectors loop, timers, completion
-│   ├── listener.py    # listening socket: bind (host or interface), netimps UdpEndpoint, reply sockets
+│   ├── listener.py    # listening socket: bind (host or interface), netimps UDPEndpoint, reply sockets
 │   ├── session.py     # one transfer: PortRange, handler -> engine
 │   ├── handler.py     # Handler protocol, FileSystemHandler, AtomicWriter
 │   ├── policy.py      # ServerLimits
