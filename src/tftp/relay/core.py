@@ -126,6 +126,7 @@ class Relay:
         self._selector = selectors.DefaultSelector()
         self._wake_r, self._wake_w = socket.socketpair()
         self._wake_r.setblocking(False)
+        self._wake_w.setblocking(False)
         self._selector.register(self._listener.sock, selectors.EVENT_READ, None)
         self._selector.register(self._wake_r, selectors.EVENT_READ, self)
         self._sessions: Dict[Tuple[str, int], RelaySession] = {}

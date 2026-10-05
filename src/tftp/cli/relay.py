@@ -11,7 +11,7 @@ import logging as _logging
 import typing as _ty
 
 from ..relay import Relay, RouteTable, by_prefix, by_subnet
-from .common import Traced, bind_failure, error, port_range
+from .common import Traced, bind_failure, error, port_range, shutdown_on_signal
 
 __all__ = ["RelayCmd"]
 
@@ -100,8 +100,9 @@ class RelayCmd(Traced):
         address = relay.server_address
         logger.info("relaying on %s port %d", address[0], address[1])
         try:
-            relay.serve_forever()
-        except KeyboardInterrupt:
+            with shutdown_on_signal(relay):
+                relay.serve_forever()
+        except KeyboardInterrupt:  # no handler could be installed (not the main thread)
             pass
         finally:
             relay.close()

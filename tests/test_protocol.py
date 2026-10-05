@@ -546,3 +546,18 @@ def test_a_server_named_by_a_link_local_address_with_its_zone_is_heard(link_loca
         client = tftp.Client(link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=True)
         assert client.get("f") == b"link-local"
         assert client.get("f") == b"link-local"
+
+
+def test_a_request_context_copies_itself_with_another_filename():
+    from tftp.server import RequestContext
+
+    request = tftp.Request(Opcode.RRQ, "alias", "octet", {"x-list": "1"}, b"raw")
+    context = RequestContext(request, ("10.0.0.5", 4000), "10.0.0.1", 7)
+    context.interface = object()
+    context.listing = True
+    copy = context.with_filename("real")
+    assert copy.filename == "real" and context.filename == "alias"
+    assert copy.options == {"x-list": "1"} and copy.mode == "octet"
+    for name in RequestContext.__slots__:
+        if name != "request":
+            assert getattr(copy, name) is getattr(context, name), name

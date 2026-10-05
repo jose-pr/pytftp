@@ -73,7 +73,8 @@ class CapturedTransfer:
         self.packets = 0
         self.retransmissions = 0
         self.request_retransmissions = 0
-        self._blocks: Dict[int, bytes] = {}
+        self._sizes: Dict[int, int] = {}  # payload octets of each block seen, payloads kept or not
+        self._blocks: Dict[int, bytes] = {}  # the payloads, when they are kept
         self._logical_hi = 0
         self._rollover = 0
 
@@ -93,12 +94,15 @@ class CapturedTransfer:
             distance -= period  # behind: a retransmission
         return max(0, hi + distance)
 
-    def add_data(self, wire: int, payload: bytes) -> None:
+    def add_data(self, wire: int, payload: bytes, keep: bool = True) -> None:
+        """Account for one DATA: always its size, and its payload when ``keep``."""
         block = self._logical(wire)
-        if block in self._blocks:
+        if block in self._sizes:
             self.retransmissions += 1
         else:
-            self._blocks[block] = payload
+            self._sizes[block] = len(payload)
+            if keep:
+                self._blocks[block] = payload
         self._logical_hi = max(self._logical_hi, block)
         if len(payload) < self.blksize:
             self.final_block = block
@@ -109,20 +113,20 @@ class CapturedTransfer:
 
     @property
     def bytes(self) -> int:
-        return sum(len(b) for b in self._blocks.values())
+        return sum(self._sizes.values())
 
     @property
     def missing_blocks(self) -> List[int]:
         """Logical block numbers never seen, up to the highest one seen."""
-        if not self._blocks:
+        if not self._sizes:
             return []
-        return [n for n in range(1, max(self._blocks) + 1) if n not in self._blocks]
+        return [n for n in range(1, max(self._sizes) + 1) if n not in self._sizes]
 
     def data(self, decode_netascii: bool = True) -> bytes:
         """The transferred bytes, in order; a gap ends what can be returned.
 
         Netascii transfers are decoded to local form unless
-        ``decode_netascii=False``.
+        ``decode_netascii=False``. Empty when the tracker did not keep payloads.
         """
         out = bytearray()
         block = 1
@@ -185,7 +189,8 @@ class FlowTracker:
 
     :param ports: request ports (where RRQ/WRQ are sent).
     :param keep_payloads: keep DATA payloads (for :meth:`CapturedTransfer.data`).
-        Turn off for long captures where only metadata matters.
+        Turn off for long captures where only metadata matters: sizes,
+        retransmissions and missing blocks are counted either way.
     """
 
     def __init__(self, ports: Iterable[int] = (69,), keep_payloads: bool = True) -> None:
@@ -255,10 +260,11 @@ class FlowTracker:
         op = payload[1]
         from_client = datagram.source == transfer.client
         if op == Opcode.DATA:
+            wire = struct.unpack_from("!H", payload, 2)[0]
             if self.keep_payloads:
-                transfer.add_data(struct.unpack_from("!H", payload, 2)[0], payload[4:])
-            elif len(payload) - 4 < transfer.blksize:
-                transfer.final_block = transfer._logical(struct.unpack_from("!H", payload, 2)[0])
+                transfer.add_data(wire, payload[4:])
+            else:
+                transfer.add_data(wire, payload[4:], keep=False)
         elif op == Opcode.ACK:
             transfer.add_ack(struct.unpack_from("!H", payload, 2)[0])
         elif op == Opcode.OACK and not from_client:

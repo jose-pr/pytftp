@@ -291,3 +291,26 @@ def test_filter_numbers_and_mapped_addresses():
 def test_filter_errors(expression):
     with pytest.raises(FilterError):
         compile_filter(expression)
+
+
+# -- the counters do not depend on keeping payloads -------------------------------------------
+
+
+def _lossy_capture():
+    # blocks 1, 2, 2 again, 4 (3 never captured), 5 (the short last one)
+    packets = [(C, S, encode_request(Opcode.RRQ, "f"))]
+    for number, size in [(1, 512), (2, 512), (2, 512), (4, 512), (5, 10)]:
+        packets.append((T, C, encode_data(number, b"d" * size)))
+        packets.append((C, T, encode_ack(number)))
+    return _flow(*packets)
+
+
+@pytest.mark.parametrize("keep", [True, False])
+def test_flow_counters_are_the_same_with_or_without_payloads(keep):
+    tracker = FlowTracker(keep_payloads=keep)
+    list(tracker.feed_all(_lossy_capture()))
+    (transfer,) = tracker.transfers
+    assert (transfer.bytes, transfer.retransmissions, transfer.missing_blocks) == (1546, 1, [3])
+    assert transfer.complete
+    record = transfer.to_dict()
+    assert (record["bytes"], record["retransmissions"], record["missing_blocks"]) == (1546, 1, 1)

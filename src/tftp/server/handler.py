@@ -9,6 +9,7 @@ somewhere other than a disk.
 
 from __future__ import annotations
 
+import copy
 import os
 import shutil
 import sys
@@ -64,6 +65,16 @@ class RequestContext:
         self.interface_index = interface_index
         self.interface: Any = None
         self.listing = False
+
+    def with_filename(self, filename: str) -> "RequestContext":
+        """A copy of this context for a request naming ``filename`` instead.
+
+        Everything else is carried over (the listing flag, the interface), so
+        a wrapper that rewrites names does not have to know the fields.
+        """
+        clone = copy.copy(self)
+        clone.request = self.request._replace(filename=filename, raw=b"")
+        return clone
 
     @property
     def filename(self) -> str:

@@ -56,10 +56,7 @@ class Remap:
 
     def _context(self, context: RequestContext) -> RequestContext:
         name = self.rewrite(context.filename)
-        if name == context.filename:
-            return context
-        request = context.request._replace(filename=name, raw=b"")
-        return RequestContext(request, context.peer, context.local_address, context.interface_index)
+        return context if name == context.filename else context.with_filename(name)
 
     def open_read(self, context: RequestContext) -> _ty.Any:
         return self.inner.open_read(self._context(context))

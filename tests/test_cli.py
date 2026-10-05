@@ -199,6 +199,8 @@ def test_capture_command(root, make_server, tmp_path_factory, capsys):
     records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
     assert [r["transfer"]["filename"] for r in records] == ["1428x3.bin", "missing"]
     assert records[0]["transfer"]["complete"] and records[1]["transfer"]["error"]["code"] == 1
+    assert records[0]["transfer"]["bytes"] == 1428 * 3  # counted with payloads off, as here
+    assert records[0]["transfer"]["retransmissions"] == 0 and records[0]["transfer"]["missing_blocks"] == 0
     target = out / "extracted"
     assert run(["capture", str(pcap), "-p", port, "--no-packets", "--extract", str(target)]) in (None, 0)
     (written,) = list(target.iterdir())
@@ -271,3 +273,99 @@ def test_serve_on_interface(root):
         assert tftp.Client(str(iface.primary_ip(ipv6=False).ip), port).get("one.bin") == b"x"
     finally:
         _stop(proc)
+
+
+# -- every deployment flag on its own --------------------------------------------------------------
+
+
+def test_serve_remap_alone_on_a_plain_directory(root):
+    import tftp
+
+    (root / "real").mkdir()
+    (root / "real" / "a.txt").write_bytes(b"remapped")
+    proc, port = _serve_subprocess(
+        ["serve", str(root), "-l", "127.0.0.1", "-p", "0", "--remap", "^alias=real", "--listing"]
+    )
+    try:
+        client = tftp.Client("127.0.0.1", port)
+        assert client.get("alias/a.txt") == b"remapped"  # a name a rule rewrites
+        assert client.get("one.bin") == b"x"  # a name no rule touches
+        assert [entry.name for entry in client.listdir("real")] == ["a.txt"]
+        assert [entry.name for entry in client.listdir("alias")] == ["a.txt"]  # a listing keeps its flag
+    finally:
+        _stop(proc)
+
+
+@pytest.mark.parametrize(
+    "flag, name, expected",
+    [("--per-client", "Own.cfg", b"own"), ("--ignore-case", "ONE.BIN", b"x")],
+)
+def test_serve_per_client_and_ignore_case_each_on_their_own(root, flag, name, expected):
+    import tftp
+
+    (root / "127.0.0.1").mkdir()
+    (root / "127.0.0.1" / "Own.cfg").write_bytes(b"own")
+    proc, port = _serve_subprocess(["serve", str(root), "-l", "127.0.0.1", "-p", "0", flag])
+    try:
+        assert tftp.Client("127.0.0.1", port).get(name) == expected
+    finally:
+        _stop(proc)
+
+
+# -- the stop path ---------------------------------------------------------------------------------
+
+
+def _wait_exit(proc, seconds):
+    try:
+        return proc.wait(seconds)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(5)
+        pytest.fail("the command did not stop within %s s" % seconds)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the console event is raised through a driver on Windows")
+@pytest.mark.parametrize("name", ["SIGINT", "SIGTERM"])
+@pytest.mark.parametrize("command", ["serve", "relay"])
+def test_an_idle_command_stops_on_a_signal_and_reports_its_counters(root, name, command):
+    import signal
+
+    args = ["serve", str(root)] if command == "serve" else ["relay", "127.0.0.1:9"]
+    proc, _ = _serve_subprocess([*args, "-l", "127.0.0.1", "-p", "0"])
+    try:
+        time.sleep(0.5)
+        started = time.monotonic()
+        proc.send_signal(getattr(signal, name))
+        assert _wait_exit(proc, 5) == 0
+        assert time.monotonic() - started < 3
+        assert ("served:" if command == "serve" else "relayed:") in proc.stderr.read()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.stdout.close()
+        proc.stderr.close()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="console control events are Windows'")
+@pytest.mark.parametrize("event", ["ctrl-c", "ctrl-break"])
+@pytest.mark.parametrize("command", ["serve", "relay"])
+def test_an_idle_command_stops_on_a_console_event_and_reports_its_counters(tmp_path, event, command):
+    report = tmp_path / "report.json"
+    driver = os.path.join(os.path.dirname(__file__), "ctrlc_driver.py")
+    proc = subprocess.Popen(
+        [sys.executable, driver, command, event, str(report)],
+        creationflags=subprocess.CREATE_NO_WINDOW,  # a console of its own: the event goes to everything on it
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+    )
+    try:
+        proc.wait(90)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    marks = json.loads(report.read_text())
+    assert marks["alive_before_event"], marks
+    assert marks["exited_after"] is not None and marks["exited_after"] < 3, marks
+    assert marks["returncode"] == 0, marks
+    assert ("served:" if command == "serve" else "relayed:") in marks["stderr"], marks

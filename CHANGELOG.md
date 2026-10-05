@@ -43,6 +43,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `pytftp serve ROOT --remap ...` on a plain directory answered every request
+  with ERROR 0 (a `str` was wrapped where a handler belongs); only combined
+  with `--per-client` or `--ignore-case` did it work. A remapped name also
+  lost the request's listing flag, so `pytftp ls HOST alias` for a remapped
+  directory answered "file not found": `RequestContext.with_filename()` copies
+  a context with another filename and `--remap` uses it.
+- On Windows an idle `pytftp serve` did not stop on Ctrl-C until a datagram
+  arrived, and Ctrl-Break and SIGTERM ended `serve` and `relay` without
+  closing the server, the capture or logging the final counters. The command
+  now stops on all three, idle or not, with status 0 and the `served:` /
+  `relayed:` line; the signal wakes the loop through its wake socket, so an
+  idle server still costs no polling.
+- `pytftp capture --transfers` (and `FlowTracker(keep_payloads=False)`)
+  reported 0 bytes, 0 retransmissions and no missing blocks unless
+  `--extract` kept the payloads. They are counted from the sizes and block
+  numbers either way.
 - A `TftpPath` bound to an `AsyncClient` returned wrong results without
   raising (`read_bytes()` gave `b""`, `write_bytes()` reported success, and
   nothing was sent: the client's coroutines were never awaited).

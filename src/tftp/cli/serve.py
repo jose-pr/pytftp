@@ -16,7 +16,16 @@ import typing as _ty
 from ..options import LISTING_OPTIONS, PROFILES, STANDARD_OPTIONS, ServerOptions
 from ..result import TransferResult
 from ..server import Server, ServerLimits
-from .common import PROFILE_NAMES, Choice, Traced, bind_failure, error, port_range, result_json
+from .common import (
+    PROFILE_NAMES,
+    Choice,
+    Traced,
+    bind_failure,
+    error,
+    port_range,
+    result_json,
+    shutdown_on_signal,
+)
 
 __all__ = ["Serve"]
 
@@ -145,8 +154,6 @@ class Serve(Traced):
             return UpstreamHandler(self.upstream, writable=self.write)
         if not _os.path.isdir(self.root):
             raise ValueError("not a directory: %s" % self.root)
-        if not (self.per_client or self.ignore_case):
-            return self.root
         from ..server import FileSystemHandler
         from .handlers import CaseInsensitive, PerClient
 
@@ -155,6 +162,7 @@ class Serve(Traced):
         def make(directory: str) -> _ty.Any:
             return kind(directory, writable=self.write, create=not self.no_create, overwrite=self.overwrite)
 
+        # Always a handler object: --remap wraps it.
         return PerClient(self.root, make) if self.per_client else make(self.root)
 
     def _options(self) -> ServerOptions:
@@ -223,8 +231,9 @@ class Serve(Traced):
             "" if server.supports_pktinfo else " (replies from the routing table's source address)",
         )
         try:
-            server.serve_forever()
-        except KeyboardInterrupt:
+            with shutdown_on_signal(server):
+                server.serve_forever()
+        except KeyboardInterrupt:  # no handler could be installed (not the main thread)
             pass
         finally:
             server.close()

@@ -349,7 +349,9 @@ standard file object (`io.IOBase`) or declares `_tftp_copies_ = True`, and
 tuple), `local_address` (the destination address as text, or `None` without
 pktinfo), `interface_index` (or 0), `interface` (that interface as a
 `netimps.Interface` — name, addresses, MTU — or `None`), `listing` (the RRQ asks for `x-list=1`
-and the server allows it); shortcuts `filename`, `mode`, `options`.
+and the server allows it); shortcuts `filename`, `mode`, `options`;
+`with_filename(name)` — a copy for a request naming `name`, everything else
+carried over.
 
 **`FileSystemHandler(root, *, writable=False, create=True, overwrite=False, backslash=True, max_upload=None)`**
 
@@ -596,6 +598,9 @@ reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
   RRQ/WRQ to a request port and follows the server's answer (its TID; from
   another address too, within 10 s) between that TID and the client's
   address/port. `::ffff:a.b.c.d` and `a.b.c.d` count as one host.
+  `keep_payloads=False` drops the DATA payloads (`CapturedTransfer.data()` is
+  then empty); `bytes`, `retransmissions` and `missing_blocks` are counted
+  either way.
 - **`CapturedTransfer`** — `session`, `client`, `server`, `server_tid`,
   `filename`, `mode`, `operation`, `requested`, `acknowledged`, `blksize`,
   `windowsize`, `tsize`, `error` (`(code, message, "client"|"server")`),
@@ -774,7 +779,11 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
 - `--json`: one JSON object on stdout per transfer, session or packet;
   diagnostics always go to stderr.
 - `serve` and `relay` log each transfer at INFO on stderr (`-v`/`-q` adjust)
-  and their final counters when stopped.
+  and their final counters when stopped. Ctrl-C, Ctrl-Break and SIGTERM stop
+  them, idle or not (the signal wakes the loop through its wake socket; there
+  is no polling), with exit status 0 and the counters logged.
+- `serve --max-sessions N` defaults to 500; 0 is unlimited (510 at most on
+  Windows).
 
 ## Dependencies
 
