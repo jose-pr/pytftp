@@ -28,7 +28,7 @@ class Images:
     async def open_read(self, context):
         record = await db.fetch_image(context.peer[0], context.filename)
         if record is None:
-            raise tftp.TftpError(tftp.ErrorCode.FILE_NOT_FOUND)
+            raise tftp.TFTPError(tftp.ErrorCode.FILE_NOT_FOUND)
         return await storage.open(record.path)          # an async reader
 
     async def open_write(self, context, size):

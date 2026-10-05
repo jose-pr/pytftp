@@ -183,7 +183,7 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.uri` | `tftp://` URLs |
 | `tftp.path` | `TftpPath`, `TftpUriPath` (`path` extra) |
 | `tftp.netascii` | streaming netascii translation |
-| `tftp.errors` | `TftpError` and the typed `RemoteError` subclasses |
+| `tftp.exceptions` | every exception: `TFTPError`, the typed `RemoteError` subclasses, `TFTPValueError` and its decode, filter and capture-format subclasses |
 | `tftp.cli` | the `pytftp` command (`cli` extra) |
 
 Everything is also importable from `tftp` directly. The complete reference,

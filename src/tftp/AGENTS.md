@@ -10,8 +10,8 @@ Development documentation lives with the source at
 Everything below is importable from `tftp` directly. The subpackages only
 group it: `tftp.packet` (wire format), `tftp.options` (negotiation),
 `tftp.transfer` (the I/O-free engine), `tftp.client`, `tftp.server`,
-`tftp.netascii`, `tftp.errors`, `tftp.result`, and `tftp.cli` (needs the `cli`
-extra). Modules starting with `_` are internal.
+`tftp.netascii`, `tftp.exceptions` (every exception), `tftp.result`, and
+`tftp.cli` (needs the `cli` extra). Modules starting with `_` are internal.
 
 `tftp.__version__` — the installed distribution's version.
 
@@ -50,7 +50,7 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
   `timeout` when whole (1..255); a fractional one is requested as
   `utimeout` only with `utimeout=True`, otherwise not at all. Nothing is
   requested with `timeout_option=False`.
-- `retries` — retransmissions of one packet before `TransferTimeout`.
+- `retries` — retransmissions of one packet before `TransferTimeoutError`.
 - `backoff`, `max_timeout` — each consecutive retransmission (of the
   request too) waits `backoff` times longer, up to `max_timeout` (default
   8 × `timeout`; below `timeout` is a `ValueError`); progress resets the wait. `backoff=1` disables it.
@@ -68,7 +68,7 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 - `on_negotiated(negotiated, peer)` — called once the server has answered
   the request (OACK, first DATA or ACK 0) and **before any data moves**;
   `peer` is the server's transfer address. If it raises, the server is sent
-  an ERROR (the `TftpError`'s code, else 0) and the exception propagates.
+  an ERROR (the `TFTPError`'s code, else 0) and the exception propagates.
 - `extra_options` — further options to request verbatim (`{"blksize2": 4096}`,
   `{"cookie": "x"}`, custom ones). A known option's answer is validated by
   its handler (`registry`, default `DEFAULT_REGISTRY`); an unknown one's
@@ -124,9 +124,9 @@ Methods (each returns a `TransferResult` unless noted):
   other value raises `ValueError`.
 - `progress(done_bytes, total_or_None)` is called after each packet that moved
   data; `total` is the negotiated `tsize`.
-- Raises `RemoteError` (the server sent ERROR), `TransferTimeout`,
+- Raises `RemoteError` (the server sent ERROR), `TransferTimeoutError`,
   (as the subclass for its code: `FileNotFound`, `AccessViolation`, ...),
-  `ProtocolError` (the server broke the protocol, e.g. an OACK with a larger
+  `TFTPProtocolError` (the server broke the protocol, e.g. an OACK with a larger
   `blksize` than requested — the client sends ERROR 8 first, or a DATA longer
   than the negotiated `blksize`), or `OSError` for local failures (resolution,
   the local file, a send the host refuses: the asyncio client raises it at
@@ -198,7 +198,7 @@ Lifecycle:
   `shutdown()`. One thread serves every transfer.
 - **`shutdown()`** — stop `serve_forever`; safe from any thread, a handler or
   `on_complete`. Transfers in flight get ERROR 0 `"server shutting down"`
-  (their result's `error` is `TransferAborted`).
+  (their result's `error` is `TransferAbortedError`).
 - **`start() -> Server`** — run `serve_forever` in a daemon thread.
 - **`stop(timeout=5.0)`** — `shutdown()` and join the `start()` thread.
 - **`close()`** — stop and release every socket. Also the context-manager
@@ -236,9 +236,9 @@ round-robin cursor). `ValueError` outside 1..65535 or with `low > high`.
 ERROR 4 from the listening port; a client over `max_sessions_per_client`
 (counted per address, any port) gets ERROR 0 `"server busy"`.
 `max_duration` ends a transfer that runs longer (ERROR 0 to the peer,
-`TransferTimeout` in the result). **`max_idle`** (seconds, default 60; `None`
+`TransferTimeoutError` in the result). **`max_idle`** (seconds, default 60; `None`
 for no bound) ends a transfer that has had no datagram from its peer for that
-long, with `TransferTimeout`, whatever `timeout` the client negotiated: it
+long, with `TransferTimeoutError`, whatever `timeout` the client negotiated: it
 counts the peer's silence, not the transfer's length, and not time the
 handler keeps the server waiting. A transfer holds memory for the blocks it
 has read, not for the window it negotiated, and none of it once it ends.
@@ -333,7 +333,7 @@ make progress again; without it a stalled transfer only resumes when the
 peer retransmits. A paused transfer is subject to `max_duration`, not to
 peer retries.
 
-Either may raise `TftpError(code, message)` to refuse with that ERROR, or
+Either may raise `TFTPError(code, message)` to refuse with that ERROR, or
 `OSError`, mapped by errno (`ENOENT` → 1, `EACCES`/`EPERM` → 2, `ENOSPC` → 3,
 `EEXIST` → 6). The OS message is **not** sent (it could disclose paths). Any
 other exception is logged and sent as ERROR 0. What reaches the wire is
@@ -372,7 +372,7 @@ carried over.
   that grows past `max_upload`.
 - Uploads go through `AtomicWriter`: **a failed or partial upload never
   appears or replaces anything**.
-- `resolve(filename) -> str` exposes the mapping (raises `TftpError`).
+- `resolve(filename) -> str` exposes the mapping (raises `TFTPError`).
 
 **`tftp.listing`** — the `x-list` format: UTF-8 lines `<f|d> <size> <mtime|-> <name>`
 (`%`, CR, LF in names as `%25`, `%0D`, `%0A`). **`ListEntry(name, is_dir,
@@ -590,7 +590,7 @@ reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
 
 - **`read_frames(source) -> Iterator[(time, linktype, frame)]`**,
   **`read_datagrams(source) -> Iterator[UdpDatagram(time, source, destination, payload)]`**
-  — `CaptureFormatError` (a `ValueError`) for anything that is not a capture.
+  — `CaptureFormatError` (a `TFTPValueError`) for anything that is not a capture.
 - **`FlowTracker(ports=(69,), keep_payloads=True)`** — `feed(datagram) ->
   PacketEvent | None` (role `"capture"`, direction `"seen"`; `None` for UDP
   that is neither TFTP traffic of a known transfer nor to/from a request
@@ -620,7 +620,7 @@ clauses joined by `and`, `,` for "any of", `!=` to negate; empty matches all.
 Keys: `op` (opcode name), `host`/`src`/`dst` (address, CIDR, `addr:port`,
 `[v6]:port`, `:port`; mapped v4 matches v4), `port`, `file` (shell pattern,
 requests only), `block`, `code` (ERROR code), `session`, `leg`, `direction`.
-`FilterError` (a `ValueError`) for an unknown key or malformed value.
+`CaptureFilterError` (a `TFTPValueError`) for an unknown key or malformed value.
 
 ## Results and errors
 
@@ -634,20 +634,46 @@ the wire; netascii-encoded size in netascii mode), `blocks`, `retransmits`,
 `timeout` (seconds), `tsize` (or `None`), `rollover`, and `options` (the OACK
 as sent/received; empty when RFC 1350 defaults applied).
 
-Exceptions: **`TftpError(code=0, message="")`** (base; `.code` is an
-`ErrorCode` when the value is known, `.message` defaults to the code's
-standard text; `code` must be an `int` in 0..65535 and `message` text, else
-`TypeError` or `ValueError` at construction, so `TftpError("no such file")` is
-refused rather than built with the text as its code), **`RemoteError`** (the peer sent ERROR; always raised as
-the subclass for its code — `FileNotFound` 1, `AccessViolation` 2,
-`DiskFull` 3, `IllegalOperation` 4, `UnknownTransferId` 5,
-`FileAlreadyExists` 6, `NoSuchUser` 7, `OptionNegotiationError` 8 — and
-plain `RemoteError` for 0 and unknown codes; `RemoteError.from_code(code,
-message)` builds one), **`ProtocolError`** (the peer broke the protocol;
-code 4, or 8 for option problems), **`TransferTimeout`** (also a
-`TimeoutError`; retries exhausted or `max_duration` passed),
-**`TransferAborted`** (cancelled locally: `abort()`, server shutdown).
-`MalformedPacket` is a `ValueError`.
+Exceptions, all defined in `tftp.exceptions` (every one but the two capture
+errors is also importable from `tftp`): every one is a **`TFTPError`** except
+`WouldBlock`, so `except TFTPError` catches what the library reports on its
+own account. A caller's own mistake (a wrong
+argument type, an option out of range) is plain `TypeError` or `ValueError`,
+not one of these. `TFTPError` plays three roles, told apart by the subclass:
+
+- *What a handler raises to refuse a request*: **`TFTPError(code=0,
+  message="")`** itself, or `TFTPProtocolError`; the code and message become
+  the ERROR the client receives. `.code` is an `ErrorCode` when the value is
+  known, `.message` defaults to the code's standard text; `code` must be an
+  `int` in 0..65535 and `message` text, else `TypeError` or `ValueError` at
+  construction, so `TFTPError("no such file")` is refused rather than built
+  with the text as its code.
+- *What a client raises for the server's ERROR*: **`RemoteError`**, always
+  raised as the subclass for its code (`FileNotFound` 1, `AccessViolation` 2,
+  `DiskFull` 3, `IllegalOperation` 4, `UnknownTransferID` 5,
+  `FileAlreadyExists` 6, `NoSuchUser` 7, `OptionNegotiationError` 8) and plain
+  `RemoteError` for 0 and unknown codes; `RemoteError.from_code(code,
+  message)` builds one. The leaves describe the *server's* file, so none is
+  also a `FileNotFoundError` or `PermissionError`; `tftp.path` raises those.
+  Also **`TFTPProtocolError(message, code=4)`** (the peer broke the protocol;
+  code 4, or 8 for option problems), **`TransferTimeoutError(message)`** (also
+  a `TimeoutError`, with `errno` `None`; retries exhausted or `max_duration`
+  passed) and **`TransferAbortedError(message)`** (cancelled locally:
+  `abort()`, server shutdown), both with code 0.
+- *What `TransferResult.error` holds*: whichever of the above ended the
+  transfer, or `None`.
+
+Malformed text raises **`TFTPValueError`**, also a `ValueError`:
+**`TFTPDecodeError`** (bytes that are not a packet; `.code` is 4),
+`CaptureFormatError` and `CaptureFilterError` (both in `tftp.capture` too) and
+`parse_url`'s refusals. `str()` of these is the message alone. **`WouldBlock`**
+is a `BlockingIOError`, a signal that a source or sink has nothing ready.
+
+Every exception copies and pickles (`copy.copy`, `multiprocessing`), a
+`TransferResult` holding one included. `tftp.exceptions.error_for_exception(exc)
+-> TFTPError` maps any exception to the ERROR to send: a `TFTPError` as is, an
+`OSError` by errno with the generic text (never the OS text, which would
+disclose server paths).
 
 ## Wire format
 
@@ -660,7 +686,7 @@ order, duplicates — and `.encode()` returns `raw` or a fresh encoding, so a
 relay forwards unknown options untouched), `Data(block, data)`, `Ack(block)`,
 `Error(code, message)`, `OptionAck(options)`.
 
-- **`decode(bytes) -> Packet`** — raises `MalformedPacket`. Tolerates a
+- **`decode(bytes) -> Packet`** — raises `TFTPDecodeError`. Tolerates a
   missing final NUL and drops a dangling option name.
 - **`encode_request(opcode, filename, mode="octet", options=None)`**,
   **`encode_data(block, data)`**, **`encode_ack(block)`**,
@@ -681,7 +707,7 @@ relay forwards unknown options untouched), `Data(block, data)`, `Ack(block)`,
   is the percent-decoded path after the authority's `/`; `;mode=netascii`
   selects the mode (default `octet`); the port defaults to 69. Anything else
   (another scheme, no host or file, an unknown parameter, `mode=mail`) raises
-  `ValueError`.
+  `TFTPValueError`.
 - **`format_url(host, filename, port=69, mode="octet")`** — the inverse
   (`str(TftpURL)` too); `host` may be an address or interface object or a
   `netimps.Host`; IPv6 hosts are bracketed. `port` must be an `int` (`None`

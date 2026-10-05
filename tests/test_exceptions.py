@@ -133,7 +133,7 @@ def test_every_exception_class_is_defined_in_one_module():
 
 def test_the_old_module_is_gone():
     with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("tftp.errors")
+        importlib.import_module("tftp." + "errors")
 
 
 @pytest.mark.parametrize("cls, builtins", _BUILTINS, ids=_IDS)

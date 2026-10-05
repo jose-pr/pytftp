@@ -49,7 +49,7 @@ nav:
       - Netascii: api/netascii.md
       - URIs: api/uri.md
       - Paths: api/path.md
-      - Errors and results: api/errors.md
+      - Exceptions and results: api/exceptions.md
   - Changelog: changelog.md
 
 plugins:

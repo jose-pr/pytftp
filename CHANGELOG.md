@@ -11,15 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **Defaults that bound what a request can hold.** `ServerLimits(max_idle=60.0)`
   is new: a transfer with no datagram from its peer for 60 seconds ends with
-  `TransferTimeout`, and a `timeout` the client negotiated cannot extend it
+  `TransferTimeoutError`, and a `timeout` the client negotiated cannot extend it
   (pass `max_idle=None` for the old behaviour: a request asking `timeout=255`
   was held for over two hours). It counts the peer's silence, not the
   transfer's length. `max_sessions` now defaults to 500 on every platform,
   where it was unlimited outside Windows (`None` still means unlimited, and on
   Windows 510, the most `select()` can watch). `pytftp serve --max-sessions`
   defaults to 500; 0 is unlimited.
-- `TftpError(code, message)` raises `TypeError` for a `code` that is not an
-  `int` (so `TftpError("no such file")` is refused instead of taking the text
+- `TFTPError(code, message)` raises `TypeError` for a `code` that is not an
+  `int` (so `TFTPError("no such file")` is refused instead of taking the text
   as its code) or a `message` that is not text, and `ValueError` for a code
   outside 0..65535. `encode_error` never raises.
 - Requires `netimps>=0.4.0,<0.5`; netimps 0.3 is no longer supported.
@@ -40,9 +40,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - On Windows an address the system marks tentative or duplicate (the
   169.254.x.x of a media-disconnected adapter) is no longer one of an
   adapter's addresses, so `Server(interface=...)` does not consider it.
+- Every exception the library raises on its own account is defined in
+  `tftp.exceptions` and is a `TFTPError`: `TFTPDecodeError` (bytes that are not
+  a packet), `CaptureFormatError` and `CaptureFilterError` were plain
+  `ValueError` subclasses and are now `TFTPError` as well, and the new
+  `TFTPValueError(TFTPError, ValueError)` is what `parse_url` raises for a
+  URL it cannot read (it used to raise a bare `ValueError`; `except ValueError`
+  still catches it). `WouldBlock` moves there too and stays a
+  `BlockingIOError`, outside `TFTPError`, since it is a signal and not a
+  failure. `str()` of the decode, filter, capture-format and value errors is
+  the message alone.
+- `TransferTimeoutError().errno` is `None`; it was `ErrorCode.NOT_DEFINED`
+  (0), which is not an operating-system error number.
+
+### Renamed
+
+Old names are not kept as aliases.
+
+| Old | New |
+| --- | --- |
+| `tftp.errors` (module) | `tftp.exceptions` |
+| `TftpError` | `TFTPError` |
+| `ProtocolError` | `TFTPProtocolError` |
+| `TransferTimeout` | `TransferTimeoutError` |
+| `TransferAborted` | `TransferAbortedError` |
+| `UnknownTransferId` | `UnknownTransferID` |
+| `MalformedPacket` (`tftp.packet`) | `TFTPDecodeError` |
+| `FilterError` (`tftp.capture`) | `CaptureFilterError` |
 
 ### Fixed
 
+- `TransferTimeoutError`, `TransferAbortedError` and `TFTPProtocolError` can be
+  copied and pickled, so a `TransferResult` holding one crosses a
+  `multiprocessing` boundary; each raised `TypeError` before.
 - `pytftp serve ROOT --remap ...` on a plain directory answered every request
   with ERROR 0 (a `str` was wrapped where a handler belongs); only combined
   with `--per-client` or `--ignore-case` did it work. A remapped name also
@@ -74,13 +104,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   work on the Proactor event loop (the host refused the zone in the text, and
   the error was dropped). The relay's upstream leg is fixed the same way.
 - A send the host refuses ends an asyncio client's request with that
-  `OSError` at once; it was reported as `TransferTimeout` after every retry.
+  `OSError` at once; it was reported as `TransferTimeoutError` after every retry.
   An ICMP report from the peer is still loss.
 - On Windows, one datagram longer than the client's receive buffer, from any
   address, ended a synchronous transfer with an uncaught `OSError` (WinError
   10040). The buffer is now longer than any datagram: a stray one is answered
   with ERROR 5 and the transfer carries on, and a DATA longer than the
-  negotiated `blksize` is a `ProtocolError`.
+  negotiated `blksize` is a `TFTPProtocolError`.
 - **With a window above 1, one duplicated, lost or late ACK, or one reordered
   DATA pair, made every remaining window be sent and acknowledged twice** (a
   3001-block transfer at `windowsize=16` sent 5922 DATA datagrams). An ACK
@@ -99,7 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   stays queued until its deadline, no longer keeps the transfer, its file and
   its window alive (200 downloads asking `timeout=255` kept 799 MiB
   referenced, outside every limit).
-- A handler's `TftpError` that could not be encoded as an ERROR (a NUL in
+- A handler's `TFTPError` that could not be encoded as an ERROR (a NUL in
   the message, a code outside 0..65535) ended the synchronous server's thread
   for every client, and left an `AsyncServer` session open for good. Every
   ERROR now encodes: a NUL in the text is sent as `?`, the text is cut to 512

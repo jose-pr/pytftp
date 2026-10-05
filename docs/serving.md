@@ -39,7 +39,7 @@ class BootMenu(tftp.FileSystemHandler):
 ```
 
 `context` carries the parsed request, the client's address, and the address
-and interface the request arrived on. Raise `tftp.TftpError(code, message)`
+and interface the request arrived on. Raise `tftp.TFTPError(code, message)`
 to refuse with a specific ERROR, or let an `OSError` through to have it
 mapped by errno.
 
