@@ -13,7 +13,7 @@ from typing import Any, Tuple
 from pathlib_next.uri import UriPath
 
 from ..client import Client
-from .local import tftp_open, tftp_scandir, tftp_stat
+from .local import check_client, tftp_open, tftp_scandir, tftp_stat
 
 __all__ = ["TftpUriPath", "TftpBackend"]
 
@@ -29,7 +29,7 @@ class TftpBackend:
     __slots__ = ("client", "__weakref__")
 
     def __init__(self, client: Client) -> None:
-        self.client = client
+        self.client = check_client(client)
 
 
 class TftpUriPath(UriPath):

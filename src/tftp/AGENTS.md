@@ -438,7 +438,9 @@ bound to a `Client` (`client.path("boot", "x")`). Joined like a
 so `/boot/x` and `boot/x` stay distinct. Joining onto a `TftpPath` keeps its
 client; `with_client()`, `with_mode()`; `client`, `transfer_mode`. Equality
 and hashing include the server (host, port). `as_uri()` is the `tftp://`
-URL. `relative_to()` works on the path text.
+URL. `relative_to()` works on the path text. A path is synchronous: binding
+it to an `AsyncClient` (`TftpPath(..., client=)`, `with_client()`) raises
+`TypeError`, and so does `AsyncClient.path()`.
 
 **`TftpUriPath`** — the `tftp://host[:port]/path[;mode=netascii]` scheme
 for `pathlib_next.uri.UriPath`, registered through the

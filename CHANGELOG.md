@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A `TftpPath` bound to an `AsyncClient` returned wrong results without
+  raising (`read_bytes()` gave `b""`, `write_bytes()` reported success, and
+  nothing was sent: the client's coroutines were never awaited).
+  `AsyncClient.path()` raises `TypeError`, and `TftpPath`, `TftpUriPath`
+  (through `with_client()` and `TftpBackend`) refuse an asyncio client with
+  `TypeError`.
 - A server named by a link-local IPv6 address with a zone (`fe80::1%7`) was
   never heard under the default `strict_source=True`: the reply's source was
   compared as text, and a received address carries no zone in its text. Both

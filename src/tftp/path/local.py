@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import errno
+import inspect
 import posixpath
 from typing import Any, Callable, Iterator, Optional, Tuple
 
@@ -15,6 +16,21 @@ from ..errors import FileNotFound, TftpError
 from ._stream import open_reader, open_writer, os_error
 
 __all__ = ["TftpPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir"]
+
+
+def check_client(client: Any) -> Any:
+    """``client``, if it is the synchronous :class:`Client`; ``TypeError`` for an asyncio one.
+
+    A path's reads and writes run in the calling thread. An asyncio client's
+    methods return coroutines that nothing here would await, so every
+    operation would appear to succeed having sent nothing.
+    """
+    if inspect.iscoroutinefunction(getattr(client, "download", None)):
+        raise TypeError(
+            "a path needs the synchronous tftp.Client, not %s, whose methods are coroutines"
+            % type(client).__name__
+        )
+    return client
 
 
 def client_factory(client: Client) -> Callable[..., Client]:
@@ -119,7 +135,7 @@ class TftpPath(Path):
             if inherited is None:
                 raise TypeError("TftpPath needs client= (or a TftpPath to join onto)")
             client, mode = inherited._client, inherited._mode
-        self._client = client
+        self._client = check_client(client)
         self._mode = mode
         names = [name for name in text.split("/") if name and name != "."]
         if text.startswith("/"):
