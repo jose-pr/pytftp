@@ -387,7 +387,7 @@ def test_subnet_broadcast_is_detected_from_the_arrival_interface():
 def _random_packets(seed: int, count: int):
     rng = random.Random(seed)
     templates = [
-        encode_request(TFTPOpcode.RRQ, "file", "octet", {"blksize": 1024, "tsize": 0}),
+        encode_request(TFTPOpcode.RRQ, "file", mode="octet", options={"blksize": 1024, "tsize": 0}),
         encode_request(TFTPOpcode.WRQ, "file"),
         encode_data(1, b"abc"),
         encode_ack(3),
@@ -603,7 +603,7 @@ def test_the_default_bounds_are_finite():
     with pytest.raises(ValueError):
         tftp.TFTPServerLimits(max_idle=0)
     assert tftp.TFTPServerLimits(max_idle=None).max_idle is None
-    server = tftp.TFTPServer(".", "127.0.0.1", 0)
+    server = tftp.TFTPServer(".", host="127.0.0.1", port=0)
     try:
         assert server.max_sessions == 500
     finally:

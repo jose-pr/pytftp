@@ -31,5 +31,5 @@ class BootMenu(tftp.FilesystemBackend):
 
 root = sys.argv[1] if len(sys.argv) > 1 else "."
 port = int(sys.argv[2]) if len(sys.argv) > 2 else 69
-with tftp.TFTPServer(BootMenu(root), "::", port) as server:
+with tftp.TFTPServer(BootMenu(root), host="::", port=port) as server:
     server.serve_forever()

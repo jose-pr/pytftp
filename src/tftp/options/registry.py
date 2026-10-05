@@ -22,7 +22,7 @@ class OptionRegistry:
         for handler in handlers:
             self.register(handler)
 
-    def register(self, handler: OptionHandler, replace: bool = False) -> OptionHandler:
+    def register(self, handler: OptionHandler, *, replace: bool = False) -> OptionHandler:
         """Add ``handler``; an existing name needs ``replace=True``."""
         name = handler.name.lower()
         if not name:
@@ -64,4 +64,4 @@ DEFAULT_REGISTRY = OptionRegistry()
 
 def register_option(handler: OptionHandler, replace: bool = False) -> OptionHandler:
     """Add ``handler`` to :data:`DEFAULT_REGISTRY` (usable as a class decorator's result)."""
-    return DEFAULT_REGISTRY.register(handler, replace)
+    return DEFAULT_REGISTRY.register(handler, replace=replace)

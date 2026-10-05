@@ -43,6 +43,7 @@ class TFTPServerLimits:
 
     def __init__(
         self,
+        *,
         max_request_size: int = 1024,
         max_filename_length: int = 512,
         max_options: int = 16,

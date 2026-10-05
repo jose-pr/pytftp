@@ -587,7 +587,7 @@ class TFTPClient:
         """
         family, server, _ = self._endpoint()
         with self._socket(family) as sock:
-            request = encode_request(TFTPOpcode.RRQ, filename, mode, options)
+            request = encode_request(TFTPOpcode.RRQ, filename, mode=mode, options=options)
             buf = bytearray(_RECV_BUFFER)
             view = memoryview(buf)
             emit = self._emitter(sock)
@@ -619,7 +619,7 @@ class TFTPClient:
         self, sock, server, opcode, filename, mode, options, write, read, progress, started
     ) -> TransferResult:
         is_read = opcode == TFTPOpcode.RRQ
-        request = encode_request(opcode, filename, mode, options)
+        request = encode_request(opcode, filename, mode=mode, options=options)
         requested_blksize = int(options.get("blksize", DEFAULT_BLKSIZE))
         # Whatever a datagram's length: Windows reports one longer than the
         # buffer as an error before the sender can be looked at, and a longer

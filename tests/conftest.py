@@ -50,7 +50,7 @@ def make_server():
 
     def make(root_or_handler, host="127.0.0.1", **kwargs):
         kwargs.setdefault("timeout", 0.5)
-        server = tftp.TFTPServer(root_or_handler, host, 0, **kwargs).start()
+        server = tftp.TFTPServer(root_or_handler, host=host, port=0, **kwargs).start()
         servers.append(server)
         return server
 

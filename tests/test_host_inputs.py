@@ -19,7 +19,7 @@ from tftp.relay import TFTPRelay, Upstream
 
 @pytest.mark.parametrize("host", ["localhost", netimps.Host("localhost")], ids=["str", "Host"])
 def test_server_listens_on_a_host_name(root, host):
-    with tftp.TFTPServer(root, host, 0, timeout=0.5).start() as server:
+    with tftp.TFTPServer(root, host=host, port=0, timeout=0.5).start() as server:
         address, port = server.server_address[:2]
         assert socket.getaddrinfo("localhost", port, type=socket.SOCK_DGRAM)  # the name resolves
         assert tftp.TFTPClient(address, port, timeout=0.5).get("one.bin") == b"x"
@@ -27,7 +27,7 @@ def test_server_listens_on_a_host_name(root, host):
 
 def test_relay_listens_on_a_host_name(root, make_server):
     behind = make_server(root)
-    relay = TFTPRelay(("127.0.0.1", behind.server_address[1]), "localhost", 0).start()
+    relay = TFTPRelay(("127.0.0.1", behind.server_address[1]), host="localhost", port=0).start()
     try:
         assert client_for(relay).get("one.bin") == b"x"
     finally:
@@ -36,7 +36,7 @@ def test_relay_listens_on_a_host_name(root, make_server):
 
 def test_a_host_name_and_an_interface_are_refused_together(root):
     with pytest.raises(ValueError, match="host or interface"):
-        tftp.TFTPServer(root, "localhost", 0, interface=netimps.get_interface("127.0.0.1"))
+        tftp.TFTPServer(root, host="localhost", port=0, interface=netimps.get_interface("127.0.0.1"))
 
 
 # -- max_timeout ----------------------------------------------------------------
@@ -65,7 +65,7 @@ def test_client_refuses_malformed_host_port_text_before_sending():
 
 def test_server_refuses_a_bracketed_ipv4_address(root):
     with pytest.raises(ValueError):
-        tftp.TFTPServer(root, "[10.0.0.5]", 0).start()
+        tftp.TFTPServer(root, host="[10.0.0.5]", port=0).start()
 
 
 def test_a_host_that_is_not_a_host_is_a_type_error():

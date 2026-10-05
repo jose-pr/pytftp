@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `int` (so `TFTPError("no such file")` is refused instead of taking the text
   as its code) or a `message` that is not text, and `ValueError` for a code
   outside 0..65535. `encode_error` never raises.
+- **Options are keyword-only.** A callable takes its operands by position and
+  every option after them by keyword. `TFTPServerOptions`, `TFTPServerLimits`
+  and `Negotiated` take every field by keyword (`TFTPServerOptions(65464, 64)` is
+  a `TypeError`). `TFTPServer(root_or_handler, *, host=None, port=69, ...)`,
+  `AsyncTFTPServer(root_or_handler, *, host=None, port=69, ...)` and
+  `TFTPRelay(route, *, host=None, port=69, ...)` take the handler (or the
+  route) alone. `encode_request(opcode, filename, *, mode, options)`,
+  `TFTPRequestContext(request, peer, *, local_address, interface_index)`,
+  `AtomicWriter(path, *, overwrite)`, `DirectoryListing(directory, *, root)`,
+  `OptionRegistry.register(handler, *, replace)`, `AsyncReaderBridge(source, *,
+  capacity, size)` and `AsyncWriterBridge(sink, *, capacity, close_sink)` follow
+  the same rule. `TFTPClient(host, port=69, ...)`, `PortRange(low, high)` and
+  `Upstream(host, port)` keep the conventional pair.
 - Requires `netimps>=0.4.0,<0.5`; netimps 0.3 is no longer supported.
 - `TFTPClient(timeout=..., max_timeout=...)` raises `ValueError` when
   `max_timeout` is below `timeout`, where it used to be raised to `timeout`

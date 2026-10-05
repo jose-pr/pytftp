@@ -47,6 +47,7 @@ class TFTPRequestContext:
         self,
         request: RequestPacket,
         peer: Tuple[Any, ...],
+        *,
         local_address: Optional[str] = None,
         interface_index: int = 0,
     ) -> None:
@@ -123,7 +124,7 @@ class AtomicWriter:
 
     _tftp_copies_ = True  # write() copies its argument (see as_write)
 
-    def __init__(self, path: str, overwrite: bool = True) -> None:
+    def __init__(self, path: str, *, overwrite: bool = True) -> None:
         self.path = path
         self.overwrite = overwrite
         directory, name = os.path.split(path)

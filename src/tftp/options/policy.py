@@ -61,6 +61,7 @@ class TFTPServerOptions:
 
     def __init__(
         self,
+        *,
         max_blksize: int = MAX_BLKSIZE,
         max_windowsize: int = 64,
         max_window_bytes: int = 4 << 20,

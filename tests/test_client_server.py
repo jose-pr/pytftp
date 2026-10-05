@@ -301,7 +301,7 @@ def test_many_concurrent_clients(root, make_server):
 
 
 def test_server_lifecycle(root):
-    server = tftp.TFTPServer(root, "127.0.0.1", 0)
+    server = tftp.TFTPServer(root, host="127.0.0.1", port=0)
     with server:
         server.start()
         with pytest.raises(RuntimeError):

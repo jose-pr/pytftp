@@ -47,9 +47,9 @@ class ServerBase:
     def __init__(
         self,
         root_or_handler: Any,
+        *,
         host: "IPAddressLike | Host | None" = None,
         port: int = 69,
-        *,
         writable: bool = False,
         create: bool = True,
         overwrite: bool = False,
@@ -181,7 +181,7 @@ class ServerBase:
             self.stats.add("refused")
             self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "server busy")
             return None
-        context = TFTPRequestContext(request, peer, local, ifindex)
+        context = TFTPRequestContext(request, peer, local_address=local, interface_index=ifindex)
         context.interface = arrival.interface
         context.listing = (
             request.is_read

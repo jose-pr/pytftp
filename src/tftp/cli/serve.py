@@ -202,8 +202,8 @@ class Serve(Traced):
         try:
             server = TFTPServer(
                 handler,
-                self.listen,
-                self.port,
+                host=self.listen,
+                port=self.port,
                 writable=self.write,
                 create=not self.no_create,
                 overwrite=self.overwrite,

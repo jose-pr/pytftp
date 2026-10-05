@@ -85,8 +85,8 @@ class RelayCmd(Traced):
         try:
             relay = TFTPRelay(
                 route,
-                self.listen,
-                self.port,
+                host=self.listen,
+                port=self.port,
                 idle_timeout=self.idle_timeout,
                 max_sessions=self.max_sessions or None,
                 trace=self._tracer(),

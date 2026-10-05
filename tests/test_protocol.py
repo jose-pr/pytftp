@@ -89,7 +89,9 @@ def test_oack_then_ack0_handshake(root, make_server):
     server = make_server(root)
     with raw_socket() as client:
         client.sendto(
-            encode_request(TFTPOpcode.RRQ, "513.bin", "octet", {"blksize": 600, "tsize": 0, "bogus": 1}),
+            encode_request(
+                TFTPOpcode.RRQ, "513.bin", mode="octet", options={"blksize": 600, "tsize": 0, "bogus": 1}
+            ),
             server.server_address,
         )
         oack, tid = expect(client)
@@ -105,7 +107,8 @@ def test_client_refusing_the_oack_ends_the_transfer(root, make_server):
     server = make_server(root, on_complete=results.append)
     with raw_socket() as client:
         client.sendto(
-            encode_request(TFTPOpcode.RRQ, "513.bin", "octet", {"blksize": 600}), server.server_address
+            encode_request(TFTPOpcode.RRQ, "513.bin", mode="octet", options={"blksize": 600}),
+            server.server_address,
         )
         _, tid = expect(client)
         client.sendto(encode_error(TFTPErrorCode.OPTION_REFUSED), tid)
@@ -441,7 +444,7 @@ def test_a_max_sessions_the_selector_cannot_hold_is_refused_at_construction():
     if sys.platform != "win32":
         pytest.skip("select() has a descriptor limit on Windows only")
     with pytest.raises(ValueError, match="510"):
-        tftp.TFTPServer(".", "127.0.0.1", 0, max_sessions=600)
+        tftp.TFTPServer(".", host="127.0.0.1", port=0, max_sessions=600)
 
 
 # -- a receiver that follows RFC 7440 to the letter ---------------------------------------------
@@ -573,7 +576,9 @@ def test_hosts_are_compared_by_address_and_scope_and_not_by_text():
 def test_a_server_named_by_a_link_local_address_with_its_zone_is_heard(link_local):
     from tftp.backends import MemoryBackend
 
-    with tftp.TFTPServer(MemoryBackend({"f": b"link-local"}), link_local, 0, timeout=0.5).start() as server:
+    with tftp.TFTPServer(
+        MemoryBackend({"f": b"link-local"}), host=link_local, port=0, timeout=0.5
+    ).start() as server:
         client = tftp.TFTPClient(
             link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=True
         )
@@ -585,7 +590,7 @@ def test_a_request_context_copies_itself_with_another_filename():
     from tftp.server import TFTPRequestContext
 
     request = tftp.RequestPacket(TFTPOpcode.RRQ, "alias", "octet", {"x-list": "1"}, b"raw")
-    context = TFTPRequestContext(request, ("10.0.0.5", 4000), "10.0.0.1", 7)
+    context = TFTPRequestContext(request, ("10.0.0.5", 4000), local_address="10.0.0.1", interface_index=7)
     context.interface = object()
     context.listing = True
     copy = context.with_filename("real")

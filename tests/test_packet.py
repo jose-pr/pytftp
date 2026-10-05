@@ -5,7 +5,9 @@ from tftp import TFTPErrorCode, TFTPOpcode
 
 
 def test_request_roundtrip_with_options():
-    raw = tftp.encode_request(TFTPOpcode.RRQ, "boot/pxelinux.0", "octet", {"blksize": 1428, "tsize": 0})
+    raw = tftp.encode_request(
+        TFTPOpcode.RRQ, "boot/pxelinux.0", mode="octet", options={"blksize": 1428, "tsize": 0}
+    )
     assert raw == b"\x00\x01boot/pxelinux.0\x00octet\x00blksize\x001428\x00tsize\x000\x00"
     packet = tftp.decode(raw)
     assert packet == tftp.RequestPacket(
@@ -250,15 +252,15 @@ def test_encode_request_refuses_what_decode_refuses_and_what_rfc_2347_bounds():
     _every_encoder_refuses(
         [
             lambda: tftp.encode_request(TFTPOpcode.RRQ, ""),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", "bogus-mode"),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", ""),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", "oct\0et"),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="bogus-mode"),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode=""),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="oct\0et"),
             lambda: tftp.encode_request(TFTPOpcode.RRQ, long_name),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", "octet", {"": "1"}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", "octet", {"a\0": "1"}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", "octet", {"a": "1\0"}),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"": "1"}),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a\0": "1"}),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": "1\0"}),
             lambda: tftp.encode_request(
-                TFTPOpcode.RRQ, "f", "octet", {"x%d" % i: "y" * 40 for i in range(20)}
+                TFTPOpcode.RRQ, "f", mode="octet", options={"x%d" % i: "y" * 40 for i in range(20)}
             ),
             lambda: tftp.encode_request(TFTPOpcode.DATA, "f"),
             lambda: tftp.RequestPacket(TFTPOpcode.RRQ, long_name, "octet").encode(),
@@ -269,11 +271,11 @@ def test_encode_request_refuses_what_decode_refuses_and_what_rfc_2347_bounds():
     _every_encoder_refuses(
         [
             lambda: tftp.encode_request(TFTPOpcode.RRQ, b"f"),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", None),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", "octet", {"a": None}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", "octet", {"a": True}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", "octet", {"a": 1.5}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", "octet", {1: "a"}),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode=None),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": None}),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": True}),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": 1.5}),
+            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={1: "a"}),
         ],
         TypeError,
     )
@@ -285,8 +287,8 @@ def test_encode_request_accepts_the_largest_request_and_the_rfc_1350_modes():
     with pytest.raises(ValueError):
         tftp.encode_request(TFTPOpcode.RRQ, name + "n")
     for mode in ("netascii", "OCTET", "Mail"):
-        assert tftp.decode(tftp.encode_request(TFTPOpcode.RRQ, "f", mode)).mode == mode.lower()
-    assert tftp.encode_request(TFTPOpcode.RRQ, "f", "octet", {"blksize": 8, "x": "y"}) == (
+        assert tftp.decode(tftp.encode_request(TFTPOpcode.RRQ, "f", mode=mode)).mode == mode.lower()
+    assert tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"blksize": 8, "x": "y"}) == (
         b"\x00\x01f\x00octet\x00blksize\x008\x00x\x00y\x00"
     )
 

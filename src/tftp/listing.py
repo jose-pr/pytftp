@@ -98,7 +98,7 @@ class DirectoryListing(io.BytesIO):
 
     _tftp_listing_ = True
 
-    def __init__(self, directory: str, root: Optional[str] = None) -> None:
+    def __init__(self, directory: str, *, root: Optional[str] = None) -> None:
         root = os.path.realpath(root or directory)
         entries = []
         with os.scandir(directory) as scan:

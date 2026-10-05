@@ -107,8 +107,8 @@ import tftp
 
 server = tftp.TFTPServer(
     "/srv/tftp",
-    "::",
-    69,
+    host="::",
+    port=69,
     writable=True,
     options=tftp.TFTPServerOptions(max_blksize=8192, max_windowsize=32),
     on_complete=lambda r: print(r.operation, r.filename, r.peer[0], r.error or "ok"),

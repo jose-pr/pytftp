@@ -21,7 +21,7 @@ def make_relay():
     relays = []
 
     def make(route, host="127.0.0.1", **kwargs):
-        relay = TFTPRelay(route, host, 0, **kwargs).start()
+        relay = TFTPRelay(route, host=host, port=0, **kwargs).start()
         relays.append(relay)
         return relay
 
@@ -268,7 +268,7 @@ def test_relay_hears_an_upstream_named_by_a_link_local_address_with_its_zone(lin
     from tftp.backends import MemoryBackend
 
     with tftp.TFTPServer(
-        MemoryBackend({"f": b"through the relay"}), "::", 0, timeout=0.5
+        MemoryBackend({"f": b"through the relay"}), host="::", port=0, timeout=0.5
     ).start() as upstream:
         relay = make_relay("[%s]:%d" % (link_local, upstream.server_address[1]))
         client = tftp.TFTPClient("127.0.0.1", relay.server_address[1], timeout=0.5, retries=2)

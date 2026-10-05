@@ -47,7 +47,7 @@ class AsyncReaderBridge:
 
     _CHUNK = 65536
 
-    def __init__(self, source: Any, capacity: int = 1 << 20, size: Optional[int] = None) -> None:
+    def __init__(self, source: Any, *, capacity: int = 1 << 20, size: Optional[int] = None) -> None:
         self.source = source
         self.capacity = capacity
         self.size = size if size is not None else getattr(source, "size", None)
@@ -132,7 +132,7 @@ class AsyncWriterBridge:
 
     _tftp_copies_ = True
 
-    def __init__(self, sink: Any, capacity: int = 1 << 20, close_sink: bool = True) -> None:
+    def __init__(self, sink: Any, *, capacity: int = 1 << 20, close_sink: bool = True) -> None:
         self.sink = sink
         self.capacity = capacity
         self.close_sink = close_sink

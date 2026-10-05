@@ -386,7 +386,7 @@ class AsyncTFTPClient(TFTPClient):
         self, loop, sock, server, opcode, filename, mode, options, write, read, progress, started, bridge
     ) -> TransferResult:
         is_read = opcode == TFTPOpcode.RRQ
-        request = encode_request(opcode, filename, mode, options)
+        request = encode_request(opcode, filename, mode=mode, options=options)
         fit_window(sock, int(options.get("blksize", DEFAULT_BLKSIZE)), int(options.get("windowsize", 1)))
         driver = _Transfer(self, loop)
         driver.server = server

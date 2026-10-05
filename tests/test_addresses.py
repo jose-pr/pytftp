@@ -129,7 +129,7 @@ def test_by_interface_key_forms():
 def test_relay_and_proxy_to_typed_upstreams(root, make_server):
     upstream_server = make_server(root)
     port = upstream_server.server_address[1]
-    relay = TFTPRelay((LOOPBACK, port), "127.0.0.1", 0).start()
+    relay = TFTPRelay((LOOPBACK, port), host="127.0.0.1", port=0).start()
     try:
         assert client_for(relay).get("one.bin") == b"x"
     finally:
@@ -140,7 +140,7 @@ def test_relay_and_proxy_to_typed_upstreams(root, make_server):
 
 @pytest.mark.parametrize("host", [LOOPBACK, netimps.Host("127.0.0.1")], ids=["address", "Host"])
 def test_server_listens_on_typed_host(root, host):
-    with tftp.TFTPServer(root, host, 0, timeout=0.5).start() as server:
+    with tftp.TFTPServer(root, host=host, port=0, timeout=0.5).start() as server:
         assert tftp.TFTPClient("127.0.0.1", server.server_address[1], timeout=0.5).get("one.bin") == b"x"
 
 
@@ -174,12 +174,12 @@ def test_server_on_one_interface(root, form):
 
 def test_interface_family_follows_a_wildcard_host(root):
     iface = _loopback()
-    with tftp.TFTPServer(root, "0.0.0.0", 0, interface=iface).start() as server:
+    with tftp.TFTPServer(root, host="0.0.0.0", port=0, interface=iface).start() as server:
         assert server.server_address[0] == str(iface.primary_ip(ipv6=False).ip)
     v6 = iface.primary_ip(ipv6=True)
     if v6 is None:
         pytest.skip("loopback has no IPv6 address here")
-    with tftp.TFTPServer(root, "::", 0, interface=iface, timeout=0.5).start() as server:
+    with tftp.TFTPServer(root, host="::", port=0, interface=iface, timeout=0.5).start() as server:
         host, port = server.server_address[:2]
         assert ipaddress.ip_address(host.split("%")[0]) == v6.ip
         assert tftp.TFTPClient(host, port, timeout=0.5).get("one.bin") == b"x"
@@ -187,7 +187,7 @@ def test_interface_family_follows_a_wildcard_host(root):
 
 def test_interface_errors(root):
     with pytest.raises(ValueError):
-        tftp.TFTPServer(root, "127.0.0.1", 0, interface=_loopback())  # host or interface
+        tftp.TFTPServer(root, host="127.0.0.1", port=0, interface=_loopback())  # host or interface
     with pytest.raises(ValueError):
         tftp.TFTPServer(root, port=0, interface="no-such-adapter-xyz")
 

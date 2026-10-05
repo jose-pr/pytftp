@@ -28,7 +28,7 @@ from tftp.capture import (
 
 def test_summaries():
     assert (
-        summarize(encode_request(TFTPOpcode.RRQ, "a.bin", "octet", {"blksize": 1428}))
+        summarize(encode_request(TFTPOpcode.RRQ, "a.bin", mode="octet", options={"blksize": 1428}))
         == "RRQ 'a.bin' octet blksize=1428"
     )
     assert summarize(encode_data(7, b"xyz")) == "DATA 7 (3 bytes)"
@@ -57,7 +57,11 @@ def test_a_request_event_is_json_with_its_options():
     import json
 
     request = PacketEvent(
-        0, "in", ("10.0.0.1", 69), ("10.0.0.5", 2000), encode_request(1, "f", "octet", {"blksize": 8})
+        0,
+        "in",
+        ("10.0.0.1", 69),
+        ("10.0.0.5", 2000),
+        encode_request(1, "f", mode="octet", options={"blksize": 8}),
     )
     assert json.loads(json.dumps(request.to_dict()))["options"] == {"blksize": "8"}
     refusal = PacketEvent(0, "out", ("10.0.0.1", 69), ("10.0.0.5", 2000), encode_error(8, "no"))
@@ -232,7 +236,7 @@ def test_flow_retransmission_error_and_stray():
 
 def test_flow_rollover_and_netascii():
     tracker = FlowTracker(keep_payloads=True)
-    packets = [(C, S, encode_request(TFTPOpcode.RRQ, "t", "netascii", {"blksize": 8}))]
+    packets = [(C, S, encode_request(TFTPOpcode.RRQ, "t", mode="netascii", options={"blksize": 8}))]
     packets.append((T, C, encode_oack({"blksize": 8})))
     count = 65540
     for logical in range(1, count + 1):

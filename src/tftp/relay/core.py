@@ -80,9 +80,9 @@ class TFTPRelay:
     def __init__(
         self,
         route: Any,
+        *,
         host: "IPAddressLike | Host | None" = None,
         port: int = 69,
-        *,
         idle_timeout: float = 30.0,
         max_lifetime: float = 3600.0,
         linger: float = 2.0,
@@ -330,7 +330,7 @@ class TFTPRelay:
         if self.max_sessions is not None and len(self._sessions) >= self.max_sessions:
             self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "relay busy")
             return False
-        context = TFTPRequestContext(request, sender, local, ifindex)
+        context = TFTPRequestContext(request, sender, local_address=local, interface_index=ifindex)
         context.interface = arrival.interface
         try:
             target = self.route(request, context)

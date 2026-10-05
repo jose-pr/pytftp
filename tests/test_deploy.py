@@ -188,7 +188,11 @@ def test_relay_port_range(root, make_server):
     upstream = make_server(root)
     events = []
     relay = TFTPRelay(
-        ("127.0.0.1", upstream.server_address[1]), "127.0.0.1", 0, port_range=ports, trace=events.append
+        ("127.0.0.1", upstream.server_address[1]),
+        host="127.0.0.1",
+        port=0,
+        port_range=ports,
+        trace=events.append,
     ).start()
     try:
         assert client_for(relay).get("one.bin") == (root / "one.bin").read_bytes()

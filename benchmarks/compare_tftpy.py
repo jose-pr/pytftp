@@ -35,7 +35,7 @@ def _free_port() -> int:
 def _serve_pytftp(root: str, port: int) -> None:
     import tftp
 
-    tftp.TFTPServer(root, "127.0.0.1", port).serve_forever()
+    tftp.TFTPServer(root, host="127.0.0.1", port=port).serve_forever()
 
 
 def _serve_tftpy(root: str, port: int) -> None:

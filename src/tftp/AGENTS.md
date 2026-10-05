@@ -13,6 +13,11 @@ group it: `tftp.packet` (wire format), `tftp.options` (negotiation),
 `tftp.netascii`, `tftp.exceptions` (every exception), `tftp.result`, and
 `tftp.cli` (needs the `cli` extra). Modules starting with `_` are internal.
 
+Options are keyword-only: a callable takes its operands (the file name, the
+host, the handler) by position and every option after them by keyword, and a
+policy or record class (`TFTPServerOptions`, `TFTPServerLimits`, `Negotiated`)
+takes every field by keyword.
+
 `tftp.__version__` — the installed distribution's version.
 
 ## Protocol coverage
@@ -140,7 +145,7 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 
 ## Server
 
-**`TFTPServer(root_or_handler, host=None, port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None, interface=None)`**
+**`TFTPServer(root_or_handler, *, host=None, port=69, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None, interface=None)`**
 
 - `root_or_handler` — a directory (wrapped in `FilesystemBackend` with
   `writable`, `create`, `overwrite`) or any handler object (see below).
@@ -238,7 +243,7 @@ returns `default` instead of raising. `TFTPValueError` outside 1..65535 or with
 non-`str`. **`PortRangeLike`** (`tftp.server`) is what `port_range=` takes in
 place of a `PortRange`: a `(low, high)` pair, a `range` of step 1 or the text.
 
-**`TFTPServerLimits(max_request_size=1024, max_filename_length=512, max_options=16, max_option_length=255, max_sessions_per_client=None, max_duration=None, max_idle=60.0)`**
+**`TFTPServerLimits(*, max_request_size=1024, max_filename_length=512, max_options=16, max_option_length=255, max_sessions_per_client=None, max_duration=None, max_idle=60.0)`**
 — bounds on untrusted input. A request over a size/name/option limit gets
 ERROR 4 from the listening port; a client over `max_sessions_per_client`
 (counted per address, any port) gets ERROR 0 `"server busy"`.
@@ -252,7 +257,7 @@ has read, not for the window it negotiated, and none of it once it ends.
 `TFTPServerLimits`, `TFTPServerOptions` and `Negotiated` are mutable: they
 compare equal when every field does, are unhashable and print their fields.
 
-**`TFTPServerOptions(max_blksize=65464, max_windowsize=64, max_window_bytes=4 MiB, allowed=None, refused=(), fit_mtu=False, registry=None)`**
+**`TFTPServerOptions(*, max_blksize=65464, max_windowsize=64, max_window_bytes=4 MiB, allowed=None, refused=(), fit_mtu=False, registry=None)`**
 — the negotiation policy.
 
 - A larger `blksize`/`windowsize` request is answered with the maximum
@@ -284,7 +289,7 @@ Every option is an **`OptionHandler`** (`name`, `standard`) with
 limit after `fit_mtu`); `ClientOptionContext` carries
 `result`, `requested`, `is_read`. Custom values go in `ctx.result.extra`.
 
-**`OptionRegistry(handlers=BUILTIN_OPTIONS)`** — `register(handler,
+**`OptionRegistry(handlers=BUILTIN_OPTIONS)`** — `register(handler, *,
 replace=False)` (a duplicate name raises), `unregister(name)`, `get(name)`,
 `in`, iteration, `names()`, `standard()`, `copy()`. **Registration order is
 negotiation order** (`windowsize` after the block size it depends on).
@@ -356,7 +361,7 @@ on the event-loop thread: **a slow handler stalls every transfer**.
 standard file object (`io.IOBase`) or declares `_tftp_copies_ = True`, and
 `bytes` otherwise — so a writer that keeps references is safe by default.
 
-**`TFTPRequestContext`** — `request` (the `RequestPacket`), `peer` (client address
+**`TFTPRequestContext(request, peer, *, local_address=None, interface_index=0)`** — `request` (the `RequestPacket`), `peer` (client address
 tuple), `local_address` (the destination address as text, or `None` without
 pktinfo), `interface_index` (or 0), `interface` (that interface as a
 `netimps.Interface` — name, addresses, MTU — or `None`), `listing` (the RRQ asks for `x-list=1`
@@ -390,12 +395,12 @@ carried over.
 size, mtime=None)`** (a named tuple: it is only handed out),
 **`dumps(entries) -> bytes`**, **`loads(data) -> list`** (malformed lines
 skipped),
-**`DirectoryListing(directory, root=None)`** (a `BytesIO` with `size`,
+**`DirectoryListing(directory, *, root=None)`** (a `BytesIO` with `size`,
 `mtime`, `_tftp_listing_`; sorted by name; leaves out symlinks resolving
 outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
 `MTIME_OPTION`.
 
-**`AtomicWriter(path, overwrite=True)`** — writes to a hidden temp file beside
+**`AtomicWriter(path, *, overwrite=True)`** — writes to a hidden temp file beside
 `path`; `close()` renames it into place (refusing with ERROR 6 if
 `overwrite=False` and `path` appeared meanwhile); `abort()` deletes it.
 
@@ -415,7 +420,7 @@ path, bytes, a binary file, or an **async reader** (`async read(n)`) or async
 iterable of bytes. Cancelling the task sends the server ERROR 0. Each
 attempt (including the option fallback) uses a fresh socket.
 
-**`AsyncTFTPServer(root_or_handler, host=None, port=69, *, executor=None, **server_options)`**
+**`AsyncTFTPServer(root_or_handler, *, host=None, port=69, executor=None, **server_options)`**
 — `TFTPServer`'s arguments except `open_in_thread`/`workers`. `async with
 AsyncTFTPServer(...) as server: await server.serve_forever()`, or `await
 server.start()` … `await server.stop()`; `shutdown()` is thread-safe; `await
@@ -434,8 +439,8 @@ close()`. Handlers:
 - `max_sessions` defaults to 500; `None` is 510 on Windows (a selector
   loop's `select()`).
 
-**`AsyncReaderBridge(source, capacity=1 MiB, size=None)`** /
-**`AsyncWriterBridge(sink, capacity=1 MiB, close_sink=True)`** — the
+**`AsyncReaderBridge(source, *, capacity=1 MiB, size=None)`** /
+**`AsyncWriterBridge(sink, *, capacity=1 MiB, close_sink=True)`** — the
 adapters doing that (engine-side `readinto`/`write`/`close` raising
 `WouldBlock`, `set_wakeup`; writer `await finish()`); create them on the
 running loop. `is_async_reader(obj)` / `is_async_writer(obj)` say which
@@ -519,7 +524,7 @@ Both support what TFTP can do, plus listing against a server speaking
 
 ## Relay (`tftp.relay`)
 
-**`TFTPRelay(route, host=None, port=69, *, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None, interface=None)`**
+**`TFTPRelay(route, *, host=None, port=69, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None, interface=None)`**
 — a transparent application relay (there is no standard TFTP relay). The
 request is forwarded **byte for byte** from a fresh upstream-side socket; the
 upstream's TID is learned from its first answer (from the address asked,
@@ -648,7 +653,7 @@ the wire; netascii-encoded size in netascii mode), `blocks`, `retransmits`,
 `duration` (seconds), `negotiated`, `error` (or `None`); properties `is_ok` and
 `throughput` (bytes/s).
 
-**`Negotiated`** — what a transfer ran with: `blksize`, `windowsize`,
+**`Negotiated(*, blksize=512, windowsize=1, timeout=1.0, tsize=None, rollover=0, options=None, extra=None)`** — what a transfer ran with: `blksize`, `windowsize`,
 `timeout` (seconds), `tsize` (or `None`), `rollover`, and `options` (the OACK
 as sent/received; empty when RFC 1350 defaults applied).
 
@@ -718,7 +723,7 @@ options untouched. `repr()` of a packet is a constructor call.
 - **`decode(bytes) -> TFTPPacket`** — dispatches on the opcode; raises
   `TFTPDecodeError`. Liberal: tolerates a missing final NUL, drops a dangling
   option name, accepts any mode and any error code.
-- **`encode_request(opcode, filename, mode="octet", options=None)`**,
+- **`encode_request(opcode, filename, *, mode="octet", options=None)`**,
   **`encode_data(block, data)`**, **`encode_ack(block)`**,
   **`encode_error(code, message="")`**, **`encode_oack(options)`** — strict,
   and what the packet types' `encode()` call; they build the bytes without

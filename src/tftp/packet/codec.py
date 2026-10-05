@@ -156,7 +156,7 @@ class RequestPacket(_Packet):
 
     def encode(self) -> bytes:
         """``raw`` when there is one, else a fresh encoding (:func:`encode_request`)."""
-        return self.raw or encode_request(self.opcode, self.filename, self.mode, self.options)
+        return self.raw or encode_request(self.opcode, self.filename, mode=self.mode, options=self.options)
 
 
 @dataclass(frozen=True, repr=False)
@@ -287,6 +287,7 @@ def _options_bytes(options: Optional[Mapping[str, object]]) -> bytes:
 def encode_request(
     opcode: int,
     filename: str,
+    *,
     mode: str = "octet",
     options: Optional[Mapping[str, object]] = None,
 ) -> bytes:

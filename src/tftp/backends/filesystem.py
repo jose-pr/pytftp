@@ -94,7 +94,7 @@ class FilesystemBackend:
         if context.listing and os.path.isdir(path):
             from ..listing import DirectoryListing
 
-            return DirectoryListing(path, self.root)  # type: ignore[return-value]
+            return DirectoryListing(path, root=self.root)  # type: ignore[return-value]
         if not os.path.isfile(path):
             raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND)
         return open(path, "rb", buffering=_READ_BUFFER)

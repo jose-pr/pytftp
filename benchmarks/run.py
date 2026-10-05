@@ -49,7 +49,7 @@ class PayloadHandler:
 
 
 def serve(payload: bytes, host: str, ports) -> None:
-    with tftp.TFTPServer(PayloadHandler(payload), host, 0, writable=True) as server:
+    with tftp.TFTPServer(PayloadHandler(payload), host=host, port=0, writable=True) as server:
         ports.put(server.server_address[1])
         server.serve_forever()
 

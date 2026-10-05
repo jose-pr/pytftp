@@ -312,3 +312,68 @@ def test_the_presets_are_attributes_of_profile():
 
     for name in ("DEFAULT", "STRICT", "PXE", "HPA", "LEGACY"):
         assert tftp.PROFILES[name.lower()] is getattr(tftp.Profile, name)
+
+
+#: How many positional parameters each callable accepts: its operands. Every
+#: option after them is keyword-only.
+POSITIONAL = {
+    "tftp.TFTPServerOptions": 0,
+    "tftp.TFTPServerLimits": 0,
+    "tftp.Negotiated": 0,
+    "tftp.encode_request": 2,
+    "tftp.aio.AsyncReaderBridge": 1,
+    "tftp.aio.AsyncWriterBridge": 1,
+    "tftp.AtomicWriter": 1,
+    "tftp.listing.DirectoryListing": 1,
+    "tftp.OptionRegistry.register": 1,
+    "tftp.TFTPRequestContext": 2,
+    "tftp.TFTPServer": 1,
+    "tftp.aio.AsyncTFTPServer": 1,
+    "tftp.relay.TFTPRelay": 1,
+    "tftp.TFTPClient": 2,
+    "tftp.aio.AsyncTFTPClient": 2,
+    "tftp.PortRange": 2,
+    "tftp.relay.Upstream": 2,
+}
+
+
+def _resolve(dotted):
+    parts = dotted.split(".")
+    for cut in range(len(parts) - 1, 0, -1):
+        try:
+            obj = importlib.import_module(".".join(parts[:cut]))
+        except ImportError:
+            continue
+        for part in parts[cut:]:
+            obj = getattr(obj, part)
+        return obj
+    raise LookupError(dotted)
+
+
+def _positional(obj):
+    import inspect
+
+    params = list(inspect.signature(obj).parameters.values())
+    if params and params[0].name == "self":
+        params = params[1:]
+    return [p.name for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+
+
+@pytest.mark.parametrize("name", sorted(POSITIONAL))
+def test_a_callable_takes_only_its_operands_positionally(name):
+    assert len(_positional(_resolve(name))) == POSITIONAL[name], _positional(_resolve(name))
+
+
+def test_an_option_given_by_position_is_refused():
+    import tftp
+
+    with pytest.raises(TypeError):
+        tftp.TFTPServerOptions(65464)
+    with pytest.raises(TypeError):
+        tftp.TFTPServerLimits(1024)
+    with pytest.raises(TypeError):
+        tftp.Negotiated(512)
+    with pytest.raises(TypeError):
+        tftp.encode_request(tftp.TFTPOpcode.RRQ, "f", "octet")
+    with pytest.raises(TypeError):
+        tftp.TFTPServer(".", "127.0.0.1")

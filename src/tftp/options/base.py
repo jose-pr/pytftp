@@ -43,6 +43,7 @@ class Negotiated:
 
     def __init__(
         self,
+        *,
         blksize: int = DEFAULT_BLKSIZE,
         windowsize: int = 1,
         timeout: float = 1.0,

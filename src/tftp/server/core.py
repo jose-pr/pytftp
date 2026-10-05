@@ -105,9 +105,9 @@ class TFTPServer(ServerBase):
     def __init__(
         self,
         root_or_handler: Any,
+        *,
         host: "IPAddressLike | Host | None" = None,
         port: int = 69,
-        *,
         writable: bool = False,
         create: bool = True,
         overwrite: bool = False,
@@ -135,8 +135,8 @@ class TFTPServer(ServerBase):
             )
         super().__init__(
             root_or_handler,
-            host,
-            port,
+            host=host,
+            port=port,
             writable=writable,
             create=create,
             overwrite=overwrite,

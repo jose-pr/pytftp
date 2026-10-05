@@ -5,7 +5,7 @@
 ```python
 import tftp
 
-server = tftp.TFTPServer("/srv/tftp", "::", 69, writable=True, overwrite=False)
+server = tftp.TFTPServer("/srv/tftp", host="::", port=69, writable=True, overwrite=False)
 server.serve_forever()
 ```
 

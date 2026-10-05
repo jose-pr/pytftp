@@ -69,13 +69,13 @@ class AsyncTFTPServer(ServerBase):
     def __init__(
         self,
         root_or_handler: Any,
+        *,
         host: "IPAddressLike | Host | None" = None,
         port: int = 69,
-        *,
         executor: Any = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(root_or_handler, host, port, **kwargs)
+        super().__init__(root_or_handler, host=host, port=port, **kwargs)
         self.executor = executor
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stopped: Optional[asyncio.Event] = None
