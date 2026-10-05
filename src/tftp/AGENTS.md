@@ -147,7 +147,8 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 - `options` — a `ServerOptions` policy.
 - `max_sessions` — concurrent transfers; beyond it a request gets ERROR 0
   `"server busy"`. `None` is unlimited, **except on Windows, where it defaults
-  to 500** because `select()` handles at most 512 sockets.
+  to 500** because `select()` handles at most 512 sockets; an explicit value
+  above 510 there is a `ValueError` at construction.
 - `reply_from_request_address` — each transfer's socket is bound to the
   address the request was sent to (pktinfo), so a multi-homed host or a VIP
   answers from the address the client used. Where the platform cannot report
@@ -323,8 +324,10 @@ peer retries.
 Either may raise `TftpError(code, message)` to refuse with that ERROR, or
 `OSError`, mapped by errno (`ENOENT` → 1, `EACCES`/`EPERM` → 2, `ENOSPC` → 3,
 `EEXIST` → 6). The OS message is **not** sent (it could disclose paths). Any
-other exception is logged and sent as ERROR 0. Handlers run on the event-loop
-thread: **a slow handler stalls every transfer**.
+other exception is logged and sent as ERROR 0. What reaches the wire is
+always encodable (see `encode_error`), and an exception escaping one transfer
+ends that transfer, with a logged traceback, and never the loop. Handlers run
+on the event-loop thread: **a slow handler stalls every transfer**.
 
 `write` receives a `memoryview` of a reused buffer when the writer is a
 standard file object (`io.IOBase`) or declares `_tftp_copies_ = True`, and
@@ -512,7 +515,8 @@ use `UpstreamHandler` (a terminating proxy) instead.
 - A repeated request from the same client address/port is forwarded again
   only while the upstream has not answered. Strays on either leg get ERROR 5.
 - Shutdown sends ERROR 0 `"relay shutting down"` to both sides of each
-  transfer. Windows caps `max_sessions` at 250 by default (two sockets each).
+  transfer. Windows caps `max_sessions` at 250 by default (two sockets each);
+  an explicit value above 255 there is a `ValueError`.
 - `on_session_end(RelaySummary)` — `session`, `client`, `upstream` (the
   learned TID), `filename`, `operation`, `mode`, `bytes_to_client`,
   `bytes_from_client`, `packets`, `duration`, `reason` (`"complete"`,
@@ -611,7 +615,9 @@ as sent/received; empty when RFC 1350 defaults applied).
 
 Exceptions: **`TftpError(code=0, message="")`** (base; `.code` is an
 `ErrorCode` when the value is known, `.message` defaults to the code's
-standard text), **`RemoteError`** (the peer sent ERROR; always raised as
+standard text; `code` must be an `int` in 0..65535 and `message` text, else
+`TypeError` or `ValueError` at construction, so `TftpError("no such file")` is
+refused rather than built with the text as its code), **`RemoteError`** (the peer sent ERROR; always raised as
 the subclass for its code — `FileNotFound` 1, `AccessViolation` 2,
 `DiskFull` 3, `IllegalOperation` 4, `UnknownTransferId` 5,
 `FileAlreadyExists` 6, `NoSuchUser` 7, `OptionNegotiationError` 8 — and
@@ -638,7 +644,9 @@ relay forwards unknown options untouched), `Data(block, data)`, `Ack(block)`,
 - **`encode_request(opcode, filename, mode="octet", options=None)`**,
   **`encode_data(block, data)`**, **`encode_ack(block)`**,
   **`encode_error(code, message="")`**, **`encode_oack(options)`** — option
-  values are sent as `str(value)`; NUL inside a string raises `ValueError`.
+  values are sent as `str(value)`; NUL inside a string raises `ValueError`,
+  except in `encode_error`, which never raises: NUL becomes `?`, the text is
+  cut to 512 octets and a code outside 0..65535 is sent as 0.
 - Strings are UTF-8 with `surrogateescape`, so any byte sequence round-trips
   and real UTF-8 names decode naturally.
 - Constants: `DEFAULT_BLKSIZE` 512, `MIN_BLKSIZE` 8, `MAX_BLKSIZE` 65464,

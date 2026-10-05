@@ -306,3 +306,36 @@ def test_async_size(root, make_server):
         assert await async_client(server).size("big.bin") == 300_001
 
     run(main())
+
+
+# -- an unencodable ERROR releases the session ---------------------------------------------------
+
+
+def test_async_server_releases_a_session_whose_error_could_not_be_encoded():
+    import io
+
+    def broken():
+        error = tftp.TftpError(1, "x")
+        error.code = 70000
+        return error
+
+    class Handler:
+        _tftp_fast_open_ = True
+
+        def open_read(self, context):
+            if context.filename == "ok":
+                return io.BytesIO(b"fine")
+            raise broken()
+
+    async def scenario(server):
+        client = async_client(server, retries=1)
+        with pytest.raises(tftp.RemoteError):
+            await client.get("bad")
+        assert await client.get("ok") == b"fine"
+        for _ in range(100):
+            if not server.active_sessions:
+                break
+            await asyncio.sleep(0.02)
+        assert server.active_sessions == 0
+
+    serve(Handler(), scenario)

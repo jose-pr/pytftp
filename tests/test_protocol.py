@@ -276,3 +276,137 @@ def test_client_accepts_host_with_port():
         assert tftp.Client("127.0.0.1:%d" % fake.address[1], 1).get("f") == b"ok"
     finally:
         fake.close()
+
+
+# -- an ERROR is always encodable and one request cannot stop the server ------------------
+
+
+@pytest.mark.parametrize(
+    "args, exc",
+    [
+        (("no such file",), TypeError),
+        ((b"1",), TypeError),
+        ((None,), TypeError),
+        ((-1, "x"), ValueError),
+        ((70000, "x"), ValueError),
+        ((1, b"bytes"), TypeError),
+        ((1, None), TypeError),
+    ],
+)
+def test_tftp_error_refuses_what_no_error_packet_can_carry(args, exc):
+    with pytest.raises(exc):
+        tftp.TftpError(*args)
+
+
+def test_tftp_error_keeps_codes_the_wire_can_carry():
+    assert tftp.TftpError(0).code == 0
+    assert tftp.TftpError(65535, "far").code == 65535
+    assert tftp.TftpError(ErrorCode.FILE_NOT_FOUND).message == "file not found"
+    assert tftp.TftpError(1).code is ErrorCode.FILE_NOT_FOUND
+
+
+def test_encode_error_is_total():
+    assert decode(encode_error(1, "bad\0name")).message == "bad?name"
+    assert decode(encode_error(70000, "x")).code == 0
+    assert decode(encode_error(-1, "x")).code == 0
+    long = decode(encode_error(1, "é" * 5000)).message
+    assert 0 < len(long.encode()) <= 512 and set(long) == {"é"}
+
+
+def _wait_idle(server, seconds: float = 2.0) -> None:
+    import time
+
+    deadline = time.monotonic() + seconds
+    while server.active_sessions and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+class _RefusingHandler:
+    """Refuses at open, or fails from the stream, with an error built by ``make``."""
+
+    _tftp_fast_open_ = True
+
+    def __init__(self, make, where):
+        self.make, self.where = make, where
+
+    def open_read(self, context):
+        import io
+
+        if context.filename == "ok":
+            return io.BytesIO(b"fine")
+        if self.where == "open":
+            raise self.make()
+
+        class Failing(io.RawIOBase):
+            def readable(self):
+                return True
+
+            def readinto(_, view):
+                raise self.make()
+
+        return Failing()
+
+    def open_write(self, context, size):
+        raise self.make()
+
+
+def _nul_error():
+    return tftp.TftpError(1, "bad\0name")
+
+
+def _mutated_code():
+    error = tftp.TftpError(1, "x")
+    error.code = 70000
+    return error
+
+
+def _mutated_message():
+    error = tftp.TftpError(1, "x")
+    error.message = b"bytes"
+    return error
+
+
+@pytest.mark.parametrize("make", [_nul_error, _mutated_code, _mutated_message])
+@pytest.mark.parametrize("where", ["open", "stream"])
+def test_an_unencodable_error_is_refused_and_the_next_request_is_served(make_server, make, where):
+    server = make_server(_RefusingHandler(make, where))
+    client = client_for(server, retries=1)
+    with pytest.raises(tftp.RemoteError):
+        client.get("bad")
+    assert client.get("ok") == b"fine"
+    assert server._thread.is_alive()
+    _wait_idle(server)
+    assert server.active_sessions == 0
+
+
+def test_one_failing_dispatch_ends_that_transfer_and_not_the_loop(root, make_server, caplog):
+    server = make_server(root, timeout=2)
+    real = server._on_packet
+    seen = []
+
+    def failing(session, now):
+        if not seen:
+            seen.append(session)
+            raise RuntimeError("a bug in one dispatch")
+        real(session, now)
+
+    server._on_packet = failing
+    with raw_socket() as first:
+        first.sendto(encode_request(Opcode.RRQ, "513.bin"), server.server_address)
+        _, tid = expect(first)
+        first.sendto(encode_ack(1), tid)  # this datagram's dispatch raises
+        error, _ = expect(first)
+        assert error.code == ErrorCode.NOT_DEFINED
+    assert server._thread.is_alive()
+    assert client_for(server).get("one.bin") == b"x"
+    assert sum("a bug in one dispatch" in (r.exc_text or "") for r in caplog.records) == 1
+    assert seen[0].closed
+    _wait_idle(server)
+    assert server.active_sessions == 0
+
+
+def test_a_max_sessions_the_selector_cannot_hold_is_refused_at_construction():
+    if sys.platform != "win32":
+        pytest.skip("select() has a descriptor limit on Windows only")
+    with pytest.raises(ValueError, match="510"):
+        tftp.Server(".", "127.0.0.1", 0, max_sessions=600)

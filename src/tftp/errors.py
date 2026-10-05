@@ -29,9 +29,23 @@ class TftpError(Exception):
 
     A server handler raises this to refuse a request: the code and message
     become the ERROR packet the client receives.
+
+    :param code: an ``int`` in 0..65535 (unknown codes are kept: the wire
+        carries any 16-bit value). ``TypeError`` for anything else, which
+        catches ``TftpError("message")``; ``ValueError`` outside the range.
+    :param message: text; ``TypeError`` for anything else. A NUL is replaced
+        and a long text cut when the ERROR is encoded.
     """
 
     def __init__(self, code: int = ErrorCode.NOT_DEFINED, message: str = "") -> None:
+        if isinstance(code, bool) or not isinstance(code, int):
+            raise TypeError(
+                "an error code is an int, not %s (the message is the second argument)" % type(code).__name__
+            )
+        if not 0 <= code <= 65535:
+            raise ValueError("an error code is 0 to 65535, not %d" % code)
+        if not isinstance(message, str):
+            raise TypeError("an error message is text, not %s" % type(message).__name__)
         try:
             code = ErrorCode(code)
         except ValueError:

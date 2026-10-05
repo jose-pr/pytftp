@@ -196,15 +196,15 @@ class Transfer:
         error = error_for_exception(exc)
         if not isinstance(exc, TftpError):
             error.__cause__ = exc
+        self.error = error
+        self.done = True
+        self.deadline = None
+        self.stalled = False
         if notify:
             try:
                 self._send(encode_error(error.code, error.message))
             except OSError:
                 pass
-        self.error = error
-        self.done = True
-        self.deadline = None
-        self.stalled = False
 
     def abort(self, message: str = "transfer aborted") -> None:
         """Cancel locally: the peer gets ERROR 0 and ``error`` is :class:`TransferAborted`."""

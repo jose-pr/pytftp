@@ -40,6 +40,8 @@ log = logging.getLogger("tftp.server")
 _RECV_SIZE = 65536  # one receive buffer, shared by every session
 _DRAIN = 64  # packets read per readiness event before yielding to others
 _WAKE_BYTE = bytes(1)
+#: select() on Windows watches 512 descriptors; the listener and the wake socket take two.
+_SELECT_SESSIONS = 510
 
 
 class Server(ServerBase):
@@ -125,6 +127,11 @@ class Server(ServerBase):
         port_range: Any = None,
         interface: Any = None,
     ) -> None:
+        if sys.platform == "win32" and max_sessions is not None and max_sessions > _SELECT_SESSIONS:
+            raise ValueError(
+                "max_sessions=%d is more than the %d transfers select() can watch on Windows"
+                % (max_sessions, _SELECT_SESSIONS)
+            )
         super().__init__(
             root_or_handler,
             host,
@@ -187,12 +194,15 @@ class Server(ServerBase):
                 events = select(self._next_timeout(clock()))
                 for key, _ in events:
                     data = key.data
-                    if data is None:
-                        self._on_request(clock())
-                    elif data is self:
-                        self._drain_wake()
-                    else:
-                        self._on_packet(data, clock())
+                    try:
+                        if data is None:
+                            self._on_request(clock())
+                        elif data is self:
+                            self._drain_wake()
+                        else:
+                            self._on_packet(data, clock())
+                    except Exception as exc:
+                        self._survive(data if isinstance(data, Session) else None, exc)
                 if self._timers and self._timers[0][0] <= clock():
                     self._run_timers(clock())
         finally:
@@ -264,17 +274,23 @@ class Server(ServerBase):
         now = time.monotonic()
         while self._pending_opens:
             session, outcome = self._pending_opens.popleft()
-            self._opened(session, outcome, now)
+            try:
+                self._opened(session, outcome, now)
+            except Exception as exc:
+                self._survive(session, exc)
         while self._ready:
             session = self._ready.popleft()
             transfer = session.transfer
             if session.closed or transfer is None or transfer.done:
                 continue
-            transfer.resume(now)
-            if transfer.done:
-                self._done(session, now)
-            else:
-                self._schedule(session)
+            try:
+                transfer.resume(now)
+                if transfer.done:
+                    self._done(session, now)
+                else:
+                    self._schedule(session)
+            except Exception as exc:
+                self._survive(session, exc)
 
     def _wake(self) -> None:
         try:
@@ -323,11 +339,14 @@ class Server(ServerBase):
                 continue
             transfer = session.transfer
             assert transfer is not None
-            transfer.on_timeout(now)
-            if transfer.done:
-                self._done(session, now)
-            else:
-                self._schedule(session)
+            try:
+                transfer.on_timeout(now)
+                if transfer.done:
+                    self._done(session, now)
+                else:
+                    self._schedule(session)
+            except Exception as exc:
+                self._survive(session, exc)
 
     def _on_packet(self, session: Session, now: float) -> None:
         if session.closed:
@@ -383,10 +402,13 @@ class Server(ServerBase):
             if session is None:
                 continue
             session.notify = self._notifier(session)
-            if self._workers is None:
-                self._opened(session, self._open(session), time.monotonic())
-            else:
-                self._workers.submit(self._open_in_worker, session)
+            try:
+                if self._workers is None:
+                    self._opened(session, self._open(session), time.monotonic())
+                else:
+                    self._workers.submit(self._open_in_worker, session)
+            except Exception as exc:
+                self._survive(session, exc)
 
     def _open_in_worker(self, session: Session) -> None:
         outcome = self._open(session)

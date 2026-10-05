@@ -210,10 +210,13 @@ class AsyncServer(ServerBase):
             return
         session.transfer = transfer
         self.stats.add("started")
-        if transfer.done:
-            self._done(session, time.monotonic())
-        else:
-            self._schedule(session)
+        try:
+            if transfer.done:
+                self._done(session, time.monotonic())
+            else:
+                self._schedule(session)
+        except Exception as exc:
+            self._survive(session, exc)
 
     def _is_async_handler(self, session: Session) -> bool:
         method = (
@@ -242,22 +245,28 @@ class AsyncServer(ServerBase):
             return
         now = time.monotonic()
         was_done = transfer.done
-        transfer.handle(memoryview(data), len(data), now)
-        if transfer.done and not was_done:
-            self._done(session, now)
-        else:
-            self._schedule(session)
+        try:
+            transfer.handle(memoryview(data), len(data), now)
+            if transfer.done and not was_done:
+                self._done(session, now)
+            else:
+                self._schedule(session)
+        except Exception as exc:
+            self._survive(session, exc)
 
     def _resume(self, session: Session) -> None:
         transfer = session.transfer
         if session.closed or transfer is None or transfer.done:
             return
         now = time.monotonic()
-        transfer.resume(now)
-        if transfer.done:
-            self._done(session, now)
-        else:
-            self._schedule(session)
+        try:
+            transfer.resume(now)
+            if transfer.done:
+                self._done(session, now)
+            else:
+                self._schedule(session)
+        except Exception as exc:
+            self._survive(session, exc)
 
     def _schedule(self, session: Session) -> None:
         timer: _Timer = session.driver
@@ -289,11 +298,14 @@ class AsyncServer(ServerBase):
             return
         transfer = session.transfer
         assert transfer is not None
-        transfer.on_timeout(now)
-        if transfer.done:
-            self._done(session, now)
-        else:
-            self._schedule(session)
+        try:
+            transfer.on_timeout(now)
+            if transfer.done:
+                self._done(session, now)
+            else:
+                self._schedule(session)
+        except Exception as exc:
+            self._survive(session, exc)
 
     def _done(self, session: Session, now: float) -> None:
         if self._finished(session, now):

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `TftpError(code, message)` raises `TypeError` for a `code` that is not an
+  `int` (so `TftpError("no such file")` is refused instead of taking the text
+  as its code) or a `message` that is not text, and `ValueError` for a code
+  outside 0..65535. `encode_error` never raises.
 - Requires `netimps>=0.4.0,<0.5`; netimps 0.3 is no longer supported.
 - `Client(timeout=..., max_timeout=...)` raises `ValueError` when
   `max_timeout` is below `timeout`, where it used to be raised to `timeout`
@@ -30,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A handler's `TftpError` that could not be encoded as an ERROR (a NUL in
+  the message, a code outside 0..65535) ended the synchronous server's thread
+  for every client, and left an `AsyncServer` session open for good. Every
+  ERROR now encodes: a NUL in the text is sent as `?`, the text is cut to 512
+  octets, and a code outside 0..65535 is sent as 0. A transfer records its
+  failure before it sends the ERROR, and an exception escaping one dispatch
+  of the server loop, the asyncio server or the relay ends that one transfer
+  (logged once, with its traceback) and not the loop.
+- `Server(max_sessions=...)` and `Relay(max_sessions=...)` above what
+  `select()` can watch on Windows (510 and 255) raise `ValueError` at
+  construction, where the serving thread died at the first request past it.
 - The shipped API header named `NETIMPS_NO_SOCKET_PATCH`, which netimps 0.4
   rejects at import; the variable is `NETIMPS_SOCKET_PATCH=0`.
 

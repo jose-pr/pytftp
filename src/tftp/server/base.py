@@ -233,10 +233,39 @@ class ServerBase:
             log.error("handler failed for %r", session.context, exc_info=exc)
         log.info("%s refused: %s", session.context, error)
         self.stats.add("refused")
-        session.send(encode_error(error.code, error.message))
-        session.close_stream(ok=False)
-        self._release(session)
+        try:
+            session.send(encode_error(error.code, error.message))
+            session.close_stream(ok=False)
+        finally:
+            self._release(session)
         self._report(session, error, None)
+
+    def _survive(self, session: Optional[Session], exc: BaseException) -> None:
+        """An exception escaped one dispatch: end that transfer, keep serving.
+
+        Logged once, with its traceback, so a bug is seen; the client gets
+        ERROR 0 and every other transfer carries on.
+        """
+        log.error(
+            "unexpected failure in the event loop%s",
+            " (ending that transfer)" if session else "",
+            exc_info=exc,
+        )
+        if session is None or session.closed:
+            return
+        try:
+            transfer = session.transfer
+            if transfer is None:
+                self._refuse(session, exc)
+                return
+            if not transfer.done:
+                transfer.fail(exc)
+            session.close_stream(transfer.error is None)
+            self._report(session, transfer.error, transfer)
+        except Exception:
+            log.exception("could not end the transfer cleanly")
+        finally:
+            self._release(session)
 
     def _finished(self, session: Session, now: float) -> bool:
         """Report a finished transfer; ``True`` when its socket should linger (dally)."""

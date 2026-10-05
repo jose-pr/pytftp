@@ -136,9 +136,25 @@ def encode_ack(block: int) -> bytes:
     return _HDR.pack(Opcode.ACK, block)
 
 
+#: Most octets of message text an ERROR carries.
+MAX_ERROR_TEXT = 512
+
+
 def encode_error(code: int, message: str = "") -> bytes:
-    """Build an ERROR. Non-ASCII message text is UTF-8 encoded."""
-    return _HDR.pack(Opcode.ERROR, int(code)) + _text(message) + b"\0"
+    """Build an ERROR; it never raises, whatever it is given.
+
+    Message text is UTF-8 encoded, a NUL in it becomes ``?`` and it is cut to
+    ``MAX_ERROR_TEXT`` octets on a character boundary. A code that is not an
+    ``int`` in 0..65535 is sent as 0.
+    """
+    if isinstance(code, bool) or not isinstance(code, int) or not 0 <= code <= 65535:
+        code = 0
+    if not isinstance(message, str):
+        message = str(message)
+    raw = message.encode(FILENAME_ENCODING, _ERRORS).replace(b"\0", b"?")
+    if len(raw) > MAX_ERROR_TEXT:
+        raw = raw[:MAX_ERROR_TEXT].decode(FILENAME_ENCODING, "ignore").encode(FILENAME_ENCODING)
+    return _HDR.pack(Opcode.ERROR, code) + raw + b"\0"
 
 
 def encode_oack(options: Mapping[str, object]) -> bytes:

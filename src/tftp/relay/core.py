@@ -104,8 +104,14 @@ class Relay:
         self.linger = linger
         self.upstream_source = upstream_source
         self.limits = limits or ServerLimits()
-        if max_sessions is None and sys.platform == "win32":
-            max_sessions = 250  # two sockets each; select() handles 512
+        if sys.platform == "win32":
+            if max_sessions is None:
+                max_sessions = 250  # two sockets each; select() handles 512
+            elif max_sessions > 255:
+                raise ValueError(
+                    "max_sessions=%d is more than the 255 transfers select() can watch on Windows "
+                    "(two sockets each)" % max_sessions
+                )
         self.max_sessions = max_sessions
         self.ignore_broadcast = ignore_broadcast
         self.trace = trace
@@ -160,20 +166,28 @@ class Relay:
             while not self._stopping:
                 for key, _ in self._selector.select(max(0.0, next_tick - clock())):
                     data = key.data
-                    if data is None:
-                        self._on_request(clock())
-                    elif data is self:
-                        try:
-                            while self._wake_r.recv(64):
+                    try:
+                        if data is None:
+                            self._on_request(clock())
+                        elif data is self:
+                            try:
+                                while self._wake_r.recv(64):
+                                    pass
+                            except OSError:
                                 pass
-                        except OSError:
-                            pass
-                    else:
-                        session, leg = data
-                        self._on_datagram(session, leg, clock())
+                        else:
+                            session, leg = data
+                            self._on_datagram(session, leg, clock())
+                    except Exception:
+                        log.exception("unexpected failure in the event loop (ending that transfer)")
+                        if isinstance(data, tuple):
+                            self._end(data[0], "error", clock())
                 now = clock()
                 if now >= next_tick:
-                    self._sweep(now)
+                    try:
+                        self._sweep(now)
+                    except Exception:
+                        log.exception("unexpected failure sweeping idle transfers")
                     next_tick = now + _TICK
         finally:
             self._running.clear()
@@ -285,6 +299,7 @@ class Relay:
                 self._open(arrival, key, now)
             except Exception:  # pragma: no cover - a bug, not a client error
                 log.exception("relaying a request from %s failed", sender[:2])
+                self._discard(key)
 
     def _open(self, arrival: Arrival, key, now: float) -> None:
         self.stats.add("requests")
@@ -389,6 +404,12 @@ class Relay:
                     continue  # nothing to forward to yet
                 session.observe(data, True, now, self.linger)
                 self._send(session, session.up, data, session.upstream_tid)
+
+    def _discard(self, key) -> None:
+        """Drop a session whose opening failed half-way."""
+        session = self._sessions.get(key)
+        if session is not None:
+            self._end(session, "error", time.monotonic())
 
     def _sweep(self, now: float) -> None:
         for session in list(self._sessions.values()):
