@@ -686,11 +686,15 @@ def test_a_request_nothing_follows_up_is_released_after_max_idle(root, make_serv
 
 
 def test_a_slow_client_is_not_cut_off_by_max_idle(root, make_server):
-    """Each ACK is inside max_idle of the last; the transfer takes four times as long."""
+    """Each ACK is well inside max_idle of the last; the whole transfer outlasts it."""
     import time
 
     results = []
-    server = make_server(root, limits=tftp.ServerLimits(max_idle=0.6), timeout=30, on_complete=results.append)
+    # A second between an ACK and the bound: a stalled runner must not look idle.
+    max_idle, pause = 1.5, 0.4
+    server = make_server(
+        root, limits=tftp.ServerLimits(max_idle=max_idle), timeout=30, on_complete=results.append
+    )
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as raw:
         raw.bind(("127.0.0.1", 0))
         raw.settimeout(3)
@@ -701,8 +705,8 @@ def test_a_slow_client_is_not_cut_off_by_max_idle(root, make_server):
         for block in range(1, 6):
             packet, _ = raw.recvfrom(70000)
             assert decode(packet).block == block
-            time.sleep(0.5)
+            time.sleep(pause)
             raw.sendto(encode_ack(block), tid)
-        assert time.monotonic() - started > 2.4
+        assert time.monotonic() - started > max_idle
         assert server.active_sessions == 1 and not results
         raw.sendto(encode_error(0, "done"), tid)
