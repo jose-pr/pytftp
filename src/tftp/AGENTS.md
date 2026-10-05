@@ -184,9 +184,11 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
   `"::"` picks the family. Another `host`, or an adapter netimps cannot
   resolve, is a `ValueError`. Requests to the adapter's other addresses are
   not received; run one server per family or address as needed.
-- `port_range` — `(low, high)` inclusive, a `range`, or a `PortRange`:
-  transfer sockets take their ports from it (round-robin, so a just-released
-  port is reused last), for a firewall to allow. With every port taken a
+- `port_range` — a `PortRangeLike`: a `PortRange`, a `(low, high)` pair
+  (inclusive), a `range` or `"LOW:HIGH"` text. Transfer sockets take their
+  ports from it (round-robin from a position this server owns, so a
+  just-released port is reused last and two servers given one range share
+  no position), for a firewall to allow. With every port taken a
   request gets ERROR 0 `"server busy"` (counted `refused`). `None` lets the
   OS choose.
 - Raises `OSError` if the port cannot be bound (port 69 needs privileges on
@@ -227,9 +229,14 @@ Behaviour worth knowing:
 - Socket buffers are grown to hold two windows (Windows defaults to 64 KiB,
   which a large window overflows).
 
-**`PortRange(low, high)`** — `PortRange.of(value)` takes `None`, a pair, a
-`range` or a `PortRange`; `len()`, iteration (every port once, from the
-round-robin cursor). `ValueError` outside 1..65535 or with `low > high`.
+**`PortRange(low, high)`** — a frozen, hashable value (`low`, `high`; equal
+to another `PortRange` only): `len()` counts the ports, iteration and `in`
+cover them in order, `str()` is `LOW:HIGH`, `PortRange.parse("LOW:HIGH")`
+(`LOW-HIGH` too) reads it back and `PortRange.try_parse(text, default=None)`
+returns `default` instead of raising. `TFTPValueError` outside 1..65535 or with
+`low > high` or for text that is not a range, `TypeError` for a non-`int` or
+non-`str`. **`PortRangeLike`** (`tftp.server`) is what `port_range=` takes in
+place of a `PortRange`: a `(low, high)` pair, a `range` of step 1 or the text.
 
 **`TFTPServerLimits(max_request_size=1024, max_filename_length=512, max_options=16, max_option_length=255, max_sessions_per_client=None, max_duration=None, max_idle=60.0)`**
 — bounds on untrusted input. A request over a size/name/option limit gets
@@ -242,6 +249,8 @@ long, with `TransferTimeoutError`, whatever `timeout` the client negotiated: it
 counts the peer's silence, not the transfer's length, and not time the
 handler keeps the server waiting. A transfer holds memory for the blocks it
 has read, not for the window it negotiated, and none of it once it ends.
+`TFTPServerLimits`, `TFTPServerOptions` and `Negotiated` are mutable: they
+compare equal when every field does, are unhashable and print their fields.
 
 **`TFTPServerOptions(max_blksize=65464, max_windowsize=64, max_window_bytes=4 MiB, allowed=None, refused=(), fit_mtu=False, registry=None)`**
 — the negotiation policy.
@@ -294,8 +303,9 @@ is a listing, `_tftp_listing_`), `x-mtime` (`XMtimeOption`: an RRQ's OACK carrie
 the stream's `mtime` attribute or `fstat` time, whole seconds; omitted when
 unknown). `stream_mtime(stream)` is that lookup.
 
-**Profiles** — `Profile(name, server, client)`: `.server` is a
-`TFTPServerOptions`, `.client` a fresh dict of `TFTPClient` keyword arguments.
+**Profiles** — `Profile(name, server, client)`: `.server` is a fresh copy of
+the `TFTPServerOptions` and `.client` a fresh dict of `TFTPClient` keyword
+arguments, so changing what either returns changes no profile.
 The five presets are class attributes of `Profile`; `PROFILES` maps their names
 (`"strict"`, `"default"`, `"pxe"`, `"hpa"`, `"legacy"`) to them:
 

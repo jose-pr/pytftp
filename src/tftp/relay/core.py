@@ -35,7 +35,7 @@ from ..packet.codec import _encode_error
 from ..server.handler import TFTPRequestContext
 from ..server.listener import Arrival, Listener
 from ..server.policy import TFTPServerLimits
-from ..server.session import PortRange, bind_transfer
+from ..server.session import PortAllocator, as_port_range, bind_transfer
 from .routing import RouteFunction, Upstream, upstream as to_upstream
 from ..server.stats import RELAY_COUNTERS, TFTPStats
 from .session import RelaySession, RelaySummary
@@ -119,7 +119,8 @@ class TFTPRelay:
         self.trace = trace
         self.on_session_end = on_session_end
         #: Ports for both of a transfer's sockets (:class:`PortRange`), or ``None``.
-        self.port_range = PortRange.of(port_range)
+        self.port_range = as_port_range(port_range)
+        self._ports = PortAllocator(self.port_range) if self.port_range is not None else None
         #: Counters since start (:class:`TFTPStats`).
         self.stats = TFTPStats(*RELAY_COUNTERS)
         self._listener = Listener(host, port, pktinfo=reply_from_request_address, interface=interface)
@@ -346,14 +347,14 @@ class TFTPRelay:
             return False
 
         try:
-            down, client = self._listener.reply_socket(arrival, self.port_range)
+            down, client = self._listener.reply_socket(arrival, self._ports)
         except OSError as exc:
             log.warning("no transfer socket for %s: %s", sender[:2], exc)
             self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "relay busy")
             return False
         try:
             source = self.upstream_source or ("::" if family == socket.AF_INET6 else "0.0.0.0")
-            up = bind_transfer(source, family, self.port_range)
+            up = bind_transfer(source, family, self._ports)
         except OSError:
             down.close()
             self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "relay error")

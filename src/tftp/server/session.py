@@ -12,10 +12,11 @@ import logging
 import os
 import socket
 import time
-from typing import Any, Callable, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Iterator, List, Optional, Tuple, Union
 
 from .._sockets import fit_window
-from ..exceptions import TFTPError
+from ..exceptions import TFTPError, TFTPValueError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import Negotiated, TFTPServerOptions, negotiate
 from ..packet import TFTPErrorCode, RequestPacket, encode_ack, encode_oack
@@ -23,7 +24,15 @@ from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from ..capture.events import PacketEvent, new_session_id
 from .handler import TFTPRequestContext
 
-__all__ = ["Session", "PortRange", "bind_transfer", "stream_size"]
+__all__ = [
+    "Session",
+    "PortRange",
+    "PortRangeLike",
+    "PortAllocator",
+    "as_port_range",
+    "bind_transfer",
+    "stream_size",
+]
 
 log = logging.getLogger("tftp.server")
 
@@ -46,56 +55,125 @@ def stream_size(stream: Any) -> Optional[int]:
         return None
 
 
+@dataclass(frozen=True, repr=False)
 class PortRange:
     """The UDP ports transfer sockets may use, ``low`` to ``high`` inclusive.
 
     Each transfer needs a port of its own; pinning them to a range lets a
     firewall allow them (tftp-hpa ``-R``, dnsmasq ``--tftp-port-range``).
-    Ports are tried round-robin from where the last search stopped, so a
-    port just released is the last to be reused.
+    An immutable value: ``len()`` counts the ports, iteration and ``in``
+    cover them in order, ``str()`` is ``LOW:HIGH`` and ``PortRange.parse``
+    reads it back. Which port a server takes next is the server's own
+    :class:`PortAllocator`.
+
+    :raises TypeError: a bound that is not an ``int``.
+    :raises TFTPValueError: not ``1 <= low <= high <= 65535``.
     """
 
-    __slots__ = ("low", "high", "_next")
+    low: int
+    high: int
 
-    def __init__(self, low: int, high: int) -> None:
-        if not 1 <= low <= high <= 65535:
-            raise ValueError("port range must satisfy 1 <= low <= high <= 65535")
-        self.low = low
-        self.high = high
-        self._next = low
+    def __post_init__(self) -> None:
+        for bound in (self.low, self.high):
+            if isinstance(bound, bool) or not isinstance(bound, int):
+                raise TypeError("a port is an int, not %s" % type(bound).__name__)
+        if not 1 <= self.low <= self.high <= 65535:
+            raise TFTPValueError(
+                "a port range satisfies 1 <= low <= high <= 65535, not %d:%d" % (self.low, self.high)
+            )
 
     @classmethod
-    def of(cls, value: Any) -> "Optional[PortRange]":
-        """``None``, a :class:`PortRange`, a ``(low, high)`` pair or a ``range``."""
-        if value is None or isinstance(value, PortRange):
-            return value
-        if isinstance(value, range):
-            if value.step != 1 or not len(value):
-                raise ValueError("port range must be a non-empty range with step 1")
-            return cls(value.start, value.stop - 1)
-        low, high = value
+    def parse(cls, text: str) -> "PortRange":
+        """``LOW:HIGH`` (``LOW-HIGH`` too), ASCII digits, as ``str(range)`` writes it.
+
+        :raises TypeError: ``text`` is not a ``str``.
+        :raises TFTPValueError: anything else.
+        """
+        if not isinstance(text, str):
+            raise TypeError("a port range is parsed from text, not %s" % type(text).__name__)
+        low, sep, high = text.replace("-", ":", 1).partition(":")
+        if not sep or not all(part.isascii() and part.isdigit() for part in (low, high)):
+            raise TFTPValueError("a port range is LOW:HIGH within 1..65535, not %r" % text)
         return cls(int(low), int(high))
+
+    @classmethod
+    def try_parse(cls, text: str, default: "Optional[PortRange]" = None) -> "Optional[PortRange]":
+        """:meth:`parse`, or ``default`` for text that is not a port range.
+
+        Still raises :class:`TypeError` when ``text`` is not a ``str``.
+        """
+        try:
+            return cls.parse(text)
+        except TFTPValueError:
+            return default
 
     def __len__(self) -> int:
         return self.high - self.low + 1
 
-    def ordered(self) -> "list[int]":
-        """Every port once, starting after the last one handed out."""
-        start = self._next
-        return list(range(start, self.high + 1)) + list(range(self.low, start))
+    def __iter__(self) -> Iterator[int]:
+        return iter(range(self.low, self.high + 1))
 
-    def taken(self, port: int) -> None:
-        """``port`` was just handed out: the next search starts after it."""
-        self._next = port + 1 if port < self.high else self.low
+    def __contains__(self, port: object) -> bool:
+        return isinstance(port, int) and not isinstance(port, bool) and self.low <= port <= self.high
 
-    def __iter__(self):
-        return iter(self.ordered())
+    def __str__(self) -> str:
+        return "%d:%d" % (self.low, self.high)
 
     def __repr__(self) -> str:
         return "PortRange(%d, %d)" % (self.low, self.high)
 
 
-def bind_transfer(host: Any, family: int, ports: Optional[PortRange] = None) -> socket.socket:
+#: What a ``port_range`` argument takes in place of a :class:`PortRange`: a
+#: ``(low, high)`` pair, a ``range`` of step 1 or the text ``"LOW:HIGH"``.
+PortRangeLike = Union[PortRange, Tuple[int, int], "range", str]
+
+
+def as_port_range(value: "Optional[PortRangeLike]") -> Optional[PortRange]:
+    """``None``, or the :class:`PortRange` that ``value`` stands for.
+
+    :raises TypeError: ``value`` is none of the forms of :data:`PortRangeLike`.
+    :raises TFTPValueError: text or numbers that are not a port range.
+    """
+    if value is None or isinstance(value, PortRange):
+        return value
+    if isinstance(value, str):
+        return PortRange.parse(value)
+    if isinstance(value, range):
+        if value.step != 1 or not len(value):
+            raise TFTPValueError("a port range is a non-empty range with step 1")
+        return PortRange(value.start, value.stop - 1)
+    if isinstance(value, (tuple, list)) and len(value) == 2:
+        return PortRange(value[0], value[1])
+    raise TypeError(
+        "a port range is a PortRange, a (low, high) pair, a range or LOW:HIGH text, not %r" % (value,)
+    )
+
+
+class PortAllocator:
+    """Which port of a :class:`PortRange` a transfer socket tries next.
+
+    Ports are tried round-robin from where the last search stopped, so a port
+    just released is the last to be reused. Every server and relay owns one:
+    two given the same range share the ports, not the position.
+    """
+
+    __slots__ = ("ports", "_next")
+
+    def __init__(self, ports: PortRange) -> None:
+        self.ports = ports
+        self._next = ports.low
+
+    def ordered(self) -> List[int]:
+        """Every port once, starting after the last one handed out."""
+        start, high, low = self._next, self.ports.high, self.ports.low
+        return list(range(start, high + 1)) + list(range(low, start))
+
+    def taken(self, port: int) -> None:
+        """``port`` was just handed out: the next search starts after it."""
+        self._next = port + 1 if port < self.ports.high else self.ports.low
+
+
+def bind_transfer(host: Any, family: int, ports: Optional[PortAllocator] = None) -> socket.socket:
     """A non-blocking UDP socket on ``host``: any port, or a free one in ``ports``.
 
     Raises :class:`netimps.AddressInUseError` when every port in the range
@@ -113,7 +191,7 @@ def bind_transfer(host: Any, family: int, ports: Optional[PortRange] = None) -> 
             except AddressInUseError:
                 continue
         else:
-            raise AddressInUseError("no free port in %d..%d" % (ports.low, ports.high))
+            raise AddressInUseError("no free port in %s" % ports.ports)
         ports.taken(port)
     sock.setblocking(False)
     return sock

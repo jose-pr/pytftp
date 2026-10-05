@@ -22,6 +22,7 @@ legacy    old or quirky peers: plain RFC 1350 requests, answers accepted
 
 from __future__ import annotations
 
+import copy
 from typing import Any, ClassVar, Dict, Mapping
 
 from .policy import STANDARD_OPTIONS, TFTPServerOptions
@@ -32,7 +33,7 @@ __all__ = ["Profile", "PROFILES"]
 class Profile:
     """A server policy and client settings that belong together."""
 
-    __slots__ = ("name", "server", "_client")
+    __slots__ = ("name", "_server", "_client")
 
     STRICT: ClassVar["Profile"]
     DEFAULT: ClassVar["Profile"]
@@ -42,8 +43,13 @@ class Profile:
 
     def __init__(self, name: str, server: TFTPServerOptions, client: Mapping[str, Any]) -> None:
         self.name = name
-        self.server = server
+        self._server = copy.copy(server)
         self._client = dict(client)
+
+    @property
+    def server(self) -> TFTPServerOptions:
+        """The server policy (a fresh copy each time, so changing it changes no profile)."""
+        return copy.copy(self._server)
 
     @property
     def client(self) -> Dict[str, Any]:

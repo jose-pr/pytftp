@@ -94,6 +94,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   block, where `struct.error` escaped. The servers and clients still send
   every ERROR they report, however malformed its code or text.
 
+- **`PortRange` is a frozen value; the round-robin position moved to the
+  server.** It compares and hashes by `low` and `high` (`PortRange(4000, 4010)
+  == PortRange(4000, 4010)` was `False`), cannot be assigned to, prints as
+  `LOW:HIGH` with `str()`, and has `parse` and `try_parse` for that text
+  (`PortRange.of("4000:4010")` raised). Iteration no longer starts after the
+  last port handed out, and `ordered()` and `taken()` are gone: every
+  `TFTPServer` and `TFTPRelay` owns its position, so two given one `PortRange`
+  no longer take ports from one cursor. `port_range=` takes a
+  `PortRangeLike`: a `PortRange`, a `(low, high)` pair, a `range` or the text.
+  A bound that is not an `int` (`"5"`) raises `TypeError`, where it was
+  converted; an out-of-range one raises `TFTPValueError`, still a `ValueError`.
+- `TFTPServerLimits`, `TFTPServerOptions` and `Negotiated` compare equal when
+  their fields do, and `TFTPServerLimits` and `OptionRegistry` print their
+  contents. `Profile.server` returns a copy each time (like `Profile.client`),
+  so `tftp.Profile.PXE.server.max_blksize = 512` no longer changes the preset.
+
 ### Renamed
 
 Old names are not kept as aliases.
@@ -124,6 +140,7 @@ Old names are not kept as aliases.
 | entry point `tftp.path.uri:TftpUriPath` | `tftp.path:TFTPURIPath` (the scheme is still `tftp`) |
 | `parse_url(url)` | `TFTPURL.parse(url)` (and `TFTPURL.try_parse(url)`) |
 | `format_url(host, filename, port, mode)` | `str(TFTPURL(host, port, filename, mode))` |
+| `PortRange.of(value)` | `PortRange.parse(text)`; the functions take a `PortRangeLike` |
 | `ServerOptions`, `ServerLimits` | `TFTPServerOptions`, `TFTPServerLimits` |
 | `ServerContext`, `ClientContext` | `ServerOptionContext`, `ClientOptionContext` |
 | `Blksize`, `Blksize2`, `Timeout`, `Utimeout`, `Tsize`, `Windowsize`, `Rollover`, `Cookie`, `Mstfwindow`, `XList`, `XMtime` (`tftp.options`) | the same with the suffix `Option`: `BlksizeOption` ... `XMtimeOption` |

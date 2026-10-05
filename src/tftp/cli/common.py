@@ -107,11 +107,8 @@ def port_range(text: _ty.Optional[str]) -> _ty.Any:
         return None
     from ..server import PortRange
 
-    low, sep, high = text.replace("-", ":").partition(":")
     try:
-        if not sep:
-            raise ValueError
-        return PortRange(int(low), int(high))
+        return PortRange.parse(text)
     except ValueError:
         raise ValueError("--port-range expects LOW:HIGH within 1..65535, got %r" % text) from None
 

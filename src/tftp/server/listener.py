@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from netimps import Host, InterfaceLike, IPAddressLike
 
 from ..packet.codec import _encode_error
-from .session import PortRange
+from .session import PortAllocator
 
 __all__ = ["Listener", "Arrival"]
 
@@ -168,7 +168,7 @@ class Listener:
         return is_multicast(local) or is_broadcast(local, arrival.interface, cache=True)
 
     def reply_socket(
-        self, arrival: Arrival, ports: "Optional[PortRange]" = None
+        self, arrival: Arrival, ports: "Optional[PortAllocator]" = None
     ) -> Tuple[socket.socket, Tuple[Any, ...]]:
         """A non-blocking socket for one transfer, bound to the address the
         request was sent to (``UDPEndpoint.reply_socket``), and the peer to

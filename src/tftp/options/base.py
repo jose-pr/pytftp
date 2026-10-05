@@ -59,6 +59,14 @@ class Negotiated:
         self.options = options if options is not None else {}
         self.extra = extra if extra is not None else {}
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Negotiated):
+            return NotImplemented
+        return all(getattr(self, name) == getattr(other, name) for name in self.__slots__)
+
+    #: Mutable, so not hashable.
+    __hash__ = None  # type: ignore[assignment]
+
     def __repr__(self) -> str:
         return "Negotiated(blksize=%d, windowsize=%d, timeout=%g, tsize=%r, rollover=%d)" % (
             self.blksize,

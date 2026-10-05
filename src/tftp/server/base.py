@@ -27,7 +27,7 @@ from ..transfer import Receiver, Transfer
 from .handler import TFTPRequestContext
 from .listener import Arrival, Listener
 from .policy import TFTPServerLimits
-from .session import PortRange, Session
+from .session import PortAllocator, Session, as_port_range
 from .stats import SERVER_COUNTERS, TFTPStats
 
 __all__ = ["ServerBase"]
@@ -93,7 +93,8 @@ class ServerBase:
         self.max_timeout = max_timeout
         self.trace = trace
         #: Where transfer sockets take their ports (:class:`PortRange`), or ``None``.
-        self.port_range = PortRange.of(port_range)
+        self.port_range = as_port_range(port_range)
+        self._ports = PortAllocator(self.port_range) if self.port_range is not None else None
         self._sessions: Dict[Tuple[str, int], Session] = {}
         self._per_client: Dict[str, int] = {}
         #: Counters since start (:class:`TFTPStats`); ``stats_snapshot()`` adds ``active``.
@@ -174,7 +175,7 @@ class ServerBase:
             return None
 
         try:
-            sock, peer = self._listener.reply_socket(arrival, self.port_range)
+            sock, peer = self._listener.reply_socket(arrival, self._ports)
         except OSError as exc:
             log.warning("no transfer socket for %s: %s", sender[:2], exc)
             self.stats.add("refused")

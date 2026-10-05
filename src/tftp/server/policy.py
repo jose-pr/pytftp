@@ -61,6 +61,19 @@ class TFTPServerLimits:
         self.max_duration = max_duration
         self.max_idle = max_idle
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TFTPServerLimits):
+            return NotImplemented
+        return all(getattr(self, name) == getattr(other, name) for name in self.__slots__)
+
+    #: Mutable, so not hashable.
+    __hash__ = None  # type: ignore[assignment]
+
+    def __repr__(self) -> str:
+        return "TFTPServerLimits(%s)" % ", ".join(
+            "%s=%r" % (name, getattr(self, name)) for name in self.__slots__
+        )
+
     def check(self, request: RequestPacket) -> None:
         """Raise :class:`TFTPError` (4) if ``request`` exceeds a limit."""
         if len(request.filename) > self.max_filename_length:

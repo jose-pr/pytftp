@@ -89,8 +89,9 @@ class TFTPServer(ServerBase):
         the handler: those marked ``_tftp_fast_open_ = True`` (the built-in
         file and memory handlers) open inline, everything else in a worker.
     :param workers: size of that worker pool.
-    :param port_range: ``(low, high)`` (inclusive), a ``range`` or a
-        :class:`PortRange`: transfer sockets take their ports from it, so a
+    :param port_range: a :class:`PortRange`, a ``(low, high)`` pair
+        (inclusive), a ``range`` or ``"LOW:HIGH"`` text: transfer sockets take
+        their ports from it, round-robin from a position this server owns, so a
         firewall can allow them. A request arriving while every port is in
         use gets ERROR 0 "server busy". ``None`` lets the OS choose.
     :param interface: listen on one network adapter: a name (``"eth0"``), a

@@ -91,6 +91,7 @@ EXPECTED = {
     "tftp.server": [
         "AtomicWriter",
         "PortRange",
+        "PortRangeLike",
         "TFTPHandler",
         "TFTPRequestContext",
         "TFTPServer",

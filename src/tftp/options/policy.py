@@ -92,6 +92,14 @@ class TFTPServerOptions:
     def accepts(self, name: str) -> bool:
         return name in self.allowed and name not in self.refused
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TFTPServerOptions):
+            return NotImplemented
+        return all(getattr(self, name) == getattr(other, name) for name in self.__slots__)
+
+    #: Mutable, so not hashable.
+    __hash__ = None  # type: ignore[assignment]
+
     def __repr__(self) -> str:
         return "TFTPServerOptions(max_blksize=%d, max_windowsize=%d, allowed=%s%s%s)" % (
             self.max_blksize,

@@ -108,3 +108,44 @@ def test_accept_oack_refuses(oack):
     with pytest.raises(tftp.TFTPProtocolError) as info:
         accept_oack(requested, oack, is_read=True, timeout=1.0)
     assert info.value.code == tftp.TFTPErrorCode.OPTION_REFUSED
+
+
+# -- the policy classes: equality, repr, and profiles that cannot be changed through a reference --
+
+
+@pytest.mark.parametrize("make", [tftp.TFTPServerLimits, tftp.TFTPServerOptions, tftp.options.Negotiated])
+def test_a_policy_equals_an_identical_one_and_nothing_else(make):
+    one, other = make(), make()
+    assert one == other and one is not other
+    assert one.__eq__(object()) is NotImplemented and one != object() and one != ()
+    assert type(one).__hash__ is None  # mutable, so unhashable
+    assert repr(one).startswith(type(one).__name__ + "(") and "object at 0x" not in repr(one)
+
+
+def test_policies_that_differ_are_unequal():
+    assert tftp.TFTPServerLimits(max_options=3) != tftp.TFTPServerLimits()
+    assert tftp.TFTPServerLimits(max_idle=None) != tftp.TFTPServerLimits()
+    assert tftp.TFTPServerOptions(max_blksize=512) != tftp.TFTPServerOptions()
+    assert tftp.TFTPServerOptions(refused={"tsize"}) != tftp.TFTPServerOptions()
+    assert tftp.options.Negotiated(blksize=1428) != tftp.options.Negotiated()
+    assert tftp.options.Negotiated(options={"a": "1"}) != tftp.options.Negotiated()
+
+
+def test_the_repr_of_a_limit_and_a_registry_names_what_they_hold():
+    assert "max_options=3" in repr(tftp.TFTPServerLimits(max_options=3))
+    registry = tftp.options.OptionRegistry()
+    assert "blksize" in repr(registry) and "object at 0x" not in repr(registry)
+
+
+def test_a_profiles_server_policy_cannot_be_changed_through_a_reference():
+    before = tftp.Profile.PXE.server.max_blksize
+    policy = tftp.Profile.PXE.server
+    policy.max_blksize = 512  # the copy
+    assert tftp.Profile.PXE.server.max_blksize == before != 512
+    assert tftp.Profile.PXE.server == tftp.Profile.PXE.server
+    assert tftp.Profile.PXE.server is not tftp.Profile.PXE.server
+    assert tftp.Profile.PXE.client is not tftp.Profile.PXE.client
+    built = tftp.TFTPServerOptions(max_blksize=1024)
+    profile = tftp.options.Profile("custom", built, {})
+    built.max_blksize = 512
+    assert profile.server.max_blksize == 1024

@@ -51,6 +51,9 @@ class OptionRegistry:
         """Names of the RFC-defined options (what a server allows by default)."""
         return frozenset(h.name for h in self._handlers.values() if h.standard)
 
+    def __repr__(self) -> str:
+        return "OptionRegistry(%s)" % ", ".join(self._handlers)
+
     def copy(self) -> "OptionRegistry":
         return OptionRegistry(list(self._handlers.values()))
 
