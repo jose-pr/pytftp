@@ -6,6 +6,7 @@ import io
 import os
 import random
 import socket
+import time
 
 import pytest
 
@@ -129,14 +130,17 @@ def test_expiry_ends_a_transfer():
     assert "time limit" in receiver.error.message
 
 
-def test_client_max_duration(root):
+def test_client_deadline(root):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
         silent.bind(("127.0.0.1", 0))
         client = tftp.TFTPClient(
-            "127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=100, max_duration=0.3
+            "127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=100, deadline=0.3
         )
+        started = time.monotonic()
         with pytest.raises(tftp.TransferTimeoutError):
             client.get("x")
+        # 100 retries at the backed-off 0.4 s would take some forty seconds.
+        assert time.monotonic() - started < 10
 
 
 # -- stalls (WouldBlock) -----------------------------------------------------

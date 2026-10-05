@@ -152,8 +152,7 @@ class TFTPClient:
         followed.
     :param family: ``socket.AF_INET`` / ``AF_INET6`` to force one, ``0`` for
         whatever ``host`` resolves to first.
-    :param local_address: ``(address, port)`` to send from; the address as
-        for ``host``.
+    :param src: ``(address, port)`` to send from; the address as for ``host``.
     :param fallback: when the server refuses a request because of its options
         (ERROR 8), retry once without any.
     :param dally: after acknowledging the last DATA of a download, keep
@@ -163,7 +162,8 @@ class TFTPClient:
         longer (RFC 1123 4.2.3.2); progress resets it to ``timeout``.
     :param max_timeout: ceiling for the backed-off wait, at least ``timeout``;
         ``None`` is eight times ``timeout``.
-    :param max_duration: seconds a whole transfer may take, or ``None``.
+    :param deadline: seconds a whole transfer may take, or ``None``. A
+        relative duration, unlike the engine's ``deadline`` attribute.
     :param utimeout: send a fractional ``timeout`` as tftp-hpa's ``utimeout``
         (otherwise a fractional timeout is not requested at all).
     :param extra_options: further options to request, verbatim (extensions
@@ -196,12 +196,12 @@ class TFTPClient:
         rollover: Optional[int] = None,
         timeout_option: bool = True,
         family: int = 0,
-        local_address: Optional[Tuple[Any, ...]] = None,
+        src: Optional[Tuple[Any, ...]] = None,
         fallback: bool = True,
         dally: bool = False,
         backoff: float = 2.0,
         max_timeout: Optional[float] = None,
-        max_duration: Optional[float] = None,
+        deadline: Optional[float] = None,
         strict_source: bool = True,
         utimeout: bool = False,
         extra_options: Optional[Mapping[str, object]] = None,
@@ -236,12 +236,12 @@ class TFTPClient:
         self.rollover = rollover
         self.timeout_option = timeout_option
         self.family = family
-        self.local_address = local_address
+        self.src = src
         self.fallback = fallback
         self.dally = dally
         self.backoff = max(1.0, backoff)
         self.max_timeout = max_timeout if max_timeout is not None else timeout * 8
-        self.max_duration = max_duration
+        self.deadline = deadline
         self.strict_source = strict_source
         self.utimeout = utimeout
         self.extra_options = dict(extra_options or {})
@@ -254,20 +254,20 @@ class TFTPClient:
     def download(
         self,
         filename: str,
-        dest: PathOrFile,
+        dst: PathOrFile,
         *,
         mode: str = "octet",
         progress: Optional[Progress] = None,
     ) -> TransferResult:
-        """Fetch ``filename`` into ``dest`` (a path or a writable binary file).
+        """Fetch ``filename`` into ``dst`` (a path or a writable binary file).
 
         A path is written in place and removed again if the transfer fails.
         Raises :class:`RemoteError`, :class:`TransferTimeoutError` or
         :class:`TFTPProtocolError`; ``OSError`` for local failures.
         """
         mode = _mode(mode)
-        if isinstance(dest, (str, os.PathLike)):
-            path = os.fspath(dest)
+        if isinstance(dst, (str, os.PathLike)):
+            path = os.fspath(dst)
             fileobj = open(path, "wb")
             try:
                 result = self._download(filename, fileobj, mode, progress)
@@ -280,7 +280,7 @@ class TFTPClient:
                 raise
             fileobj.close()
             return result
-        return self._download(filename, dest, mode, progress)
+        return self._download(filename, dst, mode, progress)
 
     def path(self, *segments: Any, mode: str = "octet") -> Any:
         """A :class:`tftp.path.TFTPPath` on this server (needs the ``path`` extra)."""
@@ -297,19 +297,19 @@ class TFTPClient:
     def upload(
         self,
         filename: str,
-        source: Union[PathOrFile, bytes, bytearray, memoryview],
+        src: Union[PathOrFile, bytes, bytearray, memoryview],
         *,
         mode: str = "octet",
         progress: Optional[Progress] = None,
     ) -> TransferResult:
-        """Send ``source`` (a path, a readable binary file or bytes) as ``filename``."""
+        """Send ``src`` (a path, a readable binary file or bytes) as ``filename``."""
         mode = _mode(mode)
-        if isinstance(source, (str, os.PathLike)):
-            with open(os.fspath(source), "rb") as fileobj:
+        if isinstance(src, (str, os.PathLike)):
+            with open(os.fspath(src), "rb") as fileobj:
                 return self._upload(filename, fileobj, mode, progress)
-        if isinstance(source, (bytes, bytearray, memoryview)):
-            return self._upload(filename, io.BytesIO(bytes(source)), mode, progress)
-        return self._upload(filename, source, mode, progress)
+        if isinstance(src, (bytes, bytearray, memoryview)):
+            return self._upload(filename, io.BytesIO(bytes(src)), mode, progress)
+        return self._upload(filename, src, mode, progress)
 
     def put(self, filename: str, data: bytes, *, mode: str = "octet") -> TransferResult:
         """Upload ``data`` as ``filename``."""
@@ -482,7 +482,7 @@ class TFTPClient:
     def _socket(self, family: int) -> socket.socket:
         from netimps import bind
 
-        local_host, local_port = self.local_address or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
+        local_host, local_port = self.src or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
         return bind(local_host, local_port, family=family)
 
     def size(self, filename: str, *, mode: str = "octet") -> Optional[int]:
@@ -631,7 +631,7 @@ class TFTPClient:
 
         fit_window(sock, requested_blksize, int(options.get("windowsize", 1)))
 
-        expires = None if self.max_duration is None else started + self.max_duration
+        expires = None if self.deadline is None else started + self.deadline
         engine = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
 
         emit = self._emitter(sock)
@@ -749,7 +749,8 @@ class TFTPClient:
 def download(
     host: "HostLike",
     filename: str,
-    dest: PathOrFile,
+    dst: PathOrFile,
+    /,
     *,
     port: int = 69,
     mode: str = "octet",
@@ -757,13 +758,14 @@ def download(
     **client_options: Any,
 ) -> TransferResult:
     """One-shot :meth:`TFTPClient.download`; ``client_options`` go to :class:`TFTPClient`."""
-    return TFTPClient(host, port, **client_options).download(filename, dest, mode=mode, progress=progress)
+    return TFTPClient(host, port, **client_options).download(filename, dst, mode=mode, progress=progress)
 
 
 def upload(
     host: "HostLike",
     filename: str,
-    source: Union[PathOrFile, bytes],
+    src: Union[PathOrFile, bytes],
+    /,
     *,
     port: int = 69,
     mode: str = "octet",
@@ -771,4 +773,4 @@ def upload(
     **client_options: Any,
 ) -> TransferResult:
     """One-shot :meth:`TFTPClient.upload`; ``client_options`` go to :class:`TFTPClient`."""
-    return TFTPClient(host, port, **client_options).upload(filename, source, mode=mode, progress=progress)
+    return TFTPClient(host, port, **client_options).upload(filename, src, mode=mode, progress=progress)

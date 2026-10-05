@@ -176,15 +176,15 @@ class AsyncTFTPClient(TFTPClient):
     async def download(
         self,
         filename: str,
-        dest: Any,
+        dst: Any,
         *,
         mode: str = "octet",
         progress: Optional[Progress] = None,
     ) -> TransferResult:
-        """Fetch ``filename`` into ``dest``: a path, a binary file or an async writer."""
+        """Fetch ``filename`` into ``dst``: a path, a binary file or an async writer."""
         mode = _mode(mode)
-        if isinstance(dest, (str, os.PathLike)):
-            path = os.fspath(dest)
+        if isinstance(dst, (str, os.PathLike)):
+            path = os.fspath(dst)
             fileobj = open(path, "wb")
             try:
                 result = await self._download(filename, fileobj, mode, progress)
@@ -197,7 +197,7 @@ class AsyncTFTPClient(TFTPClient):
                 raise
             fileobj.close()
             return result
-        return await self._download(filename, dest, mode, progress)
+        return await self._download(filename, dst, mode, progress)
 
     def path(self, *segments: Any, mode: str = "octet") -> Any:
         """Not available: a :class:`tftp.path.TFTPPath` is synchronous.
@@ -216,19 +216,19 @@ class AsyncTFTPClient(TFTPClient):
     async def upload(  # type: ignore[override]
         self,
         filename: str,
-        source: Any,
+        src: Any,
         *,
         mode: str = "octet",
         progress: Optional[Progress] = None,
     ) -> TransferResult:
-        """Send ``source``: a path, bytes, a binary file, or an async reader/iterable."""
+        """Send ``src``: a path, bytes, a binary file, or an async reader/iterable."""
         mode = _mode(mode)
-        if isinstance(source, (str, os.PathLike)):
-            with open(os.fspath(source), "rb") as fileobj:
+        if isinstance(src, (str, os.PathLike)):
+            with open(os.fspath(src), "rb") as fileobj:
                 return await self._upload(filename, fileobj, mode, progress)
-        if isinstance(source, (bytes, bytearray, memoryview)):
-            return await self._upload(filename, io.BytesIO(bytes(source)), mode, progress)
-        return await self._upload(filename, source, mode, progress)
+        if isinstance(src, (bytes, bytearray, memoryview)):
+            return await self._upload(filename, io.BytesIO(bytes(src)), mode, progress)
+        return await self._upload(filename, src, mode, progress)
 
     async def put(self, filename: str, data: bytes, *, mode: str = "octet") -> TransferResult:  # type: ignore[override]
         return await self.upload(filename, data, mode=mode)
@@ -347,7 +347,7 @@ class AsyncTFTPClient(TFTPClient):
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
         server = sockaddr(address, port)
         options = self._options(opcode == TFTPOpcode.RRQ, size, address)
-        local_host, local_port = self.local_address or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
+        local_host, local_port = self.src or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
         started = time.monotonic()
         attempts = [options, {}] if options and self.fallback else [options]
         for attempt, attempt_options in enumerate(attempts):
@@ -395,7 +395,7 @@ class AsyncTFTPClient(TFTPClient):
         transport, _ = await loop.create_datagram_endpoint(lambda: _Protocol(driver), sock=sock)
         driver.transport = transport
         try:
-            expires = None if self.max_duration is None else loop.time() + self.max_duration
+            expires = None if self.deadline is None else loop.time() + self.deadline
             engine_kwargs = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
             # Request phase, with the same backoff as retransmissions.
             from netimps import Backoff

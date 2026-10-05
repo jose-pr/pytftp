@@ -273,3 +273,29 @@ def test_relay_hears_an_upstream_named_by_a_link_local_address_with_its_zone(lin
         relay = make_relay("[%s]:%d" % (link_local, upstream.server_address[1]))
         client = tftp.TFTPClient("127.0.0.1", relay.server_address[1], timeout=0.5, retries=2)
         assert client.get("f") == b"through the relay"
+
+
+def test_a_transfer_longer_than_max_duration_is_ended(root, make_server, make_relay):
+    server = make_server(root, timeout=5)
+    ends = []
+    relay = make_relay(upstream_of(server), idle_timeout=60, max_duration=0.3, on_session_end=ends.append)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
+        client.settimeout(3)
+        client.sendto(tftp.encode_request(TFTPOpcode.RRQ, "big.bin"), relay.server_address)
+        client.recvfrom(2048)  # then vanish
+        assert wait_for(lambda: ends, timeout=10)
+    assert ends[0].reason == "lifetime" and relay.active_sessions == 0
+
+
+def test_upstream_src_is_the_address_the_upstream_sees(root, make_server, make_relay):
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.bind(("127.0.0.2", 0))
+        except OSError:
+            pytest.skip("127.0.0.2 is not a local address here (macOS configures only 127.0.0.1)")
+    seen = []
+    server = make_server(root, host="0.0.0.0", on_complete=seen.append)
+    relay = make_relay(upstream_of(server), upstream_src="127.0.0.2", linger=0.1)
+    assert client_for(relay).get("one.bin") == (root / "one.bin").read_bytes()
+    assert wait_for(lambda: seen)
+    assert seen[0].peer[0] == "127.0.0.2"

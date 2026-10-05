@@ -208,21 +208,21 @@ class TFTPURL:
         return "tftp://%s/%s%s" % (authority, file, "" if self.mode == "octet" else ";mode=" + self.mode)
 
 
-def download_url(url: str, dest: Any, *, progress: Optional[Any] = None, **client_options: Any):
+def download_url(url: str, dst: Any, /, *, progress: Optional[Any] = None, **client_options: Any):
     """Download the file a ``tftp://`` URL names; ``client_options`` go to ``TFTPClient``."""
     from .client import TFTPClient
 
     target = TFTPURL.parse(url)
     return TFTPClient(target.host, target.port, **client_options).download(
-        target.filename, dest, mode=target.mode, progress=progress
+        target.filename, dst, mode=target.mode, progress=progress
     )
 
 
-def upload_url(url: str, source: Any, *, progress: Optional[Any] = None, **client_options: Any):
+def upload_url(url: str, src: Any, /, *, progress: Optional[Any] = None, **client_options: Any):
     """Upload to the file a ``tftp://`` URL names; ``client_options`` go to ``TFTPClient``."""
     from .client import TFTPClient
 
     target = TFTPURL.parse(url)
     return TFTPClient(target.host, target.port, **client_options).upload(
-        target.filename, source, mode=target.mode, progress=progress
+        target.filename, src, mode=target.mode, progress=progress
     )

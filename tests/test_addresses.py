@@ -146,7 +146,7 @@ def test_server_listens_on_typed_host(root, host):
 
 def test_client_local_address_typed(root, make_server):
     server = make_server(root)
-    client = client_for(server, local_address=(LOOPBACK, 0))
+    client = client_for(server, src=(LOOPBACK, 0))
     assert client.get("one.bin") == b"x"
 
 

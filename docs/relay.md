@@ -39,7 +39,7 @@ arrived on.
 A transparent relay cannot understand every extension, so it uses several
 signals: an ERROR in either direction, the final DATA/ACK exchange (then a
 short linger for retransmissions), no traffic for `idle_timeout`, or
-`max_lifetime`. Each ends with a `RelaySummary` (bytes each way, reason,
+`max_duration`. Each ends with a `RelaySummary` (bytes each way, reason,
 error).
 
 ## Relay or proxy?

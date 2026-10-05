@@ -61,10 +61,10 @@ class TFTPRelay:
     :param idle_timeout: end a transfer after this long without traffic.
         Keep it above the largest timeout a peer may negotiate times its
         retries.
-    :param max_lifetime: end any transfer after this long.
+    :param max_duration: end any transfer after this long.
     :param linger: after a recognised final DATA/ACK exchange (or an ERROR,
         up to 1 s), keep forwarding this long for retransmissions.
-    :param upstream_source: local address to send upstream from (a string,
+    :param upstream_src: local address to send upstream from (a string,
         an ``ipaddress`` address or a ``netimps.Host``).
     :param limits, max_sessions, ignore_broadcast,
         reply_from_request_address: as for ``TFTPServer``.
@@ -84,9 +84,9 @@ class TFTPRelay:
         host: "IPAddressLike | Host | None" = None,
         port: int = 69,
         idle_timeout: float = 30.0,
-        max_lifetime: float = 3600.0,
+        max_duration: float = 3600.0,
         linger: float = 2.0,
-        upstream_source: "IPAddressLike | Host | None" = None,
+        upstream_src: "IPAddressLike | Host | None" = None,
         limits: Optional[TFTPServerLimits] = None,
         max_sessions: Optional[int] = None,
         ignore_broadcast: bool = True,
@@ -102,9 +102,9 @@ class TFTPRelay:
             fixed = Upstream.parse(route)
             self.route = lambda request, context: fixed
         self.idle_timeout = idle_timeout
-        self.max_lifetime = max_lifetime
+        self.max_duration = max_duration
         self.linger = linger
-        self.upstream_source = upstream_source
+        self.upstream_src = upstream_src
         self.limits = limits or TFTPServerLimits()
         if sys.platform == "win32":
             if max_sessions is None:
@@ -353,7 +353,7 @@ class TFTPRelay:
             self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "relay busy")
             return False
         try:
-            source = self.upstream_source or ("::" if family == socket.AF_INET6 else "0.0.0.0")
+            source = self.upstream_src or ("::" if family == socket.AF_INET6 else "0.0.0.0")
             up = bind_transfer(source, family, self._ports)
         except OSError:
             down.close()
@@ -417,8 +417,8 @@ class TFTPRelay:
 
     def _sweep(self, now: float) -> None:
         for session in list(self._sessions.values()):
-            if now >= session.deadline(self.idle_timeout, self.max_lifetime):
-                self._end(session, session.expiry_reason(now, self.idle_timeout, self.max_lifetime), now)
+            if now >= session.deadline(self.idle_timeout, self.max_duration):
+                self._end(session, session.expiry_reason(now, self.idle_timeout, self.max_duration), now)
 
     def _end(self, session: RelaySession, reason: str, now: float) -> None:
         if session.closed:

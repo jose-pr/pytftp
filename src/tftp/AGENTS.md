@@ -42,7 +42,7 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 
 ## Client
 
-**`TFTPClient(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, local_address=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, max_duration=None, strict_source=True, utimeout=False, extra_options=None, registry=None, on_negotiated=None)`**
+**`TFTPClient(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, src=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, deadline=None, strict_source=True, utimeout=False, extra_options=None, registry=None, on_negotiated=None)`**
 
 - `host` — a string (name or address; `"[v6]"`, `"host:port"` and
   `"[v6]:port"` are accepted, and a port written there overrides `port`), an
@@ -59,7 +59,10 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 - `backoff`, `max_timeout` — each consecutive retransmission (of the
   request too) waits `backoff` times longer, up to `max_timeout` (default
   8 × `timeout`; below `timeout` is a `ValueError`); progress resets the wait. `backoff=1` disables it.
-- `max_duration` — seconds a whole transfer may take; `None` is unlimited.
+- `deadline` — seconds a whole transfer may take, counted from when it
+  starts; `None` is unlimited. A relative duration: the client's
+  `deadline` argument and attribute are not the engine's `deadline` (the
+  instant it next wants `on_timeout`, see "Transfer engine").
 - `strict_source` — the first answer must come from the address the request
   was sent to; addresses are compared by value (packed address, and scope id
   when both sides have one), never by their text, so a link-local server named
@@ -86,7 +89,7 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
   and follows a server that wraps to 1.
 - `family` — `socket.AF_INET`/`AF_INET6` to force one; `0` is whatever the host
   resolves to first.
-- `local_address` — `(address, port)` to send from; the address in any form
+- `src` — `(address, port)` to send from; the address in any form
   `host` takes.
 - `fallback` — if the server answers the *request* with ERROR 8 (options
   refused), ask again once without options.
@@ -99,11 +102,11 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 
 Methods (each returns a `TransferResult` unless noted):
 
-- **`download(filename, dest, *, mode="octet", progress=None)`** — `dest` is a
+- **`download(filename, dst, *, mode="octet", progress=None)`** — `dst` is a
   path or a writable binary file. A path is created/truncated and **removed
   again if the transfer fails**.
 - **`get(filename, *, mode="octet") -> bytes`** — download into memory.
-- **`upload(filename, source, *, mode="octet", progress=None)`** — `source` is
+- **`upload(filename, src, *, mode="octet", progress=None)`** — `src` is
   a path, a readable binary file (`readinto` or `read`), or bytes-like.
 - **`put(filename, data, *, mode="octet")`** — upload bytes.
 - **`size(filename, *, mode="octet") -> int | None`** — the file's size
@@ -137,9 +140,10 @@ Methods (each returns a `TransferResult` unless noted):
   the local file, a send the host refuses: the asyncio client raises it at
   once and does not wait out the retries).
 
-**`download(host, filename, dest, *, port=69, mode="octet", progress=None, **client_options)`**
-and **`upload(host, filename, source, ...)`** — one-shot wrappers;
-`client_options` go to `TFTPClient`.
+**`download(host, filename, dst, /, *, port=69, mode="octet", progress=None, **client_options)`**
+and **`upload(host, filename, src, /, ...)`** — one-shot wrappers;
+`client_options` go to `TFTPClient`. The operands are positional-only, so
+`src=` in `client_options` is the client's source address, not the data.
 
 **`MODES`** — `("octet", "netascii")`.
 
@@ -408,7 +412,7 @@ outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
 
 **`AsyncTFTPClient(...)`** — `TFTPClient`'s arguments and rules (options, backoff,
 fallback, `trace`, `on_negotiated`); coroutine methods `download(filename,
-dest, *, mode, progress)`, `get`, `upload(filename, source, *, mode,
+dst, *, mode, progress)`, `get`, `upload(filename, src, *, mode,
 progress)`, `put`, `size`, `stat` (both in the executor), `listdir`, and the async generator **`stream(filename, *, mode,
 buffer=1 MiB)`** yielding chunks as they arrive (a slow consumer holds ACKs
 back; at most `buffer` bytes are held). Name resolution runs in the
@@ -524,7 +528,7 @@ Both support what TFTP can do, plus listing against a server speaking
 
 ## Relay (`tftp.relay`)
 
-**`TFTPRelay(route, *, host=None, port=69, idle_timeout=30.0, max_lifetime=3600.0, linger=2.0, upstream_source=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None, interface=None)`**
+**`TFTPRelay(route, *, host=None, port=69, idle_timeout=30.0, max_duration=3600.0, linger=2.0, upstream_src=None, limits=None, max_sessions=None, ignore_broadcast=True, reply_from_request_address=True, trace=None, on_session_end=None, port_range=None, interface=None)`**
 — a transparent application relay (there is no standard TFTP relay). The
 request is forwarded **byte for byte** from a fresh upstream-side socket; the
 upstream's TID is learned from its first answer (from the address asked,
@@ -546,7 +550,7 @@ use `UpstreamBackend` (a terminating proxy) instead.
   request (cached 60 s). Routes run on the relay's loop: keep them fast.
 - A transfer ends on: an ERROR either way (after ≤1 s), the final DATA/ACK
   exchange (the block size followed from an OACK's `blksize`/`blksize2`, then
-  `linger`), `idle_timeout` without traffic, or `max_lifetime`. Keep
+  `linger`), `idle_timeout` without traffic, or `max_duration`. Keep
   `idle_timeout` above the longest timeout × retries a peer may use.
 - A repeated request from the same client address/port is forwarded again
   only while the upstream has not answered. Strays on either leg get ERROR 5.
@@ -680,7 +684,7 @@ not one of these. `TFTPError` plays three roles, told apart by the subclass:
   also a `FileNotFoundError` or `PermissionError`; `tftp.path` raises those.
   Also **`TFTPProtocolError(message, code=4)`** (the peer broke the protocol;
   code 4, or 8 for option problems), **`TransferTimeoutError(message)`** (also
-  a `TimeoutError`, with `errno` `None`; retries exhausted or `max_duration`
+  a `TimeoutError`, with `errno` `None`; retries exhausted or the client's `deadline`
   passed) and **`TransferAbortedError(message)`** (cancelled locally:
   `abort()`, server shutdown), both with code 0.
 - *What `TransferResult.error` holds*: whichever of the above ended the
@@ -761,8 +765,10 @@ options untouched. `repr()` of a packet is a constructor call.
   `%3F` or `%23` for a literal `?` or `#`); `TypeError` for a non-`str`.
   **`TFTPURL.try_parse(text, default=None)`** returns `default` instead of
   raising `TFTPValueError`.
-- **`download_url(url, dest, *, progress=None, **client_options)`**,
-  **`upload_url(url, source, ...)`** — one-shot transfers by URL.
+- **`download_url(url, dst, /, *, progress=None, **client_options)`**,
+  **`upload_url(url, src, /, ...)`** — one-shot transfers by URL; the operands
+  are positional-only, so `src=` in `client_options` is the client's source
+  address.
 
 ## Netascii
 
@@ -778,11 +784,13 @@ CR on any block boundary. `tftp.netascii` also has `encode`, `decode` and
 
 **`Sender(send, read, negotiated, retries, now, oack=None, **kw)`** and
 **`Receiver(send, write, negotiated, retries, now, reply=None, complete=None, **kw)`**
-(`kw`: `backoff=2.0`, `max_timeout=None`, `expires=None` — an absolute
-deadline in the caller's clock)
+(`kw`: `backoff=2.0`, `max_timeout=None`, `expires=None` — the instant, in
+the caller's clock, at which the transfer is abandoned)
 are one side of the DATA/ACK exchange **without any I/O**: packets leave
 through `send(packet)`, arrive through `handle(buffer, n, now)`, and the caller
-calls `on_timeout(now)` once `deadline` (in the caller's clock) passes, and
+calls `on_timeout(now)` once `deadline` passes (here `deadline` is an
+attribute: the instant, in the caller's clock, the engine next wants to be
+called; the client's `deadline` argument is a number of seconds), and
 `resume(now)` when a stalled source/sink (`WouldBlock`) is ready again;
 `abort(message)` cancels. State: `is_done`, `error`, `is_stalled`, `bytes`,
 `blocks`, `retransmits`, `deadline`. A repeated OACK is tolerated: a

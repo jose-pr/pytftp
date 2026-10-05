@@ -35,6 +35,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   capacity, size)` and `AsyncWriterBridge(sink, *, capacity, close_sink)` follow
   the same rule. `TFTPClient(host, port=69, ...)`, `PortRange(low, high)` and
   `Upstream(host, port)` keep the conventional pair.
+- **The client's whole-transfer limit is `deadline`.** `TFTPClient(max_duration=)`
+  and `AsyncTFTPClient(max_duration=)` are `deadline=`: seconds, counted from
+  when a transfer starts (`client.deadline` is the attribute). It is not the
+  `deadline` attribute of `Sender`, `Receiver` and `RelaySession`, which is the
+  instant the engine next wants to be called. The per-transfer cap of a policy
+  has one name: `TFTPRelay(max_lifetime=)` is `max_duration=`, as
+  `TFTPServerLimits(max_duration=)` already was (the `lifetime` reason of a
+  `RelaySummary` is unchanged).
+- **Argument names.** `download(..., dest)` and `download_url(url, dest)` are
+  `dst`, and `upload(..., source)` and `upload_url(url, source)` are `src`, on
+  both clients and the one-shot functions. The operands of the four one-shot
+  functions are positional-only, so `src=` in their `client_options` is
+  the client's source address, not the data. `TFTPClient(local_address=)` is
+  `src=` (`client.src`), and `TFTPRelay(upstream_source=)` is `upstream_src=`.
+  The command line's flags are unchanged.
 - Requires `netimps>=0.4.0,<0.5`; netimps 0.3 is no longer supported.
 - `TFTPClient(timeout=..., max_timeout=...)` raises `ValueError` when
   `max_timeout` is below `timeout`, where it used to be raised to `timeout`

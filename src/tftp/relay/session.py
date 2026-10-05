@@ -4,7 +4,7 @@ A transparent relay forwards datagrams unchanged, so it cannot know every
 extension's effect on the protocol. It ends a transfer on whichever comes
 first: an ERROR in either direction, a recognised final DATA/ACK exchange
 (followed by a short linger so a retransmitted final DATA still gets
-through), no traffic for ``idle_timeout``, or ``max_lifetime``.
+through), no traffic for ``idle_timeout``, or ``max_duration``.
 """
 
 from __future__ import annotations
@@ -99,14 +99,14 @@ class RelaySession:
         self.error: Optional[Tuple[int, str]] = None
         self.closed = False
 
-    def deadline(self, idle_timeout: float, max_lifetime: float) -> float:
-        due = min(self.last_activity + idle_timeout, self.started + max_lifetime)
+    def deadline(self, idle_timeout: float, max_duration: float) -> float:
+        due = min(self.last_activity + idle_timeout, self.started + max_duration)
         return due if self.closing_at is None else min(due, self.closing_at)
 
-    def expiry_reason(self, now: float, idle_timeout: float, max_lifetime: float) -> str:
+    def expiry_reason(self, now: float, idle_timeout: float, max_duration: float) -> str:
         if self.closing_at is not None and now >= self.closing_at:
             return self.reason or "complete"
-        if now >= self.started + max_lifetime:
+        if now >= self.started + max_duration:
             return "lifetime"
         return "idle"
 

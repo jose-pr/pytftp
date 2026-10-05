@@ -387,3 +387,22 @@ def test_a_send_the_host_refuses_ends_the_request_and_an_icmp_report_does_not():
         assert info.value.errno == errno.EMSGSIZE and not isinstance(info.value, tftp.TFTPError)
 
     run(main())
+
+
+def test_async_client_deadline_ends_a_transfer_before_its_retries_do():
+    import socket
+    import time
+
+    async def main():
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
+            silent.bind(("127.0.0.1", 0))
+            client = AsyncTFTPClient(
+                "127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=100, deadline=0.3
+            )
+            started = time.monotonic()
+            with pytest.raises(tftp.TransferTimeoutError):
+                await client.get("x")
+            # 100 retries at the backed-off 0.4 s would take some forty seconds.
+            assert time.monotonic() - started < 10
+
+    run(main())

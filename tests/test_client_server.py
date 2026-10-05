@@ -356,3 +356,31 @@ def test_size_probes_count_as_declined(root, make_server):
     while server.stats["declined"] + server.stats["completed"] < 2 and time.monotonic() < deadline:
         time.sleep(0.01)
     assert (server.stats["declined"], server.stats["completed"], server.stats["failed"]) == (1, 1, 0)
+
+
+def test_operands_of_download_and_upload_are_named_dst_and_src(root, make_server, tmp_path_factory):
+    server = make_server(root, writable=True)
+    out = tmp_path_factory.mktemp("out")
+    client = client_for(server)
+    client.download("one.bin", dst=out / "one.bin")
+    assert (out / "one.bin").read_bytes() == (root / "one.bin").read_bytes()
+    client.upload("named.bin", src=b"payload")
+    assert (root / "named.bin").read_bytes() == b"payload"
+
+
+def test_a_one_shot_upload_passes_src_to_the_client_as_the_source_address(root, make_server):
+    server = make_server(root, writable=True, on_complete=lambda result: seen.append(result.peer))
+    seen = []
+    port = server.server_address[1]
+    tftp.upload("127.0.0.1", "oneshot.bin", b"data", port=port, src=("127.0.0.1", 0), timeout=0.5)
+    tftp.download("127.0.0.1", "oneshot.bin", io.BytesIO(), port=port, src=("127.0.0.1", 0), timeout=0.5)
+    assert (root / "oneshot.bin").read_bytes() == b"data"
+    assert wait_until(lambda: len(seen) == 2)
+    assert {peer[0] for peer in seen} == {"127.0.0.1"}
+
+
+def wait_until(predicate, timeout=5.0):
+    end = time.monotonic() + timeout
+    while not predicate() and time.monotonic() < end:
+        time.sleep(0.01)
+    return predicate()
