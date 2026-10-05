@@ -39,6 +39,7 @@ from .options import (
 from .packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_request, decode
 from .packet.codec import _encode_error
 from .result import TransferResult
+from ._arguments import check_family, check_int, check_seconds, check_source
 from ._sockets import fit_window, same_host, sockaddr
 from .capture.events import PacketEvent, new_session_id
 from .transfer import Receiver, Sender, Transfer, as_readinto, as_write
@@ -209,12 +210,18 @@ class TFTPClient:
         on_negotiated: Optional[Callable[[Negotiated, Tuple[Any, ...]], Any]] = None,
         trace: Optional[Callable[[PacketEvent], Any]] = None,
     ) -> None:
-        if timeout <= 0:
-            raise ValueError("timeout must be positive")
-        if max_timeout is not None and max_timeout < timeout:
-            raise ValueError("max_timeout must be at least timeout (%s), got %s" % (timeout, max_timeout))
-        if retries < 0:
-            raise ValueError("retries cannot be negative")
+        check_int("port", port, 1, 65535)
+        check_int("retries", retries, 0)
+        check_seconds("timeout", timeout)
+        if max_timeout is not None:
+            check_seconds("max_timeout", max_timeout)
+            if max_timeout < timeout:
+                raise ValueError("max_timeout must be at least timeout (%s), got %s" % (timeout, max_timeout))
+        if deadline is not None:
+            check_seconds("deadline", deadline, finite=False)
+        check_seconds("backoff", backoff, minimum=1.0)
+        check_family(family)
+        src = check_source(src)
         # Validate the options now rather than on the first transfer.
         if blksize == "mtu":
             pass
@@ -239,7 +246,7 @@ class TFTPClient:
         self.src = src
         self.fallback = fallback
         self.dally = dally
-        self.backoff = max(1.0, backoff)
+        self.backoff = backoff
         self.max_timeout = max_timeout if max_timeout is not None else timeout * 8
         self.deadline = deadline
         self.strict_source = strict_source

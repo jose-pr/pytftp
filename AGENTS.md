@@ -35,6 +35,7 @@ src/tftp/
 ├── capture/           # packet events, trace hooks, pcap decoding
 ├── cli/               # pytftp (duho): common.py, transfer.py (get/put/ls), serve.py, relay.py,
 │                      # capture.py, handlers.py (serve's --per-client/--ignore-case/--remap)
+├── _arguments.py      # constructor argument checks: TypeError for a type, ValueError for a value
 └── _sockets.py        # window-sized socket buffers (everything else is netimps)
 tests/                 # pytest; engine tests need no sockets
 benchmarks/            # run.py, compare_tftpy.py + committed results/*.json

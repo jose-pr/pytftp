@@ -384,3 +384,89 @@ def wait_until(predicate, timeout=5.0):
     while not predicate() and time.monotonic() < end:
         time.sleep(0.01)
     return predicate()
+
+
+_BAD_TYPE = [
+    {"port": "69"},
+    {"port": 69.0},
+    {"port": True},
+    {"retries": 1.5},
+    {"retries": True},
+    {"retries": "5"},
+    {"timeout": "1"},
+    {"timeout": True},
+    {"max_timeout": "8"},
+    {"deadline": "3"},
+    {"deadline": True},
+    {"backoff": "2"},
+    {"family": "6"},
+    {"family": 2.0},
+    {"src": "127.0.0.1"},
+    {"src": 5},
+    {"src": ("127.0.0.1", "0")},
+    {"src": ("127.0.0.1", True)},
+    {"src": (None, 0)},
+    {"src": (12345, 0)},
+]
+_BAD_VALUE = [
+    {"port": 0},
+    {"port": -1},
+    {"port": 70000},
+    {"retries": -1},
+    {"timeout": float("nan")},
+    {"timeout": float("inf")},
+    {"deadline": 0},
+    {"deadline": -1},
+    {"deadline": float("nan")},
+    {"family": 99},
+    {"src": ("127.0.0.1",)},
+    {"src": ("127.0.0.1", 0, 0)},
+    {"src": ("127.0.0.1", 70000)},
+    {"src": ("127.0.0.1", -1)},
+    {"backoff": 0.5},
+    {"backoff": float("nan")},
+]
+
+
+def _client_classes():
+    from tftp.aio import AsyncTFTPClient
+
+    return pytest.mark.parametrize("cls", [tftp.TFTPClient, AsyncTFTPClient])
+
+
+@_client_classes()
+@pytest.mark.parametrize("bad", _BAD_TYPE, ids=repr)
+def test_a_wrong_type_for_a_client_argument_is_refused_at_construction(cls, bad):
+    with pytest.raises(TypeError):
+        cls("127.0.0.1", **bad)
+
+
+@_client_classes()
+@pytest.mark.parametrize("bad", _BAD_VALUE, ids=repr)
+def test_a_wrong_value_for_a_client_argument_is_refused_at_construction(cls, bad):
+    with pytest.raises(ValueError):
+        cls("127.0.0.1", **bad)
+
+
+@_client_classes()
+def test_the_constructor_accepts_what_a_transfer_takes_and_resolves_nothing(cls):
+    import socket
+
+    client = cls(
+        "no-such-host.invalid",
+        6969,
+        timeout=2,
+        retries=0,
+        deadline=30,
+        family=socket.AF_INET6,
+        src=["::1", 0],
+        backoff=1,
+        max_timeout=16,
+    )
+    assert (client.port, client.retries, client.deadline, client.backoff) == (6969, 0, 30, 1)
+    assert client.src == ("::1", 0)
+    assert cls("127.0.0.1", deadline=None, src=None, family=socket.AF_INET).src is None
+
+
+def test_a_port_in_the_host_text_still_overrides_a_valid_port_argument():
+    assert tftp.TFTPClient("h:70", 69)._target() == ("h", 70)

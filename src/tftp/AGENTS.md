@@ -58,7 +58,7 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 - `retries` — retransmissions of one packet before `TransferTimeoutError`.
 - `backoff`, `max_timeout` — each consecutive retransmission (of the
   request too) waits `backoff` times longer, up to `max_timeout` (default
-  8 × `timeout`; below `timeout` is a `ValueError`); progress resets the wait. `backoff=1` disables it.
+  8 × `timeout`; below `timeout` is a `ValueError`); progress resets the wait. `backoff=1` disables it; below 1 is a `ValueError`.
 - `deadline` — seconds a whole transfer may take, counted from when it
   starts; `None` is unlimited. A relative duration: the client's
   `deadline` argument and attribute are not the engine's `deadline` (the
@@ -95,8 +95,14 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
   refused), ask again once without options.
 - `dally` — after the last ACK of a download, keep re-ACKing a repeated last
   DATA for one timeout. Costs that much time per download.
-- Options are validated at construction: an out-of-range `blksize`,
-  `windowsize` or `rollover` raises `ValueError` there.
+- Arguments are validated at construction, with no I/O and no name
+  resolution (the host text is read when the transfer starts): an
+  out-of-range `blksize`, `windowsize` or `rollover`, a `port` outside
+  1..65535, a negative `retries`, a `timeout` or `deadline` that is not
+  positive, a `backoff` below 1, a `family` other than `0`, `AF_INET` and
+  `AF_INET6`, and a `src` that is not an `(address, 0..65535)` pair raise
+  `ValueError`; a wrong type (a `str` port, a fractional `retries`, a
+  `bool` for a number, a `src` that is not a pair) raises `TypeError`.
 - **Not thread-safe**: one `TFTPClient` per thread. Each transfer opens its own
   socket, so sequential transfers on one client are fine.
 

@@ -50,6 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the client's source address, not the data. `TFTPClient(local_address=)` is
   `src=` (`client.src`), and `TFTPRelay(upstream_source=)` is `upstream_src=`.
   The command line's flags are unchanged.
+- **`TFTPClient` and `AsyncTFTPClient` check their arguments when they are
+  built**, where a bad one failed at the first send or was accepted: a `port`
+  outside 1..65535 (it was `OverflowError` at the first send), a negative
+  `retries`, a `deadline` that is not positive, a `family` other than `0`,
+  `AF_INET` and `AF_INET6`, and a `src` that is not an `(address, port)` pair
+  raise `ValueError`; a `str` port, a fractional `retries`, a `bool` for a
+  number and a `src` of the wrong shape raise `TypeError`. `backoff` below 1 is
+  a `ValueError`, where it was silently stored as 1. The host text is still
+  read when the transfer starts.
 - Requires `netimps>=0.4.0,<0.5`; netimps 0.3 is no longer supported.
 - `TFTPClient(timeout=..., max_timeout=...)` raises `ValueError` when
   `max_timeout` is below `timeout`, where it used to be raised to `timeout`
