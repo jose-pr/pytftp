@@ -14,7 +14,7 @@ from typing import Any, AsyncIterator, List, Optional, Tuple
 from ..capture.events import PacketEvent, new_session_id
 from ..client import Client, Progress, RemoteStat, _NotListing, _mode, _source_size
 from ..listing import ListEntry, parse_listing
-from ..errors import RemoteError, TransferTimeout
+from ..exceptions import RemoteError, TransferTimeoutError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import DEFAULT_BLKSIZE
 from ..packet import ErrorCode, Opcode, encode_ack, encode_error, encode_request
@@ -407,7 +407,7 @@ class AsyncClient(Client):
             else:
                 data = None  # type: ignore[assignment]
             if not driver.first.done():
-                raise TransferTimeout("no response from %s:%s" % server[:2])
+                raise TransferTimeoutError("no response from %s:%s" % server[:2])
             data, peer = driver.first.result()
             view = memoryview(data)
             negotiated, first_data = self._first_response(view, len(data), options, is_read, driver.send)

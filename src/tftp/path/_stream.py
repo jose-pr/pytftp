@@ -15,13 +15,13 @@ import threading
 from typing import Any, Callable, Optional
 
 from ..backends.pipe import Pipe
-from ..errors import (
+from ..exceptions import (
     AccessViolation,
     DiskFull,
     FileAlreadyExists,
     FileNotFound,
-    TftpError,
-    TransferTimeout,
+    TFTPError,
+    TransferTimeoutError,
 )
 
 __all__ = ["os_error", "open_reader", "open_writer", "BUFFER", "STALL_TIMEOUT"]
@@ -34,7 +34,7 @@ STALL_TIMEOUT = 60.0
 
 def os_error(exc: BaseException, path: Any) -> OSError:
     """The ``OSError`` pathlib code expects for a TFTP failure."""
-    if isinstance(exc, OSError) and not isinstance(exc, TftpError):
+    if isinstance(exc, OSError) and not isinstance(exc, TFTPError):
         return exc
     name = str(path)
     if isinstance(exc, FileNotFound):
@@ -45,9 +45,9 @@ def os_error(exc: BaseException, path: Any) -> OSError:
         return FileExistsError(errno.EEXIST, exc.message, name)
     if isinstance(exc, DiskFull):
         return OSError(errno.ENOSPC, exc.message, name)
-    if isinstance(exc, TransferTimeout):
+    if isinstance(exc, TransferTimeoutError):
         return TimeoutError(errno.ETIMEDOUT, exc.message, name)
-    if isinstance(exc, TftpError):
+    if isinstance(exc, TFTPError):
         error = OSError(errno.EIO, str(exc), name)
         error.__cause__ = exc
         return error
@@ -125,7 +125,7 @@ class _Reader(io.RawIOBase):
     def readinto(self, buffer) -> int:
         try:
             chunk = self._pipe.get(len(buffer), timeout=STALL_TIMEOUT)
-        except (TftpError, BrokenPipeError) as exc:
+        except (TFTPError, BrokenPipeError) as exc:
             raise os_error(exc, self._path) from None
         n = len(chunk)
         buffer[:n] = chunk
@@ -164,7 +164,7 @@ class _Writer(io.RawIOBase):
             raise os_error(self._outcome[0], self._path)
         try:
             self._pipe.put(bytes(data), timeout=STALL_TIMEOUT)
-        except (TftpError, BrokenPipeError, TimeoutError):
+        except (TFTPError, BrokenPipeError, TimeoutError):
             self._thread.join(STALL_TIMEOUT)
             if self._outcome:
                 raise os_error(self._outcome[0], self._path) from None

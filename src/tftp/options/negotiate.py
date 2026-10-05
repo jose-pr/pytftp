@@ -62,7 +62,7 @@ def accept_oack(
 ) -> Negotiated:
     """Client side: validate a server's OACK against what was requested.
 
-    Raises :class:`ProtocolError` with code 8 when the server acknowledged an
+    Raises :class:`TFTPProtocolError` with code 8 when the server acknowledged an
     option that was not requested, or answered outside what the option's RFC
     allows (a larger ``blksize`` or ``windowsize`` than asked for, ...). The
     caller sends that ERROR to the server and abandons the transfer. An

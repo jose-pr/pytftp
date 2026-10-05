@@ -16,7 +16,7 @@ import sys
 import tempfile
 from typing import Any, BinaryIO, Optional, Tuple
 
-from ..errors import TftpError
+from ..exceptions import TFTPError
 from ..packet import ErrorCode, Request
 
 try:  # Python 3.8+: typing.Protocol
@@ -110,7 +110,7 @@ class Handler(Protocol):
     the writer has ``abort``, a failed transfer calls that instead of
     ``close``. ``size`` is the client's announced ``tsize``, or ``None``.
 
-    Either may raise :class:`TftpError` to refuse with a specific code, or
+    Either may raise :class:`TFTPError` to refuse with a specific code, or
     ``OSError``, which is mapped by errno (``ENOENT`` -> file not found,
     ``EACCES`` -> access violation, ``ENOSPC`` -> disk full...).
 
@@ -150,7 +150,7 @@ class AtomicWriter:
         try:
             self._file.close()
             if not self.overwrite and os.path.exists(self.path):
-                raise TftpError(ErrorCode.FILE_EXISTS)
+                raise TFTPError(ErrorCode.FILE_EXISTS)
             os.replace(self._tmp, self.path)
         except BaseException:
             self._discard()
@@ -212,20 +212,20 @@ class FileSystemHandler:
         self.max_upload = max_upload
 
     def resolve(self, filename: str) -> str:
-        """The local path for ``filename``, or :class:`TftpError` (2) if it escapes."""
+        """The local path for ``filename``, or :class:`TFTPError` (2) if it escapes."""
         name = filename.replace("\\", "/") if self.backslash else filename
         parts = []
         for part in name.split("/"):
             if part in ("", "."):
                 continue
             if part == ".." or "\0" in part:
-                raise TftpError(ErrorCode.ACCESS_VIOLATION)
+                raise TFTPError(ErrorCode.ACCESS_VIOLATION)
             if _WINDOWS:
                 if ":" in part or part.split(".", 1)[0].upper() in _RESERVED:
-                    raise TftpError(ErrorCode.ACCESS_VIOLATION)
+                    raise TFTPError(ErrorCode.ACCESS_VIOLATION)
             parts.append(part)
         if not parts:
-            raise TftpError(ErrorCode.FILE_NOT_FOUND)
+            raise TFTPError(ErrorCode.FILE_NOT_FOUND)
         path = os.path.join(self.root, *parts)
         real = os.path.realpath(path)
         try:
@@ -233,7 +233,7 @@ class FileSystemHandler:
         except ValueError:  # different drives on Windows
             inside = False
         if not inside:
-            raise TftpError(ErrorCode.ACCESS_VIOLATION)
+            raise TFTPError(ErrorCode.ACCESS_VIOLATION)
         return real
 
     def open_read(self, context: RequestContext) -> BinaryIO:
@@ -246,29 +246,29 @@ class FileSystemHandler:
 
             return DirectoryListing(path, self.root)  # type: ignore[return-value]
         if not os.path.isfile(path):
-            raise TftpError(ErrorCode.FILE_NOT_FOUND)
+            raise TFTPError(ErrorCode.FILE_NOT_FOUND)
         return open(path, "rb", buffering=_READ_BUFFER)
 
     def open_write(self, context: RequestContext, size: Optional[int]) -> Any:
         if not self.writable:
-            raise TftpError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
+            raise TFTPError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
         path = self.resolve(context.filename)
         if os.path.isdir(path):
-            raise TftpError(ErrorCode.ACCESS_VIOLATION)
+            raise TFTPError(ErrorCode.ACCESS_VIOLATION)
         exists = os.path.exists(path)
         if exists and not self.overwrite:
-            raise TftpError(ErrorCode.FILE_EXISTS)
+            raise TFTPError(ErrorCode.FILE_EXISTS)
         if not exists and not self.create:
-            raise TftpError(ErrorCode.FILE_NOT_FOUND)
+            raise TFTPError(ErrorCode.FILE_NOT_FOUND)
         directory = os.path.dirname(path)
         if not os.path.isdir(directory):
-            raise TftpError(ErrorCode.FILE_NOT_FOUND, "directory not found")
+            raise TFTPError(ErrorCode.FILE_NOT_FOUND, "directory not found")
         if size is not None:
             if self.max_upload is not None and size > self.max_upload:
-                raise TftpError(ErrorCode.DISK_FULL, "file too large")
+                raise TFTPError(ErrorCode.DISK_FULL, "file too large")
             try:
                 if shutil.disk_usage(directory).free < size:
-                    raise TftpError(ErrorCode.DISK_FULL)
+                    raise TFTPError(ErrorCode.DISK_FULL)
             except OSError:
                 pass
         writer = AtomicWriter(path, overwrite=self.overwrite)
@@ -294,7 +294,7 @@ class _Capped:
     def write(self, data) -> int:
         self._left -= len(data)
         if self._left < 0:
-            raise TftpError(ErrorCode.DISK_FULL, "file too large")
+            raise TFTPError(ErrorCode.DISK_FULL, "file too large")
         return self._inner.write(data)
 
     def close(self) -> None:

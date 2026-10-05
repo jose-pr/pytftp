@@ -17,7 +17,7 @@ import os
 from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union
 
 from .events import PacketEvent, new_session_id, summarize
-from .filters import FILTER_KEYS, FilterError, compile_filter
+from .filters import FILTER_KEYS, CaptureFilterError, compile_filter
 from .flows import CapturedTransfer, FlowTracker
 from .frames import LINKTYPES, FrameDecoder, UdpDatagram
 from .live import live_capture_supported, sniff
@@ -28,7 +28,7 @@ __all__ = [
     "summarize",
     "new_session_id",
     "compile_filter",
-    "FilterError",
+    "CaptureFilterError",
     "FILTER_KEYS",
     "CapturedTransfer",
     "FlowTracker",

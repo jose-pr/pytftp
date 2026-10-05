@@ -12,7 +12,7 @@ from pathlib_next import Path, Pathname
 from pathlib_next.utils.stat import FileStat
 
 from ..client import Client
-from ..errors import FileNotFound, TftpError
+from ..exceptions import FileNotFound, TFTPError
 from ._stream import open_reader, open_writer, os_error
 
 __all__ = ["TftpPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir"]
@@ -53,7 +53,7 @@ def tftp_stat(client: Client, filename: str, mode: str, path: Any) -> FileStat:
     """
     try:
         info = client.stat(filename, mode=mode)
-    except TftpError as exc:
+    except TFTPError as exc:
         raise os_error(exc, path) from None
     return FileStat(st_size=info.size or 0, st_mtime=info.mtime or 0, is_dir=info.is_dir)
 
@@ -62,7 +62,7 @@ def tftp_scandir(client: Client, dirname: str, path: Any) -> Iterator[Tuple[str,
     """``(name, FileStat)`` per entry, from one ``x-list`` listing."""
     try:
         entries = client.listdir(dirname)
-    except TftpError as exc:
+    except TFTPError as exc:
         raise os_error(exc, path) from None
     for entry in entries:
         yield entry.name, FileStat(st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir)
@@ -82,7 +82,7 @@ def tftp_open(client: Client, filename: str, transfer_mode: str, mode: str, path
             client.size(filename, mode=transfer_mode)
         except FileNotFound:
             pass
-        except TftpError as exc:
+        except TFTPError as exc:
             raise os_error(exc, path) from None
         else:
             raise FileExistsError(errno.EEXIST, "file exists", str(path))

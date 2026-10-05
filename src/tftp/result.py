@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional, Tuple
 
-from .errors import TftpError
+from .exceptions import TFTPError
 from .options import Negotiated
 
 __all__ = ["TransferResult"]
@@ -53,7 +53,7 @@ class TransferResult:
         retransmits: int,
         duration: float,
         negotiated: Negotiated,
-        error: Optional[TftpError] = None,
+        error: Optional[TFTPError] = None,
     ) -> None:
         self.filename = filename
         self.operation = operation

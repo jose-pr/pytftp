@@ -17,7 +17,7 @@ import sys as _sys
 import time as _time
 import typing as _ty
 
-from ..errors import TftpError
+from ..exceptions import TFTPError
 from ..uri import parse_url
 from .common import ClientCmd, error
 
@@ -71,7 +71,7 @@ class Get(ClientCmd):
                 self.json_out = False  # stdout holds the file
             else:
                 result = client.download(remote, target, mode=mode)
-        except TftpError as exc:
+        except TFTPError as exc:
             error("error: %s" % exc)
             return 1
         finally:
@@ -122,7 +122,7 @@ class Put(ClientCmd):
             remote = remote or _os.path.basename(self.local)
         try:
             result = client.upload(remote, source, mode=mode)
-        except TftpError as exc:
+        except TFTPError as exc:
             error("error: %s" % exc)
             return 1
         finally:
@@ -155,7 +155,7 @@ class Ls(ClientCmd):
             remote = self.remote
         try:
             entries = client.listdir(remote)
-        except (TftpError, OSError) as exc:
+        except (TFTPError, OSError) as exc:
             error("error: %s" % exc)
             return 1
         finally:

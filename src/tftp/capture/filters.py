@@ -32,17 +32,14 @@ import ipaddress
 import re
 from typing import Any, Callable, List, Optional, Tuple
 
+from ..exceptions import CaptureFilterError
 from .events import PacketEvent
 
-__all__ = ["compile_filter", "FilterError", "FILTER_KEYS"]
+__all__ = ["compile_filter", "CaptureFilterError", "FILTER_KEYS"]
 
 Predicate = Callable[[PacketEvent], bool]
 FILTER_KEYS = ("op", "host", "src", "dst", "port", "file", "block", "code", "session", "leg", "direction")
 _AND = re.compile(r"\s+and\s+", re.IGNORECASE)
-
-
-class FilterError(ValueError):
-    """The filter expression is not valid."""
 
 
 def _address_matcher(text: str) -> Callable[[Tuple[Any, ...]], bool]:
@@ -59,14 +56,14 @@ def _address_matcher(text: str) -> Callable[[Tuple[Any, ...]], bool]:
     wanted_port = None
     if port:
         if not port.isdigit():
-            raise FilterError("bad port in %r" % text)
+            raise CaptureFilterError("bad port in %r" % text)
         wanted_port = int(port)
     network = None
     if host:
         try:
             network = ipaddress.ip_network(host, strict=False)
         except ValueError as exc:
-            raise FilterError("bad address in %r" % text) from exc
+            raise CaptureFilterError("bad address in %r" % text) from exc
 
     def match(endpoint: Tuple[Any, ...]) -> bool:
         if not endpoint:
@@ -101,7 +98,7 @@ def _clause(key: str, values: List[str]) -> Predicate:
         try:
             ports = {int(v) for v in values}
         except ValueError as exc:
-            raise FilterError("port must be a number") from exc
+            raise CaptureFilterError("port must be a number") from exc
         return lambda e: bool(e.source and e.source[1] in ports) or bool(
             e.destination and e.destination[1] in ports
         )
@@ -121,14 +118,14 @@ def _clause(key: str, values: List[str]) -> Predicate:
         try:
             numbers = {int(v) for v in values}
         except ValueError as exc:
-            raise FilterError("%s must be a number" % key) from exc
+            raise CaptureFilterError("%s must be a number" % key) from exc
         if key == "block":
             return lambda e: e.block in numbers
         return lambda e: e.opcode == 5 and len(e.data) >= 4 and ((e.data[2] << 8) | e.data[3]) in numbers
     if key in ("session", "leg", "direction"):
         wanted = set(values)
         return lambda e: getattr(e, key) in wanted
-    raise FilterError("unknown filter key %r (known: %s)" % (key, ", ".join(FILTER_KEYS)))
+    raise CaptureFilterError("unknown filter key %r (known: %s)" % (key, ", ".join(FILTER_KEYS)))
 
 
 def compile_filter(text: Optional[str]) -> Predicate:
@@ -142,7 +139,7 @@ def compile_filter(text: Optional[str]) -> Predicate:
         key, sep, value = clause.partition("!=" if negate else "=")
         key = key.strip().lower()
         if not sep or not key or not value.strip():
-            raise FilterError("expected key=value, got %r" % clause)
+            raise CaptureFilterError("expected key=value, got %r" % clause)
         values = [v.strip() for v in value.split(",") if v.strip()]
         predicate = _clause(key, values)
         predicates.append((lambda p: lambda e: not p(e))(predicate) if negate else predicate)

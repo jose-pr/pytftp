@@ -13,7 +13,7 @@ import urllib.request
 from typing import Any, Callable, Dict, Iterator, Optional
 from urllib.parse import quote
 
-from ..errors import TftpError
+from ..exceptions import TFTPError
 from ..packet import ErrorCode
 from .memory import normalize_name
 from .pipe import Pipe
@@ -31,13 +31,13 @@ _STATUS_CODES[413] = ErrorCode.DISK_FULL
 _STATUS_CODES[507] = ErrorCode.DISK_FULL
 
 
-def _tftp_error(exc: BaseException) -> TftpError:
-    if isinstance(exc, TftpError):
+def _tftp_error(exc: BaseException) -> TFTPError:
+    if isinstance(exc, TFTPError):
         return exc
     if isinstance(exc, urllib.error.HTTPError):
         code = _STATUS_CODES.get(exc.code, ErrorCode.NOT_DEFINED)
-        return TftpError(code, "upstream HTTP %d" % exc.code)
-    return TftpError(ErrorCode.NOT_DEFINED, "upstream unreachable")
+        return TFTPError(code, "upstream HTTP %d" % exc.code)
+    return TFTPError(ErrorCode.NOT_DEFINED, "upstream unreachable")
 
 
 class HttpHandler:
@@ -84,7 +84,7 @@ class HttpHandler:
             return self.url_for(context)
         name = normalize_name(context.filename)
         if not name or any(part == ".." for part in name.split("/")):
-            raise TftpError(ErrorCode.ACCESS_VIOLATION)
+            raise TFTPError(ErrorCode.ACCESS_VIOLATION)
         return self.base_url.rstrip("/") + "/" + quote(name)  # type: ignore[union-attr]
 
     def open_read(self, context: Any) -> Pipe:
@@ -115,7 +115,7 @@ class HttpHandler:
 
     def open_write(self, context: Any, size: Optional[int]) -> Pipe:
         if not self.writable:
-            raise TftpError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
+            raise TFTPError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
         url = self.url(context)
         pipe = Pipe(self.buffer, size).for_upload()
         headers = dict(self.headers)

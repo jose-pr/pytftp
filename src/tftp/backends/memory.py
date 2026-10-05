@@ -6,7 +6,7 @@ import io
 import threading
 from typing import Any, Dict, Mapping, Optional
 
-from ..errors import TftpError
+from ..exceptions import TFTPError
 from ..packet import ErrorCode
 
 __all__ = ["MemoryHandler", "normalize_name"]
@@ -46,26 +46,26 @@ class MemoryHandler:
         with self._lock:
             data = self.files.get(normalize_name(context.filename))
         if data is None:
-            raise TftpError(ErrorCode.FILE_NOT_FOUND)
+            raise TFTPError(ErrorCode.FILE_NOT_FOUND)
         return io.BytesIO(data)
 
     def open_write(self, context: Any, size: Optional[int]) -> "_MemoryUpload":
         if not self.writable:
-            raise TftpError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
+            raise TFTPError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
         name = normalize_name(context.filename)
         if not name:
-            raise TftpError(ErrorCode.FILE_NOT_FOUND)
+            raise TFTPError(ErrorCode.FILE_NOT_FOUND)
         with self._lock:
             if name in self.files and not self.overwrite:
-                raise TftpError(ErrorCode.FILE_EXISTS)
+                raise TFTPError(ErrorCode.FILE_EXISTS)
         if size is not None and self.max_upload is not None and size > self.max_upload:
-            raise TftpError(ErrorCode.DISK_FULL, "file too large")
+            raise TFTPError(ErrorCode.DISK_FULL, "file too large")
         return _MemoryUpload(self, name)
 
     def _store(self, name: str, data: bytes) -> None:
         with self._lock:
             if name in self.files and not self.overwrite:
-                raise TftpError(ErrorCode.FILE_EXISTS)
+                raise TFTPError(ErrorCode.FILE_EXISTS)
             self.files[name] = data
 
 
@@ -80,7 +80,7 @@ class _MemoryUpload:
     def write(self, data) -> int:
         limit = self._owner.max_upload
         if limit is not None and len(self._buffer) + len(data) > limit:
-            raise TftpError(ErrorCode.DISK_FULL, "file too large")
+            raise TFTPError(ErrorCode.DISK_FULL, "file too large")
         self._buffer += data
         return len(data)
 

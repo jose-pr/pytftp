@@ -120,7 +120,7 @@ def test_async_client_timeout_and_cancel(root, make_server):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
             silent.bind(("127.0.0.1", 0))
             client = AsyncClient("127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=2)
-            with pytest.raises(tftp.TransferTimeout):
+            with pytest.raises(tftp.TransferTimeoutError):
                 await client.get("x")
         server = make_server(root, timeout=2)
 
@@ -203,7 +203,7 @@ def test_async_handler_and_async_streams():
         async def open_read(self, context):
             await asyncio.sleep(0.01)  # e.g. an async database lookup
             if context.filename == "gone":
-                raise tftp.TftpError(tftp.ErrorCode.FILE_NOT_FOUND, "async says no")
+                raise tftp.TFTPError(tftp.ErrorCode.FILE_NOT_FOUND, "async says no")
             return AsyncSource(b"generated:" + context.filename.encode() * 1000)
 
         async def open_write(self, context, size):
@@ -315,7 +315,7 @@ def test_async_server_releases_a_session_whose_error_could_not_be_encoded():
     import io
 
     def broken():
-        error = tftp.TftpError(1, "x")
+        error = tftp.TFTPError(1, "x")
         error.code = 70000
         return error
 
@@ -382,6 +382,6 @@ def test_a_send_the_host_refuses_ends_the_request_and_an_icmp_report_does_not():
         protocol.error_received(OSError(errno.EMSGSIZE, "message too long"))
         with pytest.raises(OSError) as info:
             await driver.first
-        assert info.value.errno == errno.EMSGSIZE and not isinstance(info.value, tftp.TftpError)
+        assert info.value.errno == errno.EMSGSIZE and not isinstance(info.value, tftp.TFTPError)
 
     run(main())

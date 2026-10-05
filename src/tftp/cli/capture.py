@@ -15,7 +15,7 @@ import typing as _ty
 
 from ..capture import (
     CaptureFormatError,
-    FilterError,
+    CaptureFilterError,
     FlowTracker,
     compile_filter,
     live_capture_supported,
@@ -85,7 +85,7 @@ class CaptureCmd(Base):
         try:
             wanted = compile_filter(self.filter)
             datagrams = self._datagrams()
-        except (ValueError, FilterError) as exc:
+        except (ValueError, CaptureFilterError) as exc:
             error("error: %s" % exc)
             return 2
         tracker = FlowTracker(self.port, keep_payloads=bool(self.extract))

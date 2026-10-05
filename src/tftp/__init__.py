@@ -23,9 +23,22 @@ group it for reading: :mod:`tftp.packet` (wire format), :mod:`tftp.options`
 
 from __future__ import annotations
 
-from .client import MODES, Client, RemoteStat, download, upload
-from .listing import ListEntry
-from .errors import (
+from .packet import (
+    Ack,
+    Data,
+    Error,
+    ErrorCode,
+    Opcode,
+    OptionAck,
+    Request,
+    decode,
+    encode_ack,
+    encode_data,
+    encode_error,
+    encode_oack,
+    encode_request,
+)
+from .exceptions import (
     AccessViolation,
     DiskFull,
     FileAlreadyExists,
@@ -33,13 +46,18 @@ from .errors import (
     IllegalOperation,
     NoSuchUser,
     OptionNegotiationError,
-    ProtocolError,
     RemoteError,
-    TftpError,
-    TransferAborted,
-    TransferTimeout,
-    UnknownTransferId,
+    TFTPDecodeError,
+    TFTPError,
+    TFTPProtocolError,
+    TFTPValueError,
+    TransferAbortedError,
+    TransferTimeoutError,
+    UnknownTransferID,
+    WouldBlock,
 )
+from .client import MODES, Client, RemoteStat, download, upload
+from .listing import ListEntry
 from .server import AtomicWriter, FileSystemHandler, Handler, PortRange, RequestContext, Server, ServerLimits
 from .netascii import NetasciiReader, NetasciiWriter
 from .options import (
@@ -65,24 +83,8 @@ from .options import (
     ServerOptions,
     register_option,
 )
-from .packet import (
-    Ack,
-    Data,
-    Error,
-    ErrorCode,
-    MalformedPacket,
-    Opcode,
-    OptionAck,
-    Request,
-    decode,
-    encode_ack,
-    encode_data,
-    encode_error,
-    encode_oack,
-    encode_request,
-)
 from .result import TransferResult
-from .transfer import Receiver, Sender, WouldBlock
+from .transfer import Receiver, Sender
 from .uri import TftpURL, download_url, format_url, parse_url, upload_url
 
 __all__ = [
@@ -111,19 +113,22 @@ __all__ = [
     # Results and errors
     "TransferResult",
     "Negotiated",
-    "TftpError",
+    "TFTPError",
+    "TFTPValueError",
+    "TFTPDecodeError",
     "RemoteError",
-    "ProtocolError",
-    "TransferTimeout",
-    "TransferAborted",
+    "TFTPProtocolError",
+    "TransferTimeoutError",
+    "TransferAbortedError",
     "FileNotFound",
     "AccessViolation",
     "DiskFull",
     "IllegalOperation",
-    "UnknownTransferId",
+    "UnknownTransferID",
     "FileAlreadyExists",
     "NoSuchUser",
     "OptionNegotiationError",
+    "WouldBlock",
     # Protocol
     "Opcode",
     "ErrorCode",
@@ -132,7 +137,6 @@ __all__ = [
     "Ack",
     "Error",
     "OptionAck",
-    "MalformedPacket",
     "decode",
     "encode_request",
     "encode_data",
@@ -162,7 +166,6 @@ __all__ = [
     # Building blocks
     "Sender",
     "Receiver",
-    "WouldBlock",
     "NetasciiReader",
     "NetasciiWriter",
 ]

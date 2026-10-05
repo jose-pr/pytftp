@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional
 
-from ..errors import ProtocolError
+from ..exceptions import TFTPProtocolError
 from ..packet import ErrorCode
 
 __all__ = [
@@ -77,9 +77,9 @@ def parse_int(text: str) -> Optional[int]:
         return None
 
 
-def refuse(message: str) -> ProtocolError:
+def refuse(message: str) -> TFTPProtocolError:
     """The ERROR 8 a client sends for an OACK it cannot accept."""
-    return ProtocolError(message, ErrorCode.OPTION_REFUSED)
+    return TFTPProtocolError(message, ErrorCode.OPTION_REFUSED)
 
 
 class ServerContext:

@@ -6,19 +6,20 @@ import io
 import struct
 from typing import Callable, Optional
 
-from ..errors import (
-    ProtocolError,
+from ..exceptions import (
+    TFTPProtocolError,
     RemoteError,
-    TftpError,
-    TransferAborted,
-    TransferTimeout,
+    TFTPError,
+    TransferAbortedError,
+    TransferTimeoutError,
+    WouldBlock,
     error_for_exception,
 )
 from ..netascii import NetasciiWriter
 from ..options import Negotiated
 from ..packet import encode_error
 
-__all__ = ["Transfer", "WouldBlock", "as_readinto", "as_write"]
+__all__ = ["Transfer", "as_readinto", "as_write"]
 
 _DATA = 3
 _ACK = 4
@@ -85,17 +86,6 @@ def as_write(sink) -> Callable[[memoryview], object]:
     if isinstance(sink, _COPYING_WRITERS) or getattr(sink, "_tftp_copies_", False):
         return write
     return lambda view: write(bytes(view))
-
-
-class WouldBlock(BlockingIOError):
-    """Raised by a source or sink that has nothing ready yet.
-
-    A sender whose ``read`` raises it stops after the blocks it has, and a
-    receiver whose ``write`` (or ``complete``) raises it holds the block
-    unacknowledged; both carry on when the driver calls :meth:`Transfer.resume`.
-    This is how a slow backend (an upstream server, an HTTP fetch) applies
-    backpressure without blocking the loop that serves every other transfer.
-    """
 
 
 class Transfer:
@@ -175,7 +165,7 @@ class Transfer:
         self.max_idle = max_idle
         self._heard: Optional[float] = None  # when the peer last sent us a datagram
         self.done = False
-        self.error: Optional[TftpError] = None
+        self.error: Optional[TFTPError] = None
         self.deadline: Optional[float] = None
         self.stalled = False
         self.bytes = 0
@@ -208,7 +198,7 @@ class Transfer:
         if self.done:
             return
         error = error_for_exception(exc)
-        if not isinstance(exc, TftpError):
+        if not isinstance(exc, TFTPError):
             error.__cause__ = exc
         self.error = error
         self.done = True
@@ -221,8 +211,8 @@ class Transfer:
                 pass
 
     def abort(self, message: str = "transfer aborted") -> None:
-        """Cancel locally: the peer gets ERROR 0 and ``error`` is :class:`TransferAborted`."""
-        self.fail(TransferAborted(message))
+        """Cancel locally: the peer gets ERROR 0 and ``error`` is :class:`TransferAbortedError`."""
+        self.fail(TransferAbortedError(message))
 
     def _remote_error(self, packet: memoryview, n: int) -> None:
         code = (packet[2] << 8) | packet[3] if n >= 4 else 0
@@ -230,7 +220,7 @@ class Transfer:
         self.fail(RemoteError.from_code(code, raw.decode("utf-8", "replace")), notify=False)
 
     def _illegal(self, what: str) -> None:
-        self.fail(ProtocolError(what), notify=True)
+        self.fail(TFTPProtocolError(what), notify=True)
 
     def handle(self, packet: memoryview, n: int, now: float) -> None:  # pragma: no cover
         raise NotImplementedError
@@ -245,16 +235,16 @@ class Transfer:
     def _out_of_tries(self, now: float) -> bool:
         """Account for one timeout; ``True`` (and failed) when it was the last."""
         if self.expires is not None and now >= self.expires:
-            self.fail(TransferTimeout("transfer exceeded its time limit"), notify=True)
+            self.fail(TransferTimeoutError("transfer exceeded its time limit"), notify=True)
             return True
         if self.max_idle is not None and self._heard is not None and now >= self._heard + self.max_idle:
             self.fail(
-                TransferTimeout("no datagram from the peer for %g seconds" % self.max_idle), notify=False
+                TransferTimeoutError("no datagram from the peer for %g seconds" % self.max_idle), notify=False
             )
             return True
         timer = self._timer
         if timer.attempt >= self.retries:
-            self.fail(TransferTimeout("no response after %d retries" % self.retries), notify=False)
+            self.fail(TransferTimeoutError("no response after %d retries" % self.retries), notify=False)
             return True
         timer.advance()
         return False

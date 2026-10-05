@@ -23,7 +23,7 @@ from typing import (
     Union,
 )
 
-from .errors import ProtocolError, RemoteError, TftpError, TransferTimeout
+from .exceptions import TFTPProtocolError, RemoteError, TFTPError, TransferTimeoutError
 from .listing import LIST_OPTION, MTIME_OPTION, ListEntry, parse_listing
 from .netascii import NetasciiReader, NetasciiWriter, encoded_size
 from .options import (
@@ -83,7 +83,7 @@ class RemoteStat(NamedTuple):
     is_dir: bool = False
 
 
-class _NotListing(ProtocolError):
+class _NotListing(TFTPProtocolError):
     """A listing was asked for and a file is arriving instead."""
 
 
@@ -260,8 +260,8 @@ class Client:
         """Fetch ``filename`` into ``dest`` (a path or a writable binary file).
 
         A path is written in place and removed again if the transfer fails.
-        Raises :class:`RemoteError`, :class:`TransferTimeout` or
-        :class:`ProtocolError`; ``OSError`` for local failures.
+        Raises :class:`RemoteError`, :class:`TransferTimeoutError` or
+        :class:`TFTPProtocolError`; ``OSError`` for local failures.
         """
         mode = _mode(mode)
         if isinstance(dest, (str, os.PathLike)):
@@ -399,7 +399,7 @@ class Client:
                 negotiated = accept_oack(
                     options, oack, is_read=is_read, timeout=self.timeout, registry=self.registry
                 )
-            except ProtocolError as exc:
+            except TFTPProtocolError as exc:
                 send(encode_error(exc.code, exc.message))
                 raise
             return negotiated, False
@@ -408,7 +408,7 @@ class Client:
         ):
             return Negotiated(timeout=self.timeout), is_read
         send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
-        raise ProtocolError("unexpected opcode %d in response to the request" % op)
+        raise TFTPProtocolError("unexpected opcode %d in response to the request" % op)
 
     def _emitter(self, sock) -> Optional[Callable[[Any, str, Tuple[Any, ...]], None]]:
         """``emit(data, direction, remote)`` reporting to ``trace``, or ``None``."""
@@ -440,7 +440,7 @@ class Client:
             remaining = deadline - clock()
             if remaining <= 0:
                 if timer.attempt >= self.retries or (expires is not None and clock() >= expires):
-                    raise TransferTimeout("no response from %s:%s" % server[:2])
+                    raise TransferTimeoutError("no response from %s:%s" % server[:2])
                 sock.sendto(request, server)
                 if emit is not None:
                     emit(request, "out", server)
@@ -563,7 +563,7 @@ class Client:
         try:
             self.on_negotiated(negotiated, peer)
         except BaseException as exc:
-            if isinstance(exc, TftpError):
+            if isinstance(exc, TFTPError):
                 packet = encode_error(exc.code, exc.message)
             else:
                 packet = encode_error(ErrorCode.NOT_DEFINED, "transfer cancelled")
@@ -611,7 +611,7 @@ class Client:
                 send(encode_error(ErrorCode.NOT_DEFINED, "size probe only"))
                 return None, None
             send(encode_error(ErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
-            raise ProtocolError("unexpected opcode %d in response to the request" % op)
+            raise TFTPProtocolError("unexpected opcode %d in response to the request" % op)
 
     def _exchange(
         self, sock, server, opcode, filename, mode, options, write, read, progress, started

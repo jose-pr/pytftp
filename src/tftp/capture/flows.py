@@ -15,7 +15,8 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 from ..netascii import decode as netascii_decode
 from ..options import DEFAULT_BLKSIZE
-from ..packet import MalformedPacket, Opcode, decode
+from ..exceptions import TFTPDecodeError
+from ..packet import Opcode, decode
 from .events import PacketEvent, new_session_id
 from .frames import UdpDatagram
 
@@ -209,7 +210,7 @@ class FlowTracker:
         if destination[1] in self.ports and len(payload) >= 2 and payload[0] == 0 and payload[1] in (1, 2):
             try:
                 request = decode(payload)
-            except MalformedPacket:
+            except TFTPDecodeError:
                 request = None
             if request is not None:
                 current = self._by_client.get(source)
@@ -270,7 +271,7 @@ class FlowTracker:
         elif op == Opcode.OACK and not from_client:
             try:
                 options = decode(payload).options  # type: ignore[union-attr]
-            except MalformedPacket:
+            except TFTPDecodeError:
                 return
             transfer.acknowledged = dict(options)
             for name in ("blksize", "blksize2"):
@@ -286,7 +287,7 @@ class FlowTracker:
             try:
                 packet = decode(payload)
                 transfer.error = (int(packet.code), packet.message, "client" if from_client else "server")  # type: ignore[union-attr]
-            except MalformedPacket:
+            except TFTPDecodeError:
                 transfer.error = (0, "", "client" if from_client else "server")
 
     def feed_all(self, datagrams: Iterable[UdpDatagram]) -> Iterator[PacketEvent]:

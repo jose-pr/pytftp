@@ -220,7 +220,7 @@ def test_failed_upload_leaves_nothing_behind(root, make_server):
             buffer[: len(buffer)] = b"a" * len(buffer)
             return len(buffer)
 
-    with pytest.raises(tftp.TftpError):
+    with pytest.raises(tftp.TFTPError):
         client_for(server, blksize=512, tsize=False).upload("partial.bin", Failing())
     deadline = time.monotonic() + 2
     while server.active_sessions and time.monotonic() < deadline:
@@ -248,7 +248,7 @@ def test_custom_handler_serves_generated_content(make_server):
             return io.BytesIO(body)
 
         def open_write(self, context, size):
-            raise tftp.TftpError(tftp.ErrorCode.ACCESS_VIOLATION, "no uploads here")
+            raise tftp.TFTPError(tftp.ErrorCode.ACCESS_VIOLATION, "no uploads here")
 
     server = make_server(Generated())
     client = client_for(server)
@@ -275,7 +275,7 @@ def test_timeout_against_silent_port():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
         silent.bind(("127.0.0.1", 0))
         client = tftp.Client("127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=2)
-        with pytest.raises(tftp.TransferTimeout):
+        with pytest.raises(tftp.TransferTimeoutError):
             client.get("x")
 
 

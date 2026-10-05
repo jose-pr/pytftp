@@ -13,8 +13,8 @@ from __future__ import annotations
 import threading
 from typing import Callable, Optional
 
-from ..errors import TftpError
-from ..transfer import WouldBlock
+from ..exceptions import TFTPError
+from ..exceptions import WouldBlock
 
 __all__ = ["Pipe"]
 
@@ -173,7 +173,7 @@ class Pipe:
             self._closed = True
             self._eof = True
             if self._error is None:
-                self._error = error or TftpError(0, "transfer aborted")
+                self._error = error or TFTPError(0, "transfer aborted")
             self._lock.notify_all()
 
     # -- upload mode --------------------------------------------------------------

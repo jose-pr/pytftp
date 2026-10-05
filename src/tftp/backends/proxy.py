@@ -17,7 +17,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable, Mapping, Optional, Tuple, Union
 
-from ..errors import RemoteError, TftpError
+from ..exceptions import RemoteError, TFTPError
 from ..packet import ErrorCode
 from .pipe import Pipe
 
@@ -52,13 +52,13 @@ class _PipeSource:
         return self._pipe.get(n, timeout=self._timeout)
 
 
-def _relayable(exc: BaseException) -> TftpError:
+def _relayable(exc: BaseException) -> TFTPError:
     """What to tell the downstream client about an upstream failure."""
     if isinstance(exc, RemoteError):
-        return TftpError(exc.code, exc.message)  # same code, same text
-    if isinstance(exc, TftpError):
-        return TftpError(ErrorCode.NOT_DEFINED, "upstream: %s" % exc.message)
-    return TftpError(ErrorCode.NOT_DEFINED, "upstream unreachable")
+        return TFTPError(exc.code, exc.message)  # same code, same text
+    if isinstance(exc, TFTPError):
+        return TFTPError(ErrorCode.NOT_DEFINED, "upstream: %s" % exc.message)
+    return TFTPError(ErrorCode.NOT_DEFINED, "upstream unreachable")
 
 
 class UpstreamHandler:
@@ -138,7 +138,7 @@ class UpstreamHandler:
         threading.Thread(target=run, name="tftp-upstream", daemon=True).start()
         if not answered.wait(self.stall_timeout):
             pipe.abort()
-            raise TftpError(ErrorCode.NOT_DEFINED, "upstream did not answer")
+            raise TFTPError(ErrorCode.NOT_DEFINED, "upstream did not answer")
         if failure and not pipe._upload and pipe.size is None and not pipe._buffer:
             raise _relayable(failure[0])  # refused before any data: same ERROR
         if failure and pipe._upload:
@@ -154,7 +154,7 @@ class UpstreamHandler:
 
     def open_write(self, context: Any, size: Optional[int]) -> Pipe:
         if not self.writable:
-            raise TftpError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
+            raise TFTPError(ErrorCode.ACCESS_VIOLATION, "server is read-only")
         pipe = Pipe(self.buffer, size).for_upload()
         source = _PipeSource(pipe, self.stall_timeout)
         return self._start(

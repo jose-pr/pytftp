@@ -17,7 +17,7 @@ import os
 import re
 import typing as _ty
 
-from ..errors import TftpError
+from ..exceptions import TFTPError
 from ..packet import ErrorCode
 from ..server import FileSystemHandler, RequestContext
 
@@ -96,7 +96,7 @@ class PerClient:
         directory = os.path.join(self.root, client_directory(context.peer))
         if not os.path.isdir(directory):
             if not self.fallback:
-                raise TftpError(ErrorCode.FILE_NOT_FOUND)
+                raise TFTPError(ErrorCode.FILE_NOT_FOUND)
             directory = self.root
         handler = self._handlers.get(directory)
         if handler is None:

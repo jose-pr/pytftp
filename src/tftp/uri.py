@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from netimps import HostLike
 from urllib.parse import quote, unquote, urlsplit
 
+from .exceptions import TFTPValueError
+
 __all__ = ["TftpURL", "parse_url", "format_url", "download_url", "upload_url"]
 
 
@@ -30,12 +32,12 @@ class TftpURL(NamedTuple):
 
 
 def parse_url(url: str) -> TftpURL:
-    """Split a ``tftp://`` URI. Raises ``ValueError`` for anything else."""
+    """Split a ``tftp://`` URI. Raises :class:`TFTPValueError` for anything else."""
     parts = urlsplit(url)
     if parts.scheme.lower() != "tftp":
-        raise ValueError("not a tftp:// URL: %r" % url)
+        raise TFTPValueError("not a tftp:// URL: %r" % url)
     if not parts.hostname:
-        raise ValueError("tftp:// URL without a host: %r" % url)
+        raise TFTPValueError("tftp:// URL without a host: %r" % url)
     path = parts.path
     mode = "octet"
     if ";" in path:
@@ -45,16 +47,16 @@ def parse_url(url: str) -> TftpURL:
             if key.lower() == "mode":
                 mode = value.lower()
             elif key:
-                raise ValueError("unknown tftp:// parameter %r" % key)
+                raise TFTPValueError("unknown tftp:// parameter %r" % key)
     if mode not in ("octet", "netascii"):
-        raise ValueError("unsupported mode %r in %r" % (mode, url))
+        raise TFTPValueError("unsupported mode %r in %r" % (mode, url))
     filename = unquote(path[1:] if path.startswith("/") else path)
     if not filename:
-        raise ValueError("tftp:// URL without a file name: %r" % url)
+        raise TFTPValueError("tftp:// URL without a file name: %r" % url)
     try:
         port = parts.port or 69
     except ValueError as exc:
-        raise ValueError("bad port in %r" % url) from exc
+        raise TFTPValueError("bad port in %r" % url) from exc
     host = parts.hostname
     if parts.netloc.startswith("[") and "%" in parts.netloc:
         # urlsplit drops an IPv6 zone from .hostname on some versions.

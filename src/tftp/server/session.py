@@ -15,7 +15,7 @@ import time
 from typing import Any, Callable, Optional, Tuple
 
 from .._sockets import fit_window
-from ..errors import TftpError
+from ..exceptions import TFTPError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import Negotiated, ServerOptions, negotiate
 from ..packet import ErrorCode, Request, encode_ack, encode_oack
@@ -205,16 +205,16 @@ class Session:
     ) -> Any:
         """Step 1: ask ``handler`` for the stream (may return an awaitable).
 
-        Raises whatever the handler raises, or :class:`TftpError` for an
+        Raises whatever the handler raises, or :class:`TFTPError` for an
         unsupported mode; the caller turns either into an ERROR packet. A WRQ
         is negotiated here, since ``open_write`` receives the agreed ``tsize``.
         """
         request: Request = self.context.request
         mode = request.mode
         if mode == "mail":
-            raise TftpError(ErrorCode.ILLEGAL_OPERATION, "mail mode is not supported")
+            raise TFTPError(ErrorCode.ILLEGAL_OPERATION, "mail mode is not supported")
         if mode not in ("octet", "netascii"):
-            raise TftpError(ErrorCode.ILLEGAL_OPERATION, "unknown mode %r" % mode)
+            raise TFTPError(ErrorCode.ILLEGAL_OPERATION, "unknown mode %r" % mode)
         if request.is_read:
             return handler.open_read(self.context)
         self._negotiated = negotiate(

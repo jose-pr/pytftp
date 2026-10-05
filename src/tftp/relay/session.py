@@ -14,7 +14,8 @@ import struct
 from typing import Any, NamedTuple, Optional, Tuple
 
 from ..options import DEFAULT_BLKSIZE
-from ..packet import MalformedPacket, Opcode, Request, decode
+from ..exceptions import TFTPDecodeError
+from ..packet import Opcode, Request, decode
 
 __all__ = ["RelaySession", "RelaySummary"]
 
@@ -131,7 +132,7 @@ class RelaySession:
         elif op == Opcode.OACK and not from_client:
             try:
                 options = decode(data).options  # type: ignore[union-attr]
-            except MalformedPacket:
+            except TFTPDecodeError:
                 return
             for name in ("blksize", "blksize2"):
                 value = options.get(name, "")
@@ -141,7 +142,7 @@ class RelaySession:
             try:
                 packet = decode(data)
                 self.error = (int(packet.code), packet.message)  # type: ignore[union-attr]
-            except MalformedPacket:
+            except TFTPDecodeError:
                 self.error = (0, "")
             self.reason = "error"
             # Brief: the ERROR ends the transfer, but let a duplicate through.

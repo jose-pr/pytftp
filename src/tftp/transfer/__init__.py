@@ -24,8 +24,8 @@ Behaviour worth knowing:
 
 from __future__ import annotations
 
-from .base import Transfer, WouldBlock, as_readinto, as_write
+from .base import Transfer, as_readinto, as_write
 from .receiver import Receiver
 from .sender import Sender
 
-__all__ = ["Transfer", "Sender", "Receiver", "WouldBlock", "as_readinto", "as_write"]
+__all__ = ["Transfer", "Sender", "Receiver", "as_readinto", "as_write"]

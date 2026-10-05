@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
 from ..capture.events import PacketEvent
-from ..errors import RemoteError, TftpError, error_for_exception
+from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, error_for_exception
 from ..options import Negotiated, ServerOptions
-from ..packet import ErrorCode, MalformedPacket, Opcode, Request, decode, encode_error
+from ..packet import ErrorCode, Opcode, Request, decode, encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Transfer
 from .handler import FileSystemHandler, RequestContext
@@ -151,14 +151,14 @@ class ServerBase:
             return None  # a retransmitted request for a transfer already running
         try:
             request = decode(data)
-        except MalformedPacket as exc:
+        except TFTPDecodeError as exc:
             self.stats.add("refused")
             self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, str(exc))
             return None
         assert isinstance(request, Request)
         try:
             self.limits.check(request)
-        except TftpError as exc:
+        except TFTPError as exc:
             self.stats.add("refused")
             self._listener.reply_error(sender, exc.code, exc.message)
             return None
@@ -231,7 +231,7 @@ class ServerBase:
     def _refuse(self, session: Session, exc: BaseException) -> None:
         """The handler (or the mode) refused: ERROR to the client, report, release."""
         error = error_for_exception(exc)
-        if not isinstance(exc, (TftpError, OSError)):
+        if not isinstance(exc, (TFTPError, OSError)):
             log.error("handler failed for %r", session.context, exc_info=exc)
         log.info("%s refused: %s", session.context, error)
         self.stats.add("refused")
@@ -303,7 +303,7 @@ class ServerBase:
         if self._forget(session):
             session.sock.close()
 
-    def _report(self, session: Session, error: Optional[TftpError], transfer: Optional[Transfer]) -> None:
+    def _report(self, session: Session, error: Optional[TFTPError], transfer: Optional[Transfer]) -> None:
         request = session.context.request
         duration = time.monotonic() - session.started
         result = TransferResult(

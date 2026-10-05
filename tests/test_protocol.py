@@ -244,7 +244,7 @@ def test_client_refuses_an_oack_it_did_not_ask_for():
 
     fake = FakeServer(script)
     try:
-        with pytest.raises(tftp.ProtocolError) as info:
+        with pytest.raises(tftp.TFTPProtocolError) as info:
             tftp.Client(*fake.address, timeout=0.5, blksize=1428).get("f")
         assert info.value.code == ErrorCode.OPTION_REFUSED
         fake.thread.join(0.5)
@@ -296,14 +296,14 @@ def test_client_accepts_host_with_port():
 )
 def test_tftp_error_refuses_what_no_error_packet_can_carry(args, exc):
     with pytest.raises(exc):
-        tftp.TftpError(*args)
+        tftp.TFTPError(*args)
 
 
 def test_tftp_error_keeps_codes_the_wire_can_carry():
-    assert tftp.TftpError(0).code == 0
-    assert tftp.TftpError(65535, "far").code == 65535
-    assert tftp.TftpError(ErrorCode.FILE_NOT_FOUND).message == "file not found"
-    assert tftp.TftpError(1).code is ErrorCode.FILE_NOT_FOUND
+    assert tftp.TFTPError(0).code == 0
+    assert tftp.TFTPError(65535, "far").code == 65535
+    assert tftp.TFTPError(ErrorCode.FILE_NOT_FOUND).message == "file not found"
+    assert tftp.TFTPError(1).code is ErrorCode.FILE_NOT_FOUND
 
 
 def test_encode_error_is_total():
@@ -352,17 +352,17 @@ class _RefusingHandler:
 
 
 def _nul_error():
-    return tftp.TftpError(1, "bad\0name")
+    return tftp.TFTPError(1, "bad\0name")
 
 
 def _mutated_code():
-    error = tftp.TftpError(1, "x")
+    error = tftp.TFTPError(1, "x")
     error.code = 70000
     return error
 
 
 def _mutated_message():
-    error = tftp.TftpError(1, "x")
+    error = tftp.TFTPError(1, "x")
     error.message = b"bytes"
     return error
 
@@ -523,7 +523,7 @@ def test_an_oversized_data_from_the_server_is_a_protocol_error_and_not_an_oserro
             tid.sendto(encode_data(1, b"x" * 3000), client_addr)
 
         threading.Thread(target=serve, daemon=True).start()
-        with pytest.raises(tftp.ProtocolError):
+        with pytest.raises(tftp.TFTPProtocolError):
             tftp.Client("127.0.0.1", listen.getsockname()[1], timeout=2, retries=1).get("f")
 
 

@@ -1,30 +1,63 @@
-"""Exceptions, and the mapping from OS errors to TFTP error codes."""
+"""Every exception the package raises on its own account, and the mapping
+from OS errors to TFTP error codes.
+
+:class:`TFTPError` is the one base. It plays three roles, told apart by the
+subclass:
+
+- what a server handler raises to refuse a request: the code and message
+  become the ERROR packet the client receives (:class:`TFTPError` itself, or
+  :class:`TFTPProtocolError`);
+- what a client raises for an ERROR the server sent: :class:`RemoteError` and
+  its leaves, one per defined error code;
+- what a transfer that failed reports in ``TransferResult.error``, whichever
+  of these it was, including :class:`TransferTimeoutError` and
+  :class:`TransferAbortedError` for a local deadline or an ``abort()``.
+
+Text that is not the value it was asked to become raises
+:class:`TFTPValueError`, which is also a :class:`ValueError`:
+:class:`TFTPDecodeError` for bytes that are not a packet,
+:class:`CaptureFormatError` for a file that is not a capture and
+:class:`CaptureFilterError` for a filter expression that does not parse. A
+caller's own mistake, a wrong argument type or an option out of range, is
+plain :class:`TypeError` or :class:`ValueError`, not one of these.
+
+:class:`WouldBlock` is a signal that a source or sink has nothing ready, not a
+failure, so it is a :class:`BlockingIOError` and not a :class:`TFTPError`.
+
+Every class is rebuilt by ``type(*args)``, so each one copies and pickles.
+"""
 
 from __future__ import annotations
 
 import errno
+from typing import Tuple
 
-from .packet import ErrorCode
+from .packet.enums import ErrorCode
 
 __all__ = [
-    "TftpError",
+    "TFTPError",
+    "TFTPProtocolError",
     "RemoteError",
     "FileNotFound",
     "AccessViolation",
     "DiskFull",
     "IllegalOperation",
-    "UnknownTransferId",
+    "UnknownTransferID",
     "FileAlreadyExists",
     "NoSuchUser",
     "OptionNegotiationError",
-    "ProtocolError",
-    "TransferTimeout",
-    "TransferAborted",
+    "TransferTimeoutError",
+    "TransferAbortedError",
+    "TFTPValueError",
+    "TFTPDecodeError",
+    "CaptureFormatError",
+    "CaptureFilterError",
+    "WouldBlock",
     "error_for_exception",
 ]
 
 
-class TftpError(Exception):
+class TFTPError(Exception):
     """A TFTP failure carrying the ERROR code that describes it.
 
     A server handler raises this to refuse a request: the code and message
@@ -32,7 +65,7 @@ class TftpError(Exception):
 
     :param code: an ``int`` in 0..65535 (unknown codes are kept: the wire
         carries any 16-bit value). ``TypeError`` for anything else, which
-        catches ``TftpError("message")``; ``ValueError`` outside the range.
+        catches ``TFTPError("message")``; ``ValueError`` outside the range.
     :param message: text; ``TypeError`` for anything else. A NUL is replaced
         and a long text cut when the ERROR is encoded.
     """
@@ -52,19 +85,40 @@ class TftpError(Exception):
             pass
         self.code = code
         self.message = message or _default_message(code)
-        super().__init__(self.code, self.message)
+        super().__init__(*self._constructor_args())
+
+    def _constructor_args(self) -> Tuple[object, ...]:
+        """The positional arguments that rebuild this instance: ``args``.
+
+        A subclass whose constructor takes something else returns that, so
+        ``copy`` and ``pickle`` (which call ``type(*args)``) work for it.
+        """
+        return (self.code, self.message)
 
     def __str__(self) -> str:
         name = self.code.name if isinstance(self.code, ErrorCode) else str(self.code)
         return "%s: %s" % (name, self.message)
 
 
-class RemoteError(TftpError):
+class TFTPProtocolError(TFTPError):
+    """The peer broke the protocol (malformed packet, bad option ack...)."""
+
+    def __init__(self, message: str, code: int = ErrorCode.ILLEGAL_OPERATION) -> None:
+        super().__init__(code, message)
+
+    def _constructor_args(self) -> Tuple[object, ...]:
+        return (self.message, self.code)
+
+
+class RemoteError(TFTPError):
     """The peer sent an ERROR packet.
 
     Raised as the subclass for its code (:class:`FileNotFound`,
     :class:`AccessViolation`, ...) so callers can catch by kind; ``code`` and
-    ``message`` hold exactly what the peer sent.
+    ``message`` hold exactly what the peer sent. The leaves describe the
+    server's file, so none is also a ``FileNotFoundError`` or
+    ``PermissionError``: :mod:`tftp.path` translates where a path caller
+    expects the builtin.
     """
 
     _CODE: "int | None" = None
@@ -102,7 +156,7 @@ class IllegalOperation(RemoteError):
     _CODE = ErrorCode.ILLEGAL_OPERATION
 
 
-class UnknownTransferId(RemoteError):
+class UnknownTransferID(RemoteError):
     """ERROR 5."""
 
     _CODE = ErrorCode.UNKNOWN_TID
@@ -133,7 +187,7 @@ _REMOTE_CLASSES = {
         AccessViolation,
         DiskFull,
         IllegalOperation,
-        UnknownTransferId,
+        UnknownTransferID,
         FileAlreadyExists,
         NoSuchUser,
         OptionNegotiationError,
@@ -141,25 +195,75 @@ _REMOTE_CLASSES = {
 }
 
 
-class ProtocolError(TftpError):
-    """The peer broke the protocol (malformed packet, bad option ack...)."""
+class TransferTimeoutError(TFTPError, TimeoutError):
+    """The peer stopped answering, or the transfer ran out of time.
 
-    def __init__(self, message: str, code: int = ErrorCode.ILLEGAL_OPERATION) -> None:
-        super().__init__(code, message)
-
-
-class TransferTimeout(TftpError, TimeoutError):
-    """The peer stopped answering, or the transfer ran out of time."""
+    Also a :class:`TimeoutError`; ``errno`` is ``None``, since no OS call
+    failed.
+    """
 
     def __init__(self, message: str = "timed out") -> None:
         super().__init__(ErrorCode.NOT_DEFINED, message)
 
+    def _constructor_args(self) -> Tuple[object, ...]:
+        return (self.message,)
 
-class TransferAborted(TftpError):
+
+class TransferAbortedError(TFTPError):
     """Cancelled locally (``abort()``, a server shutting down)."""
 
     def __init__(self, message: str = "transfer aborted") -> None:
         super().__init__(ErrorCode.NOT_DEFINED, message)
+
+    def _constructor_args(self) -> Tuple[object, ...]:
+        return (self.message,)
+
+
+class TFTPValueError(TFTPError, ValueError):
+    """Text that is not the value it was asked to become: a malformed
+    ``tftp://`` URL, for one.
+
+    Also a :class:`ValueError`, so ``except ValueError`` keeps catching it.
+    """
+
+    _CODE = ErrorCode.NOT_DEFINED
+
+    def __init__(self, message: str = "") -> None:
+        super().__init__(self._CODE, message)
+
+    def _constructor_args(self) -> Tuple[object, ...]:
+        return (self.message,)
+
+    def __str__(self) -> str:
+        return self.message
+
+
+class TFTPDecodeError(TFTPValueError):
+    """The bytes do not form a valid TFTP packet.
+
+    Carries ERROR 4 (illegal operation), the code a peer is answered with.
+    """
+
+    _CODE = ErrorCode.ILLEGAL_OPERATION
+
+
+class CaptureFormatError(TFTPValueError):
+    """Not a pcap/pcapng capture, or a truncated one."""
+
+
+class CaptureFilterError(TFTPValueError):
+    """The filter expression is not valid."""
+
+
+class WouldBlock(BlockingIOError):
+    """Raised by a source or sink that has nothing ready yet.
+
+    A sender whose ``read`` raises it stops after the blocks it has, and a
+    receiver whose ``write`` (or ``complete``) raises it holds the block
+    unacknowledged; both carry on when the driver calls ``Transfer.resume``.
+    This is how a slow backend (an upstream server, an HTTP fetch) applies
+    backpressure without blocking the loop that serves every other transfer.
+    """
 
 
 _MESSAGES = {
@@ -194,15 +298,15 @@ if hasattr(errno, "EDQUOT"):
     _ERRNO_CODES[errno.EDQUOT] = ErrorCode.DISK_FULL
 
 
-def error_for_exception(exc: BaseException) -> TftpError:
+def error_for_exception(exc: BaseException) -> TFTPError:
     """The ERROR to send for ``exc``.
 
-    A :class:`TftpError` is used as is. An ``OSError`` maps by errno
+    A :class:`TFTPError` is used as is. An ``OSError`` maps by errno
     (``ENOENT`` -> file not found, ``EACCES`` -> access violation, ``ENOSPC``
     -> disk full, ...). Its message is the generic one for the code, never the
     OS text, which would disclose server paths.
     """
-    if isinstance(exc, TftpError):
+    if isinstance(exc, TFTPError):
         return exc
     if isinstance(exc, OSError):
         code = _ERRNO_CODES.get(exc.errno or 0)
@@ -215,5 +319,5 @@ def error_for_exception(exc: BaseException) -> TftpError:
                 code = ErrorCode.FILE_EXISTS
             else:
                 code = ErrorCode.NOT_DEFINED
-        return TftpError(code)
-    return TftpError(ErrorCode.NOT_DEFINED)
+        return TFTPError(code)
+    return TFTPError(ErrorCode.NOT_DEFINED)

@@ -14,6 +14,7 @@ import os
 import struct
 from typing import IO, Any, BinaryIO, Iterator, List, Optional, Tuple, Union
 
+from ..exceptions import CaptureFormatError
 from .events import PacketEvent
 from .frames import FrameDecoder, UdpDatagram
 
@@ -26,10 +27,6 @@ _PCAP_MAGICS = {
     b"\xa1\xb2\x3c\x4d": (">", 1e-9),
 }
 _PCAPNG_SHB = 0x0A0D0D0A
-
-
-class CaptureFormatError(ValueError):
-    """Not a pcap/pcapng capture, or a truncated one."""
 
 
 def _read_exact(stream: BinaryIO, n: int) -> Optional[bytes]:

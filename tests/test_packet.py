@@ -59,7 +59,7 @@ def test_request_filename_bytes_roundtrip():
     ],
 )
 def test_malformed(raw):
-    with pytest.raises(tftp.MalformedPacket):
+    with pytest.raises(tftp.TFTPDecodeError):
         tftp.decode(raw)
 
 
@@ -80,7 +80,7 @@ def test_nul_in_strings_is_refused():
 
 
 def test_errors_map_os_errors():
-    from tftp.errors import error_for_exception
+    from tftp.exceptions import error_for_exception
 
     assert error_for_exception(FileNotFoundError(2, "x")).code == ErrorCode.FILE_NOT_FOUND
     assert error_for_exception(PermissionError(13, "x")).code == ErrorCode.ACCESS_VIOLATION

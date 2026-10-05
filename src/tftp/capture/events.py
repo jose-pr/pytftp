@@ -7,7 +7,8 @@ import itertools
 import struct
 from typing import Any, Dict, NamedTuple, Optional, Tuple
 
-from ..packet import MalformedPacket, Opcode, decode
+from ..exceptions import TFTPDecodeError
+from ..packet import Opcode, decode
 
 __all__ = ["PacketEvent", "summarize", "new_session_id"]
 
@@ -37,7 +38,7 @@ def summarize(data: bytes) -> str:
         return "ACK %d" % struct.unpack_from("!H", data, 2)[0]
     try:
         packet = decode(data)
-    except MalformedPacket as exc:
+    except TFTPDecodeError as exc:
         return "malformed (%s)" % exc
     if op in (Opcode.RRQ, Opcode.WRQ):
         options = " ".join("%s=%s" % item for item in packet.options.items())  # type: ignore[union-attr]
@@ -102,7 +103,7 @@ class PacketEvent(NamedTuple):
         return len(self.data) - 4 if self.opcode == Opcode.DATA and len(self.data) >= 4 else None
 
     def decode(self) -> Any:
-        """The parsed packet; raises :class:`MalformedPacket`."""
+        """The parsed packet; raises :class:`TFTPDecodeError`."""
         return decode(self.data)
 
     @property
@@ -149,7 +150,7 @@ class PacketEvent(NamedTuple):
             record["block"] = self.block
         try:
             packet = self.decode()
-        except MalformedPacket:
+        except TFTPDecodeError:
             packet = None
         if packet is not None:
             for field in ("filename", "mode", "options", "code", "message"):

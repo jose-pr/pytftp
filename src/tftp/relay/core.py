@@ -29,8 +29,8 @@ if TYPE_CHECKING:
 
 from .._sockets import same_host, sockaddr
 from ..capture.events import PacketEvent, new_session_id
-from ..errors import TftpError
-from ..packet import ErrorCode, MalformedPacket, Opcode, Request, decode, encode_error
+from ..exceptions import TFTPDecodeError, TFTPError
+from ..packet import ErrorCode, Opcode, Request, decode, encode_error
 from ..server.handler import RequestContext
 from ..server.listener import Arrival, Listener
 from ..server.policy import ServerLimits
@@ -273,7 +273,7 @@ class Relay:
 
             address = Host(target.host).ip()
             if address is None:
-                raise TftpError(ErrorCode.NOT_DEFINED, "upstream unresolvable")
+                raise TFTPError(ErrorCode.NOT_DEFINED, "upstream unresolvable")
             self._resolved[target.host] = (address, now + _RESOLVE_TTL)
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
         return family, sockaddr(address, target.port)
@@ -319,10 +319,10 @@ class Relay:
             request = decode(data)
             assert isinstance(request, Request)
             self.limits.check(request)
-        except MalformedPacket as exc:
+        except TFTPDecodeError as exc:
             self._listener.reply_error(sender, ErrorCode.ILLEGAL_OPERATION, str(exc))
             return False
-        except TftpError as exc:
+        except TFTPError as exc:
             self._listener.reply_error(sender, exc.code, exc.message)
             return False
         if self.max_sessions is not None and len(self._sessions) >= self.max_sessions:
@@ -333,9 +333,9 @@ class Relay:
         try:
             target = self.route(request, context)
             if target is None:
-                raise TftpError(ErrorCode.ACCESS_VIOLATION, "no route")
+                raise TFTPError(ErrorCode.ACCESS_VIOLATION, "no route")
             family, upstream = self._resolve(to_upstream(target))
-        except TftpError as exc:
+        except TFTPError as exc:
             log.info("%r refused: %s", context, exc)
             self._listener.reply_error(sender, exc.code, exc.message)
             return False

@@ -12,7 +12,7 @@ import pytest
 import tftp
 from conftest import client_for
 from tftp.backends import HttpHandler, MemoryHandler, Pipe, UpstreamHandler
-from tftp.transfer import WouldBlock
+from tftp.exceptions import WouldBlock
 
 # -- pipe ----------------------------------------------------------------------
 
@@ -34,8 +34,8 @@ def test_pipe_backpressure_and_errors():
     pipe = Pipe(capacity=4)
     with pytest.raises(TimeoutError):
         pipe.put(b"123456789", timeout=0.05)  # consumer never reads
-    pipe.finish(tftp.TftpError(1, "gone"))
-    with pytest.raises(tftp.TftpError):
+    pipe.finish(tftp.TFTPError(1, "gone"))
+    with pytest.raises(tftp.TFTPError):
         while True:
             pipe.readinto(bytearray(10))
     closed = Pipe()
@@ -56,8 +56,8 @@ def test_pipe_upload_close_waits_for_result():
     pipe.set_result(None)
     pipe.close()
     failed = Pipe().for_upload()
-    failed.set_result(tftp.TftpError(3, "full"))
-    with pytest.raises(tftp.TftpError):
+    failed.set_result(tftp.TFTPError(3, "full"))
+    with pytest.raises(tftp.TFTPError):
         failed.close()
 
 

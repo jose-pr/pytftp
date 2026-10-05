@@ -54,7 +54,7 @@ def test_mstfwindow_client_side():
     asked = {"mstfwindow": "31416", "windowsize": "8"}
     both = accept_oack(asked, {"mstfwindow": "27182", "windowsize": "8"}, is_read=True, timeout=1)
     assert both.windowsize == 8
-    with pytest.raises(tftp.ProtocolError):
+    with pytest.raises(tftp.TFTPProtocolError):
         accept_oack({"mstfwindow": "31416"}, {"mstfwindow": "31416"}, is_read=True, timeout=1)
 
 
@@ -91,7 +91,7 @@ def test_blksize2_client_validation():
     ok = accept_oack({"blksize2": "4096"}, {"blksize2": "2048"}, is_read=True, timeout=1)
     assert ok.blksize == 2048
     for bad in ("3000", "8192", "4"):
-        with pytest.raises(tftp.ProtocolError):
+        with pytest.raises(tftp.TFTPProtocolError):
             accept_oack({"blksize2": "4096"}, {"blksize2": bad}, is_read=True, timeout=1)
 
 
@@ -99,7 +99,7 @@ def test_cookie_is_echoed_and_checked():
     result = negotiate({"cookie": "Opaque-1"}, ALL, is_read=True, timeout=1)
     assert result.options == {"cookie": "Opaque-1"} and result.extra["cookie"] == "Opaque-1"
     assert accept_oack({"cookie": "x"}, {"cookie": "x"}, is_read=True, timeout=1).extra == {"cookie": "x"}
-    with pytest.raises(tftp.ProtocolError):
+    with pytest.raises(tftp.TFTPProtocolError):
         accept_oack({"cookie": "x"}, {"cookie": "y"}, is_read=True, timeout=1)
 
 

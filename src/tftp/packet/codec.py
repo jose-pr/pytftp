@@ -12,6 +12,7 @@ from __future__ import annotations
 import struct
 from typing import Dict, List, Mapping, NamedTuple, Optional, Tuple, Union
 
+from ..exceptions import TFTPDecodeError
 from .enums import Opcode
 
 __all__ = [
@@ -21,7 +22,6 @@ __all__ = [
     "Error",
     "OptionAck",
     "Packet",
-    "MalformedPacket",
     "decode",
     "encode_request",
     "encode_data",
@@ -39,10 +39,6 @@ _ERRORS = "surrogateescape"
 
 _HDR = struct.Struct("!HH")
 _OP = struct.Struct("!H")
-
-
-class MalformedPacket(ValueError):
-    """The bytes do not form a valid TFTP packet."""
 
 
 class Request(NamedTuple):
@@ -181,30 +177,30 @@ def _parse_options(fields: list) -> Dict[str, str]:
 
 
 def decode(packet: Union[bytes, bytearray, memoryview]) -> Packet:
-    """Parse one packet. Raises :class:`MalformedPacket` on invalid input."""
+    """Parse one packet. Raises :class:`TFTPDecodeError` on invalid input."""
     buf = bytes(packet)
     if len(buf) < 2:
-        raise MalformedPacket("packet shorter than an opcode")
+        raise TFTPDecodeError("packet shorter than an opcode")
     (op,) = _OP.unpack_from(buf)
     if op in (Opcode.RRQ, Opcode.WRQ):
         fields = _strings(buf[2:])
         if len(fields) < 2 or not fields[0]:
-            raise MalformedPacket("request without a filename and mode")
+            raise TFTPDecodeError("request without a filename and mode")
         return Request(Opcode(op), fields[0], fields[1].lower(), _parse_options(fields[2:]), buf)
     if op == Opcode.DATA:
         if len(buf) < 4:
-            raise MalformedPacket("DATA shorter than its header")
+            raise TFTPDecodeError("DATA shorter than its header")
         return Data(_HDR.unpack_from(buf)[1], buf[4:])
     if op == Opcode.ACK:
         if len(buf) < 4:
-            raise MalformedPacket("ACK shorter than its header")
+            raise TFTPDecodeError("ACK shorter than its header")
         return Ack(_HDR.unpack_from(buf)[1])
     if op == Opcode.ERROR:
         if len(buf) < 4:
-            raise MalformedPacket("ERROR shorter than its header")
+            raise TFTPDecodeError("ERROR shorter than its header")
         code = _HDR.unpack_from(buf)[1]
         text = _strings(buf[4:])
         return Error(code, text[0] if text else "")
     if op == Opcode.OACK:
         return OptionAck(_parse_options(_strings(buf[2:])))
-    raise MalformedPacket("unknown opcode %d" % op)
+    raise TFTPDecodeError("unknown opcode %d" % op)

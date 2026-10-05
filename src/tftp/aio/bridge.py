@@ -13,8 +13,8 @@ import asyncio
 import inspect
 from typing import Any, Callable, Optional
 
-from ..errors import TftpError
-from ..transfer import WouldBlock
+from ..exceptions import TFTPError
+from ..exceptions import WouldBlock
 
 __all__ = ["AsyncReaderBridge", "AsyncWriterBridge", "is_async_reader", "is_async_writer"]
 
@@ -85,7 +85,7 @@ class AsyncReaderBridge:
         except asyncio.CancelledError:
             raise
         except BaseException as exc:
-            self._error = exc if isinstance(exc, TftpError) else TftpError(0, "source failed")
+            self._error = exc if isinstance(exc, TFTPError) else TFTPError(0, "source failed")
             self._error.__cause__ = exc
         self._wake()
 
@@ -178,7 +178,7 @@ class AsyncWriterBridge:
         except asyncio.CancelledError:
             raise
         except BaseException as exc:
-            self._error = exc if isinstance(exc, TftpError) else TftpError(3, "sink failed")
+            self._error = exc if isinstance(exc, TFTPError) else TFTPError(3, "sink failed")
             self._error.__cause__ = exc
         self._finished = True
         if not self._done.done():

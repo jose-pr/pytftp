@@ -13,7 +13,8 @@ import tftp
 from conftest import client_for
 from test_engine import Link, neg
 from tftp import ErrorCode, Opcode, decode, encode_ack, encode_data, encode_error, encode_oack, encode_request
-from tftp.transfer import WouldBlock, as_readinto, as_write
+from tftp.exceptions import WouldBlock
+from tftp.transfer import as_readinto, as_write
 
 # -- duplicate OACK --------------------------------------------------------
 
@@ -115,7 +116,7 @@ def test_expiry_ends_a_transfer():
     )
     while not receiver.done:
         receiver.on_timeout(receiver.deadline)
-    assert isinstance(receiver.error, tftp.TransferTimeout)
+    assert isinstance(receiver.error, tftp.TransferTimeoutError)
     assert "time limit" in receiver.error.message
 
 
@@ -125,7 +126,7 @@ def test_client_max_duration(root):
         client = tftp.Client(
             "127.0.0.1", silent.getsockname()[1], timeout=0.05, retries=100, max_duration=0.3
         )
-        with pytest.raises(tftp.TransferTimeout):
+        with pytest.raises(tftp.TransferTimeoutError):
             client.get("x")
 
 
@@ -261,7 +262,7 @@ def test_server_resumes_a_stalled_handler_from_another_thread(make_server):
         (2, tftp.AccessViolation),
         (3, tftp.DiskFull),
         (4, tftp.IllegalOperation),
-        (5, tftp.UnknownTransferId),
+        (5, tftp.UnknownTransferID),
         (6, tftp.FileAlreadyExists),
         (7, tftp.NoSuchUser),
         (8, tftp.OptionNegotiationError),
@@ -398,7 +399,7 @@ def test_decode_fuzz_never_raises_anything_but_malformed():
     for packet in _random_packets(1, 20_000):
         try:
             decode(packet)
-        except tftp.MalformedPacket:
+        except tftp.TFTPDecodeError:
             pass
 
 
@@ -607,7 +608,7 @@ def test_a_silent_peer_ends_the_transfer_at_max_idle_whatever_timeout_it_negotia
     )
     assert sender.deadline == 110.0  # not 355
     sender.on_timeout(110.0)
-    assert sender.done and isinstance(sender.error, tftp.TransferTimeout)
+    assert sender.done and isinstance(sender.error, tftp.TransferTimeoutError)
     assert "no datagram" in sender.error.message
 
 
@@ -623,7 +624,7 @@ def test_a_peer_that_keeps_sending_is_never_idle_however_long_the_transfer_takes
         sender.handle(memoryview(encode_ack(block)), 4, now)
         assert not sender.done, "ended at %.0f s" % now
     sender.on_timeout(sender.deadline)  # then it goes quiet
-    assert sender.done and isinstance(sender.error, tftp.TransferTimeout)
+    assert sender.done and isinstance(sender.error, tftp.TransferTimeoutError)
 
 
 def test_the_receiver_ends_when_the_peer_goes_quiet_and_not_before():
@@ -640,7 +641,7 @@ def test_the_receiver_ends_when_the_peer_goes_quiet_and_not_before():
     receiver.handle(memoryview(data), len(data), 6.0)
     assert receiver.deadline == 16.0
     receiver.on_timeout(16.0)
-    assert receiver.done and isinstance(receiver.error, tftp.TransferTimeout)
+    assert receiver.done and isinstance(receiver.error, tftp.TransferTimeoutError)
 
 
 def test_time_spent_waiting_on_the_local_source_is_not_idle_time():
@@ -681,7 +682,7 @@ def test_a_request_nothing_follows_up_is_released_after_max_idle(root, make_serv
         while server.active_sessions and time.monotonic() < deadline:
             time.sleep(0.02)
         assert server.active_sessions == 0
-    assert len(results) == 1 and isinstance(results[0].error, tftp.TransferTimeout)
+    assert len(results) == 1 and isinstance(results[0].error, tftp.TransferTimeoutError)
 
 
 def test_a_slow_client_is_not_cut_off_by_max_idle(root, make_server):

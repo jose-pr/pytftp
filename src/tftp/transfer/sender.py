@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
+from ..exceptions import WouldBlock
 from ..options import Negotiated
-from .base import _ACK, _DATA, _ERROR, _OACK, SendFn, Transfer, WouldBlock, _pack_header
+from .base import _ACK, _DATA, _ERROR, _OACK, SendFn, Transfer, _pack_header
 
 __all__ = ["Sender"]
 

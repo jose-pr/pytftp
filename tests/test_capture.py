@@ -12,7 +12,7 @@ import tftp
 from conftest import client_for, needs_ipv6
 from tftp import Opcode, encode_ack, encode_data, encode_error, encode_oack, encode_request
 from tftp.capture import (
-    FilterError,
+    CaptureFilterError,
     FlowTracker,
     PacketEvent,
     PcapWriter,
@@ -289,7 +289,7 @@ def test_filter_numbers_and_mapped_addresses():
     "expression", ["op", "colour=red", "host=not-an-ip", "port=x", "block=x", "src=1.2.3.4:x"]
 )
 def test_filter_errors(expression):
-    with pytest.raises(FilterError):
+    with pytest.raises(CaptureFilterError):
         compile_filter(expression)
 
 
