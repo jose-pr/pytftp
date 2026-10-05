@@ -156,8 +156,8 @@ class Client:
         section 6). Costs that much time on every download.
     :param backoff: each consecutive retransmission waits this many times
         longer (RFC 1123 4.2.3.2); progress resets it to ``timeout``.
-    :param max_timeout: ceiling for the backed-off wait; ``None`` is eight
-        times ``timeout``.
+    :param max_timeout: ceiling for the backed-off wait, at least ``timeout``;
+        ``None`` is eight times ``timeout``.
     :param max_duration: seconds a whole transfer may take, or ``None``.
     :param utimeout: send a fractional ``timeout`` as tftp-hpa's ``utimeout``
         (otherwise a fractional timeout is not requested at all).
@@ -206,6 +206,8 @@ class Client:
     ) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
+        if max_timeout is not None and max_timeout < timeout:
+            raise ValueError("max_timeout must be at least timeout (%s), got %s" % (timeout, max_timeout))
         if retries < 0:
             raise ValueError("retries cannot be negative")
         # Validate the options now rather than on the first transfer.

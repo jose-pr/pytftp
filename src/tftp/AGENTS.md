@@ -42,7 +42,10 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 - `host` — a string (name or address; `"[v6]"`, `"host:port"` and
   `"[v6]:port"` are accepted, and a port written there overrides `port`), an
   `ipaddress` address or interface (its address), or a `netimps.Host`. Kept
-  as given in `client.host`.
+  as given in `client.host`. The port is ASCII digits and brackets hold an
+  IPv6 literal only: `"h:+70"` and `"[10.0.0.5]"` raise `ValueError`
+  (`netimps.NetimpsValueError`) when the transfer starts; a `None` or other
+  non-host raises `TypeError`.
 - `timeout` — seconds before a retransmission. Requested from the server as
   `timeout` when whole (1..255); a fractional one is requested as
   `utimeout` only with `utimeout=True`, otherwise not at all. Nothing is
@@ -50,7 +53,7 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 - `retries` — retransmissions of one packet before `TransferTimeout`.
 - `backoff`, `max_timeout` — each consecutive retransmission (of the
   request too) waits `backoff` times longer, up to `max_timeout` (default
-  8 × `timeout`); progress resets the wait. `backoff=1` disables it.
+  8 × `timeout`; below `timeout` is a `ValueError`); progress resets the wait. `backoff=1` disables it.
 - `max_duration` — seconds a whole transfer may take; `None` is unlimited.
 - `strict_source` — the first answer must come from the address the request
   was sent to. `False` accepts a multi-homed server answering from another
@@ -652,7 +655,8 @@ relay forwards unknown options untouched), `Data(block, data)`, `Ack(block)`,
   `ValueError`.
 - **`format_url(host, filename, port=69, mode="octet")`** — the inverse
   (`str(TftpURL)` too); `host` may be an address or interface object or a
-  `netimps.Host`; IPv6 hosts are bracketed.
+  `netimps.Host`; IPv6 hosts are bracketed. `port` must be an `int` (`None`
+  omits it): a `str` or `bool` raises `TypeError`.
 - **`download_url(url, dest, *, progress=None, **client_options)`**,
   **`upload_url(url, source, ...)`** — one-shot transfers by URL.
 
