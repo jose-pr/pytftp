@@ -438,12 +438,12 @@ def test_a_windowed_download_costs_one_window_after_a_duplicated_ack(make_server
     once per run of out-of-sequence DATA. One of its ACKs is sent twice."""
     import struct
 
-    from tftp.backends import MemoryHandler
+    from tftp.backends import MemoryBackend
 
     blksize, blocks = 512, 1500
     payload = os.urandom(blksize * blocks)
     server = make_server(
-        MemoryHandler({"f": payload}), options=tftp.ServerOptions(max_windowsize=windowsize), timeout=2
+        MemoryBackend({"f": payload}), options=tftp.ServerOptions(max_windowsize=windowsize), timeout=2
     )
     with raw_socket(5.0) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -555,9 +555,9 @@ def test_hosts_are_compared_by_address_and_scope_and_not_by_text():
 
 
 def test_a_server_named_by_a_link_local_address_with_its_zone_is_heard(link_local):
-    from tftp.backends import MemoryHandler
+    from tftp.backends import MemoryBackend
 
-    with tftp.TFTPServer(MemoryHandler({"f": b"link-local"}), link_local, 0, timeout=0.5).start() as server:
+    with tftp.TFTPServer(MemoryBackend({"f": b"link-local"}), link_local, 0, timeout=0.5).start() as server:
         client = tftp.TFTPClient(
             link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=True
         )

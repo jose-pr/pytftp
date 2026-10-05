@@ -11,7 +11,7 @@ import pytest
 
 import tftp
 from conftest import client_for
-from tftp.backends import HttpHandler, MemoryHandler, Pipe, UpstreamHandler
+from tftp.backends import HTTPBackend, MemoryBackend, Pipe, UpstreamBackend
 from tftp.exceptions import WouldBlock
 
 # -- pipe ----------------------------------------------------------------------
@@ -65,7 +65,7 @@ def test_pipe_upload_close_waits_for_result():
 
 
 def test_memory_handler(make_server):
-    handler = MemoryHandler({"/boot/a.bin": b"A" * 1000}, writable=True, overwrite=False)
+    handler = MemoryBackend({"/boot/a.bin": b"A" * 1000}, writable=True, overwrite=False)
     server = make_server(handler)
     client = client_for(server)
     assert client.get("boot\\a.bin") == b"A" * 1000
@@ -76,7 +76,7 @@ def test_memory_handler(make_server):
     with pytest.raises(tftp.FileNotFound):
         client.get("nope")
     with pytest.raises(tftp.AccessViolation):
-        client_for(make_server(MemoryHandler())).put("x", b"y")
+        client_for(make_server(MemoryBackend())).put("x", b"y")
 
 
 # -- HTTP ------------------------------------------------------------------------------
@@ -128,7 +128,7 @@ def web():
 
 
 def test_http_gateway_download(web, make_server):
-    server = make_server(HttpHandler(web + "/images", buffer=4096))
+    server = make_server(HTTPBackend(web + "/images", buffer=4096))
     client = client_for(server, windowsize=4)
     result_sink = io.BytesIO()
     result = client.download("kernel", result_sink)
@@ -142,7 +142,7 @@ def test_http_gateway_download(web, make_server):
 
 
 def test_http_gateway_upload(web, make_server):
-    server = make_server(HttpHandler(web + "/up", writable=True))
+    server = make_server(HTTPBackend(web + "/up", writable=True))
     data = os.urandom(50_000)
     client_for(server).put("img.bin", data)
     assert _Http.store["/up/img.bin"] == data
@@ -152,9 +152,9 @@ def test_http_gateway_upload(web, make_server):
 
 def test_http_handler_arguments():
     with pytest.raises(ValueError):
-        HttpHandler()
+        HTTPBackend()
     with pytest.raises(ValueError):
-        HttpHandler("http://x", url_for=lambda c: "http://y")
+        HTTPBackend("http://x", url_for=lambda c: "http://y")
 
 
 # -- upstream TFTP (terminating proxy) ---------------------------------------------
@@ -165,7 +165,7 @@ def test_proxy_bridges_different_block_and_window_sizes(root, make_server):
     port = upstream.server_address[1]
     seen = []
     proxy = make_server(
-        UpstreamHandler(
+        UpstreamBackend(
             ("127.0.0.1", port),
             client_options={"blksize": 8192, "windowsize": 16, "timeout": 0.5},
             buffer=2048,  # far smaller than the file: forces backpressure
@@ -180,7 +180,7 @@ def test_proxy_bridges_different_block_and_window_sizes(root, make_server):
 
 def test_proxy_passes_tsize_and_errors(root, make_server):
     upstream = make_server(root)
-    proxy = make_server(UpstreamHandler("127.0.0.1:%d" % upstream.server_address[1]))
+    proxy = make_server(UpstreamBackend("127.0.0.1:%d" % upstream.server_address[1]))
     result = client_for(proxy).download("513.bin", io.BytesIO())
     assert result.negotiated.tsize == 513
     with pytest.raises(tftp.FileNotFound):
@@ -190,7 +190,7 @@ def test_proxy_passes_tsize_and_errors(root, make_server):
 def test_proxy_upload_and_netascii(root, make_server):
     upstream = make_server(root, writable=True)
     proxy = make_server(
-        UpstreamHandler(lambda ctx: ("127.0.0.1", upstream.server_address[1]), writable=True, buffer=1024)
+        UpstreamBackend(lambda ctx: ("127.0.0.1", upstream.server_address[1]), writable=True, buffer=1024)
     )
     data = os.urandom(40_000)
     client_for(proxy, windowsize=8).put("through.bin", data)
@@ -206,7 +206,7 @@ def test_proxy_upstream_down(make_server):
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
         silent.bind(("127.0.0.1", 0))
-        handler = UpstreamHandler(
+        handler = UpstreamBackend(
             ("127.0.0.1", silent.getsockname()[1]),
             client_options={"timeout": 0.1, "retries": 1},
             stall_timeout=2,

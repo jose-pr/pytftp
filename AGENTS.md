@@ -21,16 +21,16 @@ src/tftp/
 ├── transfer/          # I/O-free engine: base.py, sender.py, receiver.py
 ├── client.py          # TFTPClient: request phase + blocking transfer loop
 ├── aio/               # asyncio: client.py, server.py, bridge.py (async streams <-> engine)
-├── path/              # pathlib-next: local.py (TftpPath), uri.py (TftpUriPath), _stream.py
+├── path/              # pathlib-next: local.py (TFTPPath), uri.py (TFTPURIPath), _stream.py
 ├── server/
 │   ├── base.py        # ServerBase: config, admission, refusal, reporting (shared with aio)
 │   ├── core.py        # TFTPServer: lifecycle, selectors loop, timers, completion
 │   ├── listener.py    # listening socket: bind (host or interface), netimps UDPEndpoint, reply sockets
 │   ├── session.py     # one transfer: PortRange, handler -> engine
-│   ├── handler.py     # TFTPHandler protocol, FileSystemHandler, AtomicWriter
+│   ├── handler.py     # TFTPHandler protocol, TFTPRequestContext, AtomicWriter
 │   ├── policy.py      # ServerLimits
 │   └── stats.py       # Stats counters (server and relay)
-├── backends/          # memory.py, http.py (urllib gateway), proxy.py (upstream TFTP), pipe.py
+├── backends/          # filesystem.py, memory.py, http.py (urllib gateway), proxy.py (upstream TFTP), pipe.py
 ├── relay/             # transparent relay: core.py (loop), session.py (per transfer), routing.py
 ├── capture/           # packet events, trace hooks, pcap decoding
 ├── cli/               # pytftp (duho): common.py, transfer.py (get/put/ls), serve.py, relay.py,

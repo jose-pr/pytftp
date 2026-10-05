@@ -19,7 +19,8 @@ import typing as _ty
 
 from ..exceptions import TFTPError
 from ..packet import TFTPErrorCode
-from ..server import FileSystemHandler, TFTPRequestContext
+from ..backends import FilesystemBackend
+from ..server import TFTPRequestContext
 
 __all__ = ["Remap", "PerClient", "CaseInsensitive", "parse_rule"]
 
@@ -81,7 +82,7 @@ class PerClient:
 
     Other clients get ``root`` itself, or ERROR 1 with ``fallback=False``.
     ``make(directory)`` builds the handler for a directory (a
-    :class:`FileSystemHandler` with the server's write policy).
+    :class:`FilesystemBackend` with the server's write policy).
     """
 
     _tftp_fast_open_ = True
@@ -110,8 +111,8 @@ class PerClient:
         return self.handler_for(context).open_write(context, size)
 
 
-class CaseInsensitive(FileSystemHandler):
-    """A :class:`FileSystemHandler` that matches names regardless of case.
+class CaseInsensitive(FilesystemBackend):
+    """A :class:`FilesystemBackend` that matches names regardless of case.
 
     The exact name wins when it exists; otherwise each component is looked
     up case-insensitively (firmware asking for ``\\Boot\\BCD`` finds

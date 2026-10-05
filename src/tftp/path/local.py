@@ -1,4 +1,4 @@
-"""``TftpPath``: a pathlib_next ``Path`` for files on one TFTP server."""
+"""``TFTPPath``: a pathlib_next ``Path`` for files on one TFTP server."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from ..client import TFTPClient
 from ..exceptions import FileNotFound, TFTPError
 from ._stream import open_reader, open_writer, os_error
 
-__all__ = ["TftpPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir"]
+__all__ = ["TFTPPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir"]
 
 
 def check_client(client: Any) -> Any:
@@ -92,10 +92,10 @@ def tftp_open(client: TFTPClient, filename: str, transfer_mode: str, mode: str, 
     raise NotImplementedError("TFTP can only read or write a whole file, not %r" % mode)
 
 
-class TftpPath(Path):
+class TFTPPath(Path):
     """A file on a TFTP server, addressed like a ``PurePosixPath``.
 
-    ``TftpPath("boot/pxelinux.0", client=tftp.TFTPClient("192.0.2.1"))``, or
+    ``TFTPPath("boot/pxelinux.0", client=tftp.TFTPClient("192.0.2.1"))``, or
     ``client.path("boot", "pxelinux.0")``. The path text is the filename sent
     to the server, so ``/boot/x`` and ``boot/x`` stay distinct (some servers
     resolve them differently). ``mode="netascii"`` selects the transfer mode.
@@ -117,7 +117,7 @@ class TftpPath(Path):
         text = ""
         inherited = None
         for segment in segments:
-            if isinstance(segment, TftpPath):
+            if isinstance(segment, TFTPPath):
                 piece = segment.as_posix()
                 inherited = segment
             elif isinstance(segment, Pathname):
@@ -133,7 +133,7 @@ class TftpPath(Path):
                 text = "%s/%s" % (text, piece)
         if client is None:
             if inherited is None:
-                raise TypeError("TftpPath needs client= (or a TftpPath to join onto)")
+                raise TypeError("TFTPPath needs client= (or a TFTPPath to join onto)")
             client, mode = inherited._client, inherited._mode
         self._client = check_client(client)
         self._mode = mode
@@ -162,7 +162,7 @@ class TftpPath(Path):
         return tuple(self._segments)
 
     @property
-    def parent(self) -> "TftpPath":
+    def parent(self) -> "TFTPPath":
         segments = self._segments
         if not segments or segments == ["", ""]:
             return self
@@ -170,21 +170,21 @@ class TftpPath(Path):
             return self.with_segments("", "")
         return self.with_segments(*segments[:-1])
 
-    def with_segments(self, *segments: Any) -> "TftpPath":
+    def with_segments(self, *segments: Any) -> "TFTPPath":
         if all(isinstance(segment, str) for segment in segments):
             segments = ("/".join(segments),)
         return type(self)(*segments, client=self._client, mode=self._mode)
 
-    def with_client(self, client: TFTPClient) -> "TftpPath":
+    def with_client(self, client: TFTPClient) -> "TFTPPath":
         return type(self)(self.as_posix(), client=client, mode=self._mode)
 
-    def with_mode(self, mode: str) -> "TftpPath":
+    def with_mode(self, mode: str) -> "TFTPPath":
         return type(self)(self.as_posix(), client=self._client, mode=mode)
 
     def is_absolute(self) -> bool:
         return bool(self._segments) and self._segments[0] == ""
 
-    def relative_to(self, other: Any) -> "TftpPath":
+    def relative_to(self, other: Any) -> "TFTPPath":
         base = other.as_posix() if isinstance(other, Pathname) else str(other)
         relative = posixpath.relpath(self.as_posix() or ".", base or ".")
         if relative == ".." or relative.startswith("../"):
@@ -205,20 +205,20 @@ class TftpPath(Path):
         return self.as_posix()
 
     def __repr__(self) -> str:
-        return "TftpPath(%r, server=%s:%s)" % (self.as_posix(), self._client.host, self._client.port)
+        return "TFTPPath(%r, server=%s:%s)" % (self.as_posix(), self._client.host, self._client.port)
 
     def _endpoint(self) -> Tuple[str, int]:
         return (str(self._client.host), int(self._client.port))
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, TftpPath):
+        if not isinstance(other, TFTPPath):
             return NotImplemented
         return self._segments == other._segments and self._endpoint() == other._endpoint()
 
     def __hash__(self) -> int:
         return hash((tuple(self._segments), self._endpoint()))
 
-    def _same_filesystem(self, other: "TftpPath") -> bool:
+    def _same_filesystem(self, other: "TFTPPath") -> bool:
         return self._endpoint() == other._endpoint()
 
     # -- I/O -------------------------------------------------------------------------
@@ -232,6 +232,6 @@ class TftpPath(Path):
     def _scandir(self) -> Iterator[Tuple[str, FileStat]]:
         return tftp_scandir(self._client, self.as_posix(), self)
 
-    def iterdir(self) -> Iterator["TftpPath"]:
+    def iterdir(self) -> Iterator["TFTPPath"]:
         for name, _ in self._scandir():
             yield self / name

@@ -9,7 +9,7 @@ server = tftp.TFTPServer("/srv/tftp", "::", 69, writable=True, overwrite=False)
 server.serve_forever()
 ```
 
-`FileSystemHandler` maps a filename to a path under the root:
+`FilesystemBackend` maps a filename to a path under the root:
 
 - a leading `/` is stripped, and `\` is a separator too (Windows boot loaders
   send `\boot\bcd`);
@@ -24,14 +24,14 @@ server.serve_forever()
 ## Generated content
 
 A handler is any object with `open_read(context)` and
-`open_write(context, size)`. Subclass `FileSystemHandler` to generate some
+`open_write(context, size)`. Subclass `FilesystemBackend` to generate some
 files and serve the rest from disk:
 
 ```python
 import io
 import tftp
 
-class BootMenu(tftp.FileSystemHandler):
+class BootMenu(tftp.FilesystemBackend):
     def open_read(self, context):
         if context.filename == "pxelinux.cfg/default":
             return io.BytesIO(b"DEFAULT linux\n# for %s\n" % context.peer[0].encode())
@@ -61,7 +61,7 @@ class PerClientRoot:
 
     def _pick(self, context):
         own = os.path.join(self.root, context.peer[0].replace(":", "-"))
-        return tftp.FileSystemHandler(own if os.path.isdir(own) else self.root, **self.options)
+        return tftp.FilesystemBackend(own if os.path.isdir(own) else self.root, **self.options)
 
     def open_read(self, context):
         return self._pick(context).open_read(context)
@@ -72,7 +72,7 @@ class PerClientRoot:
 
 Renaming requests (`pytftp serve --remap`) or matching names whatever their
 case (`--ignore-case`) follow the same pattern: rewrite the request, or
-override `FileSystemHandler.resolve`.
+override `FilesystemBackend.resolve`.
 
 ## Behind a firewall
 

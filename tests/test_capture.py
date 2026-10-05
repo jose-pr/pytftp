@@ -16,7 +16,7 @@ from tftp.capture import (
     FlowTracker,
     PacketEvent,
     PcapWriter,
-    UdpDatagram,
+    UDPDatagram,
     analyze,
     compile_filter,
     read_datagrams,
@@ -194,7 +194,7 @@ def test_not_a_capture():
 
 
 def _flow(*packets, start=0.0):
-    return [UdpDatagram(start + i * 0.01, src, dst, data) for i, (src, dst, data) in enumerate(packets)]
+    return [UDPDatagram(start + i * 0.01, src, dst, data) for i, (src, dst, data) in enumerate(packets)]
 
 
 C, S, T = ("10.0.0.5", 2000), ("10.0.0.1", 69), ("10.0.0.1", 40000)

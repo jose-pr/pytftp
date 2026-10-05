@@ -40,7 +40,7 @@ dependencies = ["netimps>=0.4.0,<0.5"]
 [project.optional-dependencies]
 # The CLI is optional: importing tftp never requires duho.
 cli = ["duho>=0.6.0,<0.7"]
-# pathlib-style paths: TftpPath, and the tftp:// scheme for pathlib_next's
+# pathlib-style paths: TFTPPath, and the tftp:// scheme for pathlib_next's
 # UriPath (its "uri" extra). Importing tftp never requires it.
 path = ["pathlib-next[uri]>=0.9.0,<0.10"]
 dev = ["black", "build", "pytest", "duho>=0.6.0,<0.7", "pathlib-next[uri]>=0.9.0,<0.10"]
@@ -49,9 +49,9 @@ docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 [project.scripts]
 pytftp = "tftp.cli:run"
 
-# So pathlib_next.uri.UriPath("tftp://...") finds TftpUriPath without an import.
+# So pathlib_next.uri.UriPath("tftp://...") finds TFTPURIPath without an import.
 [project.entry-points."pathlib_next.schemes"]
-tftp = "tftp.path.uri:TftpUriPath"
+tftp = "tftp.path:TFTPURIPath"
 
 [project.urls]
 Homepage = "https://github.com/jose-pr/pytftp/"

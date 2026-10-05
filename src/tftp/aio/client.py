@@ -198,12 +198,12 @@ class AsyncTFTPClient(TFTPClient):
         return await self._download(filename, dest, mode, progress)
 
     def path(self, *segments: Any, mode: str = "octet") -> Any:
-        """Not available: a :class:`tftp.path.TftpPath` is synchronous.
+        """Not available: a :class:`tftp.path.TFTPPath` is synchronous.
 
         Raises ``TypeError``; use ``tftp.TFTPClient(...).path(...)``.
         """
         raise TypeError(
-            "AsyncTFTPClient has no path(): a TftpPath is synchronous, use tftp.TFTPClient(...).path(...)"
+            "AsyncTFTPClient has no path(): a TFTPPath is synchronous, use tftp.TFTPClient(...).path(...)"
         )
 
     async def get(self, filename: str, *, mode: str = "octet") -> bytes:  # type: ignore[override]

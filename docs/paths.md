@@ -31,6 +31,6 @@ Deleting, renaming and creating directories raise `NotImplementedError`.
 Reads and writes stream through a bounded buffer, and errors arrive as the
 usual `FileNotFoundError`, `PermissionError`, `FileExistsError`.
 
-`TftpUriPath` is registered with pathlib-next through an entry point:
+`TFTPURIPath` is registered with pathlib-next through an entry point:
 `UriPath("tftp://...")` finds it without importing `tftp`. Tune the client
 with `path.with_options(blksize=8192, windowsize=16)`.

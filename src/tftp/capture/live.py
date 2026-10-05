@@ -12,7 +12,7 @@ import socket
 import time
 from typing import Iterator, Optional
 
-from .frames import FrameDecoder, UdpDatagram
+from .frames import FrameDecoder, UDPDatagram
 
 __all__ = ["sniff", "live_capture_supported"]
 
@@ -25,7 +25,7 @@ def live_capture_supported() -> bool:
     return hasattr(socket, "AF_PACKET")
 
 
-def sniff(interface: Optional[str] = None, *, stop: Optional[callable] = None) -> Iterator[UdpDatagram]:  # type: ignore[valid-type]
+def sniff(interface: Optional[str] = None, *, stop: Optional[callable] = None) -> Iterator[UDPDatagram]:  # type: ignore[valid-type]
     """UDP datagrams seen on ``interface`` (all interfaces when ``None``).
 
     ``stop()``, when given, is checked between datagrams (and at least once a

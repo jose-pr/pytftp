@@ -1,4 +1,4 @@
-"""TftpPath and TftpUriPath (the ``path`` extra)."""
+"""TFTPPath and TFTPURIPath (the ``path`` extra)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from conftest import client_for  # noqa: E402
 from pathlib_next import LocalPath  # noqa: E402
 from pathlib_next.mempath import MemPath  # noqa: E402
 from pathlib_next.uri import UriPath  # noqa: E402
-from tftp.path import TftpPath, TftpUriPath  # noqa: E402
+from tftp.path import TFTPPath, TFTPURIPath  # noqa: E402
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def server(root, make_server):
 def test_read_write_stat(root, server):
     client = client_for(server)
     big = client.path("big.bin")
-    assert isinstance(big, TftpPath)
+    assert isinstance(big, TFTPPath)
     assert big.read_bytes() == (root / "big.bin").read_bytes()
     assert big.stat().st_size == 300_001 and big.exists() and big.is_file() and not big.is_dir()
     assert not client.path("missing").exists()
@@ -75,7 +75,7 @@ def test_pure_path_behaviour(server):
     port = server.server_address[1]
     assert path.as_uri() == "tftp://127.0.0.1:%d/boot/efi/grub.cfg" % port
     with pytest.raises(TypeError):
-        TftpPath("x")  # no client
+        TFTPPath("x")  # no client
 
 
 def test_copy_between_tftp_local_and_memory(root, server, tmp_path_factory):
@@ -94,7 +94,7 @@ def test_copy_between_tftp_local_and_memory(root, server, tmp_path_factory):
 def test_uri_path(root, server, tmp_path_factory):
     base = "tftp://127.0.0.1:%d/" % server.server_address[1]
     path = UriPath(base + "big.bin")
-    assert isinstance(path, TftpUriPath)
+    assert isinstance(path, TFTPURIPath)
     assert path.read_bytes() == (root / "big.bin").read_bytes()
     assert path.stat().st_size == 300_001 and path.exists()
     assert not UriPath(base + "nope").exists()
@@ -136,10 +136,10 @@ def test_a_path_refuses_an_asyncio_client_at_construction_and_in_with_client(ser
 
     asynchronous = AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
     with pytest.raises(TypeError, match="synchronous"):
-        TftpPath("one.bin", client=asynchronous)
+        TFTPPath("one.bin", client=asynchronous)
     with pytest.raises(TypeError, match="synchronous"):
         client_for(server).path("one.bin").with_client(asynchronous)
-    uri = TftpUriPath("tftp://127.0.0.1:%d/one.bin" % server.server_address[1])
+    uri = TFTPURIPath("tftp://127.0.0.1:%d/one.bin" % server.server_address[1])
     with pytest.raises(TypeError, match="synchronous"):
         uri.with_client(asynchronous)
     # the synchronous client still binds

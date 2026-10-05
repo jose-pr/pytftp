@@ -1,4 +1,4 @@
-"""Streaming file objects over TFTP, shared by :class:`TftpPath` and :class:`TftpUriPath`.
+"""Streaming file objects over TFTP, shared by :class:`TFTPPath` and :class:`TFTPURIPath`.
 
 Each open file runs one transfer in a thread, joined to the caller by a
 bounded :class:`~tftp.backends.Pipe`: reading never holds more than the

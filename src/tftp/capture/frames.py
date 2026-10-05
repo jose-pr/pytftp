@@ -12,7 +12,7 @@ import socket
 import struct
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-__all__ = ["UdpDatagram", "FrameDecoder", "LINKTYPES"]
+__all__ = ["UDPDatagram", "FrameDecoder", "LINKTYPES"]
 
 #: Link types understood, by pcap LINKTYPE_* number.
 LINKTYPES = {
@@ -32,7 +32,7 @@ _V6_FAMILIES = {10, 24, 28, 30}  # AF_INET6 on Linux, BSD, macOS/FreeBSD
 _FRAGMENT_LIMIT = 256  # reassemblies kept in flight
 
 
-class UdpDatagram(NamedTuple):
+class UDPDatagram(NamedTuple):
     """One UDP datagram from a capture."""
 
     time: float
@@ -67,7 +67,7 @@ class _Reassembly:
 
 
 class FrameDecoder:
-    """Decodes frames of one link type into :class:`UdpDatagram` objects.
+    """Decodes frames of one link type into :class:`UDPDatagram` objects.
 
     Keeps IP fragment state between frames, so feed it every frame of a
     capture in order. Anything that is not UDP over IP yields nothing.
@@ -79,7 +79,7 @@ class FrameDecoder:
         self.linktype = linktype
         self._fragments: Dict[tuple, _Reassembly] = {}
 
-    def decode(self, time: float, frame: bytes) -> List[UdpDatagram]:
+    def decode(self, time: float, frame: bytes) -> List[UDPDatagram]:
         kind = LINKTYPES[self.linktype]
         try:
             if kind == "ETHERNET":
@@ -132,7 +132,7 @@ class FrameDecoder:
             state = self._fragments[key] = _Reassembly()
         return state
 
-    def _ipv4(self, time: float, ip: bytes) -> List[UdpDatagram]:
+    def _ipv4(self, time: float, ip: bytes) -> List[UDPDatagram]:
         header = (ip[0] & 0x0F) * 4
         total = struct.unpack_from("!H", ip, 2)[0] or len(ip)  # 0 with TSO captures
         ident, flags_offset = struct.unpack_from("!HH", ip, 4)
@@ -153,7 +153,7 @@ class FrameDecoder:
             body = whole
         return self._udp(time, source, destination, body)
 
-    def _ipv6(self, time: float, ip: bytes) -> List[UdpDatagram]:
+    def _ipv6(self, time: float, ip: bytes) -> List[UDPDatagram]:
         payload_length = struct.unpack_from("!H", ip, 4)[0]
         next_header = ip[6]
         source = str(ipaddress.IPv6Address(ip[8:24]))
@@ -181,9 +181,9 @@ class FrameDecoder:
         return self._udp(time, source, destination, body)
 
     @staticmethod
-    def _udp(time: float, source: str, destination: str, body: bytes) -> List[UdpDatagram]:
+    def _udp(time: float, source: str, destination: str, body: bytes) -> List[UDPDatagram]:
         if len(body) < 8:
             return []
         sport, dport, length = struct.unpack_from("!HHH", body, 0)
         payload = body[8:length] if 8 <= length <= len(body) else body[8:]
-        return [UdpDatagram(time, (source, sport), (destination, dport), payload)]
+        return [UDPDatagram(time, (source, sport), (destination, dport), payload)]

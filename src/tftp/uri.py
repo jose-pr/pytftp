@@ -18,10 +18,10 @@ from urllib.parse import quote, unquote, urlsplit
 
 from .exceptions import TFTPValueError
 
-__all__ = ["TftpURL", "parse_url", "format_url", "download_url", "upload_url"]
+__all__ = ["TFTPURL", "parse_url", "format_url", "download_url", "upload_url"]
 
 
-class TftpURL(NamedTuple):
+class TFTPURL(NamedTuple):
     host: str
     port: int
     filename: str
@@ -31,7 +31,7 @@ class TftpURL(NamedTuple):
         return format_url(self.host, self.filename, self.port, self.mode)
 
 
-def parse_url(url: str) -> TftpURL:
+def parse_url(url: str) -> TFTPURL:
     """Split a ``tftp://`` URI. Raises :class:`TFTPValueError` for anything else."""
     parts = urlsplit(url)
     if parts.scheme.lower() != "tftp":
@@ -61,7 +61,7 @@ def parse_url(url: str) -> TftpURL:
     if parts.netloc.startswith("[") and "%" in parts.netloc:
         # urlsplit drops an IPv6 zone from .hostname on some versions.
         host = parts.netloc[1 : parts.netloc.index("]")]
-    return TftpURL(host, port, filename, mode)
+    return TFTPURL(host, port, filename, mode)
 
 
 def format_url(host: "HostLike", filename: str, port: int = 69, mode: str = "octet") -> str:

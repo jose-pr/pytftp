@@ -18,7 +18,7 @@ LABEL linux
 """
 
 
-class BootMenu(tftp.FileSystemHandler):
+class BootMenu(tftp.FilesystemBackend):
     def open_read(self, context):
         if context.filename.lstrip("/") == "pxelinux.cfg/default":
             body = (MENU % {"client": context.peer[0]}).encode()

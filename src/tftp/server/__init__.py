@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .core import TFTPServer
-from .handler import AtomicWriter, FileSystemHandler, TFTPHandler, TFTPRequestContext
+from .handler import AtomicWriter, TFTPHandler, TFTPRequestContext
 from .policy import ServerLimits
 from .session import PortRange
 from .stats import Stats
@@ -14,7 +14,6 @@ __all__ = [
     "PortRange",
     "Stats",
     "TFTPHandler",
-    "FileSystemHandler",
     "AtomicWriter",
     "TFTPRequestContext",
 ]

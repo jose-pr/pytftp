@@ -58,9 +58,9 @@ from .exceptions import (
 )
 from .client import MODES, TFTPClient, RemoteStat, download, upload
 from .listing import ListEntry
+from .backends import FilesystemBackend
 from .server import (
     AtomicWriter,
-    FileSystemHandler,
     TFTPHandler,
     PortRange,
     TFTPRequestContext,
@@ -93,7 +93,7 @@ from .options import (
 )
 from .result import TransferResult
 from .transfer import Receiver, Sender
-from .uri import TftpURL, download_url, format_url, parse_url, upload_url
+from .uri import TFTPURL, download_url, format_url, parse_url, upload_url
 
 __all__ = [
     "__version__",
@@ -104,7 +104,7 @@ __all__ = [
     "download",
     "upload",
     "MODES",
-    "TftpURL",
+    "TFTPURL",
     "parse_url",
     "format_url",
     "download_url",
@@ -115,7 +115,7 @@ __all__ = [
     "ServerLimits",
     "PortRange",
     "TFTPHandler",
-    "FileSystemHandler",
+    "FilesystemBackend",
     "AtomicWriter",
     "TFTPRequestContext",
     # Results and errors

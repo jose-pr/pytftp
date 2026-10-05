@@ -75,6 +75,12 @@ Old names are not kept as aliases.
 | `Opcode`, `ErrorCode` | `TFTPOpcode`, `TFTPErrorCode` |
 | `Request`, `Data`, `Ack`, `OptionAck`, `Packet` | `RequestPacket`, `DataPacket`, `AckPacket`, `OptionAckPacket`, `TFTPPacket` |
 | `Error` (the ERROR packet, not an exception) | `ErrorPacket` |
+| `TftpURL`, `TftpPath`, `TftpUriPath` | `TFTPURL`, `TFTPPath`, `TFTPURIPath` |
+| `UdpDatagram` | `UDPDatagram` |
+| `FileSystemHandler` (`tftp.server`) | `FilesystemBackend` (`tftp.backends`; the root still exports it) |
+| `MemoryHandler`, `HttpHandler`, `UpstreamHandler` | `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` |
+| `TftpBackend` (`tftp.path`) | private |
+| entry point `tftp.path.uri:TftpUriPath` | `tftp.path:TFTPURIPath` (the scheme is still `tftp`) |
 
 ### Fixed
 
@@ -97,11 +103,11 @@ Old names are not kept as aliases.
   reported 0 bytes, 0 retransmissions and no missing blocks unless
   `--extract` kept the payloads. They are counted from the sizes and block
   numbers either way.
-- A `TftpPath` bound to an `AsyncTFTPClient` returned wrong results without
+- A `TFTPPath` bound to an `AsyncTFTPClient` returned wrong results without
   raising (`read_bytes()` gave `b""`, `write_bytes()` reported success, and
   nothing was sent: the client's coroutines were never awaited).
-  `AsyncTFTPClient.path()` raises `TypeError`, and `TftpPath`, `TftpUriPath`
-  (through `with_client()` and `TftpBackend`) refuse an asyncio client with
+  `AsyncTFTPClient.path()` raises `TypeError`, and `TFTPPath`, `TFTPURIPath`
+  (through `with_client()` and `with_backend()`) refuse an asyncio client with
   `TypeError`.
 - A server named by a link-local IPv6 address with a zone (`fe80::1%7`) was
   never heard under the default `strict_source=True`: the reply's source was

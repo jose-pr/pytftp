@@ -3,18 +3,18 @@ import io
 import pytest
 
 import tftp
-from tftp.uri import TftpURL, download_url, format_url, parse_url, upload_url
+from tftp.uri import TFTPURL, download_url, format_url, parse_url, upload_url
 
 
 @pytest.mark.parametrize(
     "url,expected",
     [
-        ("tftp://host/file", TftpURL("host", 69, "file")),
-        ("tftp://host/path/to/file.bin", TftpURL("host", 69, "path/to/file.bin")),
-        ("TFTP://Host:6969/f;mode=netascii", TftpURL("host", 6969, "f", "netascii")),
-        ("tftp://[2001:db8::1]:70/boot/x", TftpURL("2001:db8::1", 70, "boot/x")),
-        ("tftp://10.0.0.1/a%20b%2Fc", TftpURL("10.0.0.1", 69, "a b/c")),
-        ("tftp://h/f;MODE=OCTET", TftpURL("h", 69, "f", "octet")),
+        ("tftp://host/file", TFTPURL("host", 69, "file")),
+        ("tftp://host/path/to/file.bin", TFTPURL("host", 69, "path/to/file.bin")),
+        ("TFTP://Host:6969/f;mode=netascii", TFTPURL("host", 6969, "f", "netascii")),
+        ("tftp://[2001:db8::1]:70/boot/x", TFTPURL("2001:db8::1", 70, "boot/x")),
+        ("tftp://10.0.0.1/a%20b%2Fc", TFTPURL("10.0.0.1", 69, "a b/c")),
+        ("tftp://h/f;MODE=OCTET", TFTPURL("h", 69, "f", "octet")),
     ],
 )
 def test_parse(url, expected):
@@ -40,9 +40,9 @@ def test_parse_rejects(url):
 @pytest.mark.parametrize(
     "target",
     [
-        TftpURL("host", 69, "file"),
-        TftpURL("2001:db8::1", 6969, "dir/f g", "netascii"),
-        TftpURL("10.0.0.1", 70, "a;b"),
+        TFTPURL("host", 69, "file"),
+        TFTPURL("2001:db8::1", 6969, "dir/f g", "netascii"),
+        TFTPURL("10.0.0.1", 70, "a;b"),
     ],
 )
 def test_format_roundtrip(target):

@@ -281,10 +281,10 @@ class TFTPClient:
         return self._download(filename, dest, mode, progress)
 
     def path(self, *segments: Any, mode: str = "octet") -> Any:
-        """A :class:`tftp.path.TftpPath` on this server (needs the ``path`` extra)."""
-        from .path import TftpPath
+        """A :class:`tftp.path.TFTPPath` on this server (needs the ``path`` extra)."""
+        from .path import TFTPPath
 
-        return TftpPath(*segments, client=self, mode=mode)
+        return TFTPPath(*segments, client=self, mode=mode)
 
     def get(self, filename: str, *, mode: str = "octet") -> bytes:
         """Fetch ``filename`` and return its contents."""

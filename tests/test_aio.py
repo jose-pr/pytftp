@@ -12,7 +12,7 @@ import pytest
 import tftp
 from conftest import client_for
 from tftp.aio import AsyncTFTPClient, AsyncTFTPServer
-from tftp.backends import HttpHandler, MemoryHandler
+from tftp.backends import HTTPBackend, MemoryBackend
 
 
 def run(coro, loop_factory=None):
@@ -248,7 +248,7 @@ def test_async_server_runs_blocking_handlers_in_the_executor(root):
             # The Pipe's thread-side wake-ups must reach the loop thread.
             assert await async_client(server).get("anything") == b"from-http"
 
-        serve(HttpHandler("http://127.0.0.1:%d" % httpd.server_address[1]), scenario)
+        serve(HTTPBackend("http://127.0.0.1:%d" % httpd.server_address[1]), scenario)
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -263,7 +263,7 @@ def test_async_server_memory_handler_trace_and_results():
         assert await client.get("m.bin") == b"memory"
         await asyncio.sleep(0.05)
 
-    serve(MemoryHandler(writable=True), scenario, on_complete=results.append, trace=events.append)
+    serve(MemoryBackend(writable=True), scenario, on_complete=results.append, trace=events.append)
     assert [r.operation for r in results] == ["write", "read"] and all(r.ok for r in results)
     assert {e.role for e in events} == {"server"} and len({e.session for e in events}) == 2
 
@@ -356,7 +356,7 @@ def test_async_client_hears_a_server_named_by_a_link_local_address_with_its_zone
     link_local, loop_factory, strict
 ):
     async def main():
-        async with AsyncTFTPServer(MemoryHandler({"f": b"link-local"}), link_local, 0, timeout=0.5) as server:
+        async with AsyncTFTPServer(MemoryBackend({"f": b"link-local"}), link_local, 0, timeout=0.5) as server:
             await server.start()
             client = AsyncTFTPClient(
                 link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=strict

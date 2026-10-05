@@ -46,7 +46,7 @@ class TFTPServer(ServerBase):
     """A TFTP server.
 
     :param root_or_handler: a directory to serve (wrapped in
-        :class:`FileSystemHandler` with ``writable``, ``create`` and
+        :class:`FilesystemBackend` with ``writable``, ``create`` and
         ``overwrite``), or a handler object.
     :param host: address to listen on: a string, an ``ipaddress`` address or a
         ``netimps.Host``. ``None`` (the default) or ``"::"`` listens on IPv6

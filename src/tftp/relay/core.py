@@ -11,7 +11,7 @@ application-level one in the RTEMS-proxy style:
 Datagrams cross unchanged, so options and extensions the library does not
 understand still work end to end. To give each side its own block size or
 window instead, terminate both sessions with
-:class:`tftp.backends.UpstreamHandler`.
+:class:`tftp.backends.UpstreamBackend`.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Transparent TFTP relay with pluggable routing.
 
 See :class:`TFTPRelay`. For a proxy that terminates both sessions (each side
-with its own options) use :class:`tftp.backends.UpstreamHandler` with a
+with its own options) use :class:`tftp.backends.UpstreamBackend` with a
 ``TFTPServer`` instead.
 """
 

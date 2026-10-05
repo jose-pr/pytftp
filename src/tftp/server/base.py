@@ -23,7 +23,7 @@ from ..options import Negotiated, ServerOptions
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode, encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Transfer
-from .handler import FileSystemHandler, TFTPRequestContext
+from .handler import TFTPRequestContext
 from .listener import Arrival, Listener
 from .policy import ServerLimits
 from .session import PortRange, Session
@@ -68,7 +68,9 @@ class ServerBase:
         interface: Any = None,
     ) -> None:
         if isinstance(root_or_handler, (str, os.PathLike)):
-            handler: Any = FileSystemHandler(
+            from ..backends.filesystem import FilesystemBackend
+
+            handler: Any = FilesystemBackend(
                 root_or_handler, writable=writable, create=create, overwrite=overwrite
             )
         else:

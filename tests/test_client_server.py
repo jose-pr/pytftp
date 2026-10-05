@@ -229,7 +229,7 @@ def test_failed_upload_leaves_nothing_behind(root, make_server):
 
 
 def test_max_upload(root, make_server):
-    handler = tftp.FileSystemHandler(root, writable=True, max_upload=1000)
+    handler = tftp.FilesystemBackend(root, writable=True, max_upload=1000)
     server = make_server(handler)
     with pytest.raises(tftp.RemoteError) as info:
         client_for(server).put("big-up.bin", os.urandom(2000))

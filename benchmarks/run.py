@@ -37,7 +37,7 @@ CASES = [
 ]
 
 
-class MemoryHandler:
+class PayloadHandler:
     def __init__(self, payload: bytes) -> None:
         self.payload = payload
 
@@ -49,7 +49,7 @@ class MemoryHandler:
 
 
 def serve(payload: bytes, host: str, ports) -> None:
-    with tftp.TFTPServer(MemoryHandler(payload), host, 0, writable=True) as server:
+    with tftp.TFTPServer(PayloadHandler(payload), host, 0, writable=True) as server:
         ports.put(server.server_address[1])
         server.serve_forever()
 

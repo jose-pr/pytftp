@@ -145,19 +145,19 @@ class Serve(Traced):
         if (self.http or self.upstream) and (self.per_client or self.ignore_case):
             raise ValueError("--per-client and --ignore-case serve a directory")
         if self.http:
-            from ..backends import HttpHandler
+            from ..backends import HTTPBackend
 
-            return HttpHandler(self.http, writable=self.write)
+            return HTTPBackend(self.http, writable=self.write)
         if self.upstream:
-            from ..backends import UpstreamHandler
+            from ..backends import UpstreamBackend
 
-            return UpstreamHandler(self.upstream, writable=self.write)
+            return UpstreamBackend(self.upstream, writable=self.write)
         if not _os.path.isdir(self.root):
             raise ValueError("not a directory: %s" % self.root)
-        from ..server import FileSystemHandler
+        from ..backends import FilesystemBackend
         from .handlers import CaseInsensitive, PerClient
 
-        kind = CaseInsensitive if self.ignore_case else FileSystemHandler
+        kind = CaseInsensitive if self.ignore_case else FilesystemBackend
 
         def make(directory: str) -> _ty.Any:
             return kind(directory, writable=self.write, create=not self.no_create, overwrite=self.overwrite)

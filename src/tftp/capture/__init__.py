@@ -19,7 +19,7 @@ from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union
 from .events import PacketEvent, new_session_id, summarize
 from .filters import FILTER_KEYS, CaptureFilterError, compile_filter
 from .flows import CapturedTransfer, FlowTracker
-from .frames import LINKTYPES, FrameDecoder, UdpDatagram
+from .frames import LINKTYPES, FrameDecoder, UDPDatagram
 from .live import live_capture_supported, sniff
 from .pcap import CaptureFormatError, PcapWriter, read_datagrams, read_frames
 
@@ -32,7 +32,7 @@ __all__ = [
     "FILTER_KEYS",
     "CapturedTransfer",
     "FlowTracker",
-    "UdpDatagram",
+    "UDPDatagram",
     "FrameDecoder",
     "LINKTYPES",
     "read_frames",
@@ -54,7 +54,7 @@ class Analysis(NamedTuple):
 
 
 def analyze(
-    source: Union[str, "os.PathLike[str]", BinaryIO, Iterable[UdpDatagram]],
+    source: Union[str, "os.PathLike[str]", BinaryIO, Iterable[UDPDatagram]],
     *,
     ports: Iterable[int] = (69,),
     filter: Optional[str] = None,

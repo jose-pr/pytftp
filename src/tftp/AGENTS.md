@@ -118,7 +118,7 @@ Methods (each returns a `TransferResult` unless noted):
   when the name is a file (the transfer is abandoned at once);
   `FileNotFound` when it does not exist — which is also what a server
   without listing support answers for a directory.
-- **`path(*segments, mode="octet") -> TftpPath`** — see Paths (needs the
+- **`path(*segments, mode="octet") -> TFTPPath`** — see Paths (needs the
   `path` extra).
 - `mode` is `"octet"` or `"netascii"`; `"binary"`/`"ascii"` are aliases. Any
   other value raises `ValueError`.
@@ -142,7 +142,7 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 
 **`TFTPServer(root_or_handler, host=None, port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None, interface=None)`**
 
-- `root_or_handler` — a directory (wrapped in `FileSystemHandler` with
+- `root_or_handler` — a directory (wrapped in `FilesystemBackend` with
   `writable`, `create`, `overwrite`) or any handler object (see below).
 - `host` — `None` (default) or `"::"` listens on IPv6 **and IPv4** with a dual-stack
   socket, falling back to `"0.0.0.0"` on a host without IPv6. `"0.0.0.0"` is
@@ -174,7 +174,7 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 - `open_in_thread`, `workers` — call the handler's `open_read`/`open_write`
   in a pool of `workers` threads so a handler that blocks (HTTP, an upstream
   server) never stalls other transfers. `None` decides per handler: one
-  with `_tftp_fast_open_ = True` (`FileSystemHandler`, `MemoryHandler`)
+  with `_tftp_fast_open_ = True` (`FilesystemBackend`, `MemoryBackend`)
   opens inline on the loop, anything else in a worker. A retransmitted
   request is still recognised while its open is pending.
 - `interface` — listen on one network adapter: a name (`"eth0"`), a
@@ -353,7 +353,7 @@ and the server allows it); shortcuts `filename`, `mode`, `options`;
 `with_filename(name)` — a copy for a request naming `name`, everything else
 carried over.
 
-**`FileSystemHandler(root, *, writable=False, create=True, overwrite=False, backslash=True, max_upload=None)`**
+**`FilesystemBackend(root, *, writable=False, create=True, overwrite=False, backslash=True, max_upload=None)`** — in `tftp.backends`, and exported from the root
 
 - Serves files under `root` (which must exist). Leading `/` is stripped, so
   `/boot/x` is `root/boot/x`. With `backslash`, `\` is a separator too (Windows
@@ -411,8 +411,8 @@ close()`. Handlers:
 
 - `open_read`/`open_write` may be `async def` (awaited on the loop), or
   synchronous: those marked `_tftp_fast_open_` (file, memory) run inline,
-  others in `executor` (default: the loop's) — so `HttpHandler` and
-  `UpstreamHandler` work unchanged (their `Pipe` wake-ups are thread-safe).
+  others in `executor` (default: the loop's) — so `HTTPBackend` and
+  `UpstreamBackend` work unchanged (their `Pipe` wake-ups are thread-safe).
 - The returned stream may be an async reader/iterable (RRQ) or async writer
   (WRQ); a writer is closed after the last block, and the final ACK waits
   until everything is written.
@@ -434,17 +434,17 @@ objects they take.
 `pip install tftp[path]` adds `pathlib-next[uri]`. Importing `tftp` never
 loads it.
 
-**`TftpPath(*segments, client, mode="octet")`** — a `pathlib_next.Path`
+**`TFTPPath(*segments, client, mode="octet")`** — a `pathlib_next.Path`
 bound to a `TFTPClient` (`client.path("boot", "x")`). Joined like a
 `PurePosixPath` (`\` counts as `/`); the path text is the filename sent,
-so `/boot/x` and `boot/x` stay distinct. Joining onto a `TftpPath` keeps its
+so `/boot/x` and `boot/x` stay distinct. Joining onto a `TFTPPath` keeps its
 client; `with_client()`, `with_mode()`; `client`, `transfer_mode`. Equality
 and hashing include the server (host, port). `as_uri()` is the `tftp://`
 URL. `relative_to()` works on the path text. A path is synchronous: binding
-it to an `AsyncTFTPClient` (`TftpPath(..., client=)`, `with_client()`) raises
+it to an `AsyncTFTPClient` (`TFTPPath(..., client=)`, `with_client()`) raises
 `TypeError`, and so does `AsyncTFTPClient.path()`.
 
-**`TftpUriPath`** — the `tftp://host[:port]/path[;mode=netascii]` scheme
+**`TFTPURIPath`** — the `tftp://host[:port]/path[;mode=netascii]` scheme
 for `pathlib_next.uri.UriPath`, registered through the
 `pathlib_next.schemes` entry point, so `UriPath("tftp://...")` returns one
 without importing `tftp`. `filename`, `transfer_mode`;
@@ -479,16 +479,16 @@ Both support what TFTP can do, plus listing against a server speaking
 
 ## Backends (`tftp.backends`)
 
-- **`MemoryHandler(files=None, *, writable=False, overwrite=True, max_upload=None)`**
+- **`MemoryBackend(files=None, *, writable=False, overwrite=True, max_upload=None)`**
   — serves `files` (name → bytes; names normalised so `/a\\b` is `a/b`);
   uploads replace an entry only when complete. Thread-safe `files` updates.
-- **`HttpHandler(base_url=None, *, url_for=None, writable=False, headers=None, timeout=10.0, buffer=1 MiB, opener=None)`**
+- **`HTTPBackend(base_url=None, *, url_for=None, writable=False, headers=None, timeout=10.0, buffer=1 MiB, opener=None)`**
   — TFTP-to-HTTP(S) gateway on `urllib`: GET `base_url + quote(name)`
   (or `url_for(context)`), streamed; `Content-Length` answers `tsize`;
   WRQ → `PUT` (chunked without `tsize`) when `writable`; the final ACK
   waits for the PUT's response. HTTP 404/410 → ERROR 1, 401/403 → 2,
   409 → 6, 413/507 → 3, other → 0. `..` in a name → ERROR 2.
-- **`UpstreamHandler(upstream, *, client_options=None, buffer=1 MiB, stall_timeout=30.0, writable=False)`**
+- **`UpstreamBackend(upstream, *, client_options=None, buffer=1 MiB, stall_timeout=30.0, writable=False)`**
   — terminating proxy: `upstream` is `"host"`, `"host:port"`, an address
   object or `netimps.Host`, `(host, port)`, or `upstream(context)` returning
   one. Each side
@@ -517,7 +517,7 @@ datagrams then cross unchanged between `client <-> relay(client-side TID)` and
 `relay(upstream-side TID) <-> upstream`, so options and extensions this
 library does not know work end to end. Each side negotiates nothing with the
 relay — the client sees the upstream's OACK. For different settings per side
-use `UpstreamHandler` (a terminating proxy) instead.
+use `UpstreamBackend` (a terminating proxy) instead.
 
 - `interface` — listen on one adapter, as for `TFTPServer`.
 - `port_range` — as for `TFTPServer`, for both sockets of each relayed transfer
@@ -589,7 +589,7 @@ RAW, IPv4, IPv6, Linux SLL/SLL2, BSD NULL/LOOP. IPv4 and IPv6 fragments are
 reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
 
 - **`read_frames(source) -> Iterator[(time, linktype, frame)]`**,
-  **`read_datagrams(source) -> Iterator[UdpDatagram(time, source, destination, payload)]`**
+  **`read_datagrams(source) -> Iterator[UDPDatagram(time, source, destination, payload)]`**
   — `CaptureFormatError` (a `TFTPValueError`) for anything that is not a capture.
 - **`FlowTracker(ports=(69,), keep_payloads=True)`** — `feed(datagram) ->
   PacketEvent | None` (role `"capture"`, direction `"seen"`; `None` for UDP
@@ -611,7 +611,7 @@ reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
   `to_dict()`.
 - **`analyze(source, *, ports=(69,), filter=None, keep_payloads=True) -> Analysis(events, transfers)`**
   — a whole capture (path, stream, or datagrams) at once.
-- **`sniff(interface=None, *, stop=None) -> Iterator[UdpDatagram]`** — live,
+- **`sniff(interface=None, *, stop=None) -> Iterator[UDPDatagram]`** — live,
   Linux only (`AF_PACKET`, needs `CAP_NET_RAW`); `live_capture_supported()`.
   Elsewhere pipe `tcpdump`/`dumpcap -w -` into `read_datagrams`.
 
@@ -703,13 +703,13 @@ relay forwards unknown options untouched), `DataPacket(block, data)`, `AckPacket
 
 ## URIs (RFC 3617)
 
-- **`parse_url(url) -> TftpURL(host, port, filename, mode)`** — the file name
+- **`parse_url(url) -> TFTPURL(host, port, filename, mode)`** — the file name
   is the percent-decoded path after the authority's `/`; `;mode=netascii`
   selects the mode (default `octet`); the port defaults to 69. Anything else
   (another scheme, no host or file, an unknown parameter, `mode=mail`) raises
   `TFTPValueError`.
 - **`format_url(host, filename, port=69, mode="octet")`** — the inverse
-  (`str(TftpURL)` too); `host` may be an address or interface object or a
+  (`str(TFTPURL)` too); `host` may be an address or interface object or a
   `netimps.Host`; IPv6 hosts are bracketed. `port` must be an `int` (`None`
   omits it): a `str` or `bool` raises `TypeError`.
 - **`download_url(url, dest, *, progress=None, **client_options)`**,
@@ -781,7 +781,7 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
 - `--interface NIC` (serve, relay) listens on that adapter's IPv4 address
   (`-l ::` for its IPv6 one).
 - `serve --listing` allows `x-list`/`x-mtime` (with `--compat` too), which
-  `pytftp ls` and `TftpPath.iterdir()` need. `--port-range` pins transfer
+  `pytftp ls` and `TFTPPath.iterdir()` need. `--port-range` pins transfer
   ports. Directory serving only: `--per-client` serves `ROOT/<client
   address>/` when it exists (IPv6 `:` written `-`), else `ROOT`;
   `--ignore-case` finds names whatever their case (the exact name wins).

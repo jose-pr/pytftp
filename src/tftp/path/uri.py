@@ -1,8 +1,8 @@
-"""``TftpUriPath``: the ``tftp://`` scheme for pathlib_next's ``UriPath``.
+"""``TFTPURIPath``: the ``tftp://`` scheme for pathlib_next's ``UriPath``.
 
 Registered both by class definition and through the ``pathlib_next.schemes``
 entry point, so ``pathlib_next.uri.UriPath("tftp://host/boot/x")`` returns a
-``TftpUriPath`` without importing ``tftp`` first, and ``copy()``/``move()``
+``TFTPURIPath`` without importing ``tftp`` first, and ``copy()``/``move()``
 cross between ``tftp:``, ``file:``, ``http:``, ``s3:``...
 """
 
@@ -15,15 +15,15 @@ from pathlib_next.uri import UriPath
 from ..client import TFTPClient
 from .local import check_client, tftp_open, tftp_scandir, tftp_stat
 
-__all__ = ["TftpUriPath", "TftpBackend"]
+__all__ = ["TFTPURIPath"]
 
 
-class TftpBackend:
-    """Per-endpoint state of a ``TftpUriPath``: the :class:`TFTPClient` settings to use.
+class _TFTPBackend:
+    """Per-endpoint state of a ``TFTPURIPath``: the :class:`TFTPClient` settings to use.
 
     Created from the URI's host and port with default settings, or supplied
     with ``path.with_options(blksize=8192, windowsize=16)`` /
-    ``path.with_backend(TftpBackend(client))``.
+    ``path.with_backend(_TFTPBackend(client))``.
     """
 
     __slots__ = ("client", "__weakref__")
@@ -32,12 +32,12 @@ class TftpBackend:
         self.client = check_client(client)
 
 
-class TftpUriPath(UriPath):
+class TFTPURIPath(UriPath):
     """A file named by a ``tftp://host[:port]/path[;mode=netascii]`` URI (RFC 3617).
 
     The filename sent is the path after the authority's ``/``; a
     ``;mode=netascii`` suffix on the last segment selects the mode. Same
-    operations as :class:`TftpPath`: whole-file reads and writes, ``stat()``
+    operations as :class:`TFTPPath`: whole-file reads and writes, ``stat()``
     by probe, ``exists()``, and listing against a server speaking ``x-list``;
     no deleting or renaming.
     """
@@ -45,17 +45,17 @@ class TftpUriPath(UriPath):
     __SCHEMES = ("tftp",)
     __slots__ = ()
 
-    def _initbackend(self) -> TftpBackend:
+    def _initbackend(self) -> _TFTPBackend:
         source = self.source
-        return TftpBackend(TFTPClient(source.host, source.port or 69))
+        return _TFTPBackend(TFTPClient(source.host, source.port or 69))
 
-    def with_options(self, **client_options: Any) -> "TftpUriPath":
+    def with_options(self, **client_options: Any) -> "TFTPURIPath":
         """This path with a ``TFTPClient`` built from ``client_options`` (blksize, windowsize...)."""
         source = self.source
-        return self.with_backend(TftpBackend(TFTPClient(source.host, source.port or 69, **client_options)))
+        return self.with_backend(_TFTPBackend(TFTPClient(source.host, source.port or 69, **client_options)))
 
-    def with_client(self, client: TFTPClient) -> "TftpUriPath":
-        return self.with_backend(TftpBackend(client))
+    def with_client(self, client: TFTPClient) -> "TFTPURIPath":
+        return self.with_backend(_TFTPBackend(client))
 
     def _target(self) -> Tuple[str, str]:
         """``(filename, transfer mode)`` from the URI path."""

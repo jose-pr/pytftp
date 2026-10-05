@@ -10,7 +10,7 @@ import pytest
 
 import tftp
 from conftest import client_for
-from tftp.backends import UpstreamHandler
+from tftp.backends import UpstreamBackend
 from tftp.relay import TFTPRelay, Upstream, by_interface, by_subnet, upstream
 
 LOOPBACK = ipaddress.ip_address("127.0.0.1")
@@ -94,7 +94,7 @@ def test_relay_and_proxy_to_typed_upstreams(root, make_server):
         assert client_for(relay).get("one.bin") == b"x"
     finally:
         relay.close()
-    proxy = make_server(UpstreamHandler((netimps.Host("127.0.0.1"), port)))
+    proxy = make_server(UpstreamBackend((netimps.Host("127.0.0.1"), port)))
     assert client_for(proxy).get("one.bin") == b"x"
 
 

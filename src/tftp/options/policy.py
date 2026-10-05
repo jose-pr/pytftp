@@ -16,7 +16,7 @@ STANDARD_OPTIONS: FrozenSet[str] = DEFAULT_REGISTRY.standard()
 EXTENSION_OPTIONS: FrozenSet[str] = frozenset(
     {"blksize2", "utimeout", "rollover", "cookie", "mstfwindow", "x-list", "x-mtime"}
 )
-#: pytftp's listing extensions: a server allowing these serves ``TftpPath.iterdir()``.
+#: pytftp's listing extensions: a server allowing these serves ``TFTPPath.iterdir()``.
 LISTING_OPTIONS: FrozenSet[str] = frozenset({"x-list", "x-mtime"})
 #: Everything built in.
 SUPPORTED_OPTIONS: FrozenSet[str] = STANDARD_OPTIONS | EXTENSION_OPTIONS

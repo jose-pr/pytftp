@@ -9,7 +9,7 @@ from typing import Any, Dict, Mapping, Optional
 from ..exceptions import TFTPError
 from ..packet import TFTPErrorCode
 
-__all__ = ["MemoryHandler", "normalize_name"]
+__all__ = ["MemoryBackend", "normalize_name"]
 
 
 def normalize_name(filename: str, backslash: bool = True) -> str:
@@ -18,7 +18,7 @@ def normalize_name(filename: str, backslash: bool = True) -> str:
     return "/".join(part for part in name.split("/") if part and part != ".")
 
 
-class MemoryHandler:
+class MemoryBackend:
     """Serves ``files`` (name -> bytes); uploads land in it when ``writable``.
 
     Names are normalised (:func:`normalize_name`), so ``/boot/x`` and
@@ -72,7 +72,7 @@ class MemoryHandler:
 class _MemoryUpload:
     _tftp_copies_ = True
 
-    def __init__(self, owner: MemoryHandler, name: str) -> None:
+    def __init__(self, owner: MemoryBackend, name: str) -> None:
         self._owner = owner
         self._name = name
         self._buffer = bytearray()

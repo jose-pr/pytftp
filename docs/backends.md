@@ -1,13 +1,13 @@
 # Backends
 
-Besides a directory (`FileSystemHandler`), `tftp.backends` has:
+Besides a directory (`FilesystemBackend`), `tftp.backends` has:
 
 ## Memory
 
 ```python
-from tftp.backends import MemoryHandler
+from tftp.backends import MemoryBackend
 
-files = MemoryHandler({"pxelinux.cfg/default": b"DEFAULT linux\n"}, writable=True)
+files = MemoryBackend({"pxelinux.cfg/default": b"DEFAULT linux\n"}, writable=True)
 tftp.TFTPServer(files).serve_forever()       # uploads land in files.files when complete
 ```
 
@@ -16,9 +16,9 @@ tftp.TFTPServer(files).serve_forever()       # uploads land in files.files when 
 Boot ROMs speak TFTP; images often live behind HTTP.
 
 ```python
-from tftp.backends import HttpHandler
+from tftp.backends import HTTPBackend
 
-tftp.TFTPServer(HttpHandler("https://images.example.com/pxe/")).serve_forever()
+tftp.TFTPServer(HTTPBackend("https://images.example.com/pxe/")).serve_forever()
 ```
 
 `boot/vmlinuz` is fetched from `https://images.example.com/pxe/boot/vmlinuz`
@@ -31,9 +31,9 @@ an `opener` for proxies and TLS settings. Only the standard library is used.
 ## Another TFTP server (terminating proxy)
 
 ```python
-from tftp.backends import UpstreamHandler
+from tftp.backends import UpstreamBackend
 
-proxy = UpstreamHandler("10.0.0.20", client_options={"blksize": 8192, "windowsize": 16})
+proxy = UpstreamBackend("10.0.0.20", client_options={"blksize": 8192, "windowsize": 16})
 tftp.TFTPServer(proxy, options=tftp.LEGACY.server).serve_forever()
 ```
 

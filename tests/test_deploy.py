@@ -104,7 +104,7 @@ def handlers():
 
 def test_remap_rewrites_the_first_matching_rule(root, make_server, handlers):
     rules = [handlers.parse_rule(r"^/?pxelinux/="), handlers.parse_rule(r"\.BIN$=.bin")]
-    server = make_server(handlers.Remap(tftp.FileSystemHandler(root), rules))
+    server = make_server(handlers.Remap(tftp.FilesystemBackend(root), rules))
     client = client_for(server)
     assert client.get("/pxelinux/one.bin") == b"x"
     assert client.get("one.BIN") == b"x"
@@ -117,7 +117,7 @@ def test_remap_rewrites_the_first_matching_rule(root, make_server, handlers):
 def test_per_client_root(root, make_server, handlers):
     (root / "127.0.0.1").mkdir()
     (root / "127.0.0.1" / "one.bin").write_bytes(b"mine")
-    make = lambda d: tftp.FileSystemHandler(d, writable=True)  # noqa: E731
+    make = lambda d: tftp.FilesystemBackend(d, writable=True)  # noqa: E731
     server = make_server(handlers.PerClient(str(root), make))
     assert client_for(server).get("one.bin") == b"mine"
     with pytest.raises(tftp.FileNotFound):
@@ -129,7 +129,7 @@ def test_per_client_root(root, make_server, handlers):
 
 
 def test_per_client_fallback(root, make_server, handlers):
-    make = lambda d: tftp.FileSystemHandler(d)  # noqa: E731
+    make = lambda d: tftp.FilesystemBackend(d)  # noqa: E731
     assert client_for(make_server(handlers.PerClient(str(root), make))).get("one.bin") == b"x"
     with pytest.raises(tftp.FileNotFound):
         client_for(make_server(handlers.PerClient(str(root), make, fallback=False))).get("one.bin")

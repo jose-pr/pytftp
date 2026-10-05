@@ -18,7 +18,7 @@ from ..packet import TFTPErrorCode
 from .memory import normalize_name
 from .pipe import Pipe
 
-__all__ = ["HttpHandler"]
+__all__ = ["HTTPBackend"]
 
 _STATUS_CODES = {
     404: TFTPErrorCode.FILE_NOT_FOUND,
@@ -40,7 +40,7 @@ def _tftp_error(exc: BaseException) -> TFTPError:
     return TFTPError(TFTPErrorCode.NOT_DEFINED, "upstream unreachable")
 
 
-class HttpHandler:
+class HTTPBackend:
     """Serve (and optionally accept, as ``PUT``) files from an HTTP server.
 
     :param base_url: prefix; the normalised filename is appended,

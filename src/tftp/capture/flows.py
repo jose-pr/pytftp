@@ -18,7 +18,7 @@ from ..options import DEFAULT_BLKSIZE
 from ..exceptions import TFTPDecodeError
 from ..packet import TFTPOpcode, decode
 from .events import PacketEvent, new_session_id
-from .frames import UdpDatagram
+from .frames import UDPDatagram
 
 __all__ = ["CapturedTransfer", "FlowTracker"]
 
@@ -200,7 +200,7 @@ class FlowTracker:
         self.transfers: List[CapturedTransfer] = []
         self._by_client: Dict[Endpoint, CapturedTransfer] = {}
 
-    def feed(self, datagram: UdpDatagram) -> Optional[PacketEvent]:
+    def feed(self, datagram: UDPDatagram) -> Optional[PacketEvent]:
         """Account for one datagram; its event if it is TFTP, else ``None``."""
         source, destination = _plain(datagram.source), _plain(datagram.destination)
         if source is not datagram.source or destination is not datagram.destination:
@@ -238,7 +238,7 @@ class FlowTracker:
         self._observe(transfer, datagram)
         return PacketEvent(datagram.time, "seen", destination, source, payload, "capture", transfer.session)
 
-    def _match(self, datagram: UdpDatagram) -> Optional[CapturedTransfer]:
+    def _match(self, datagram: UDPDatagram) -> Optional[CapturedTransfer]:
         source, destination = datagram.source, datagram.destination
         to_client = self._by_client.get(destination)
         if to_client is not None:
@@ -254,7 +254,7 @@ class FlowTracker:
             return from_client
         return None
 
-    def _observe(self, transfer: CapturedTransfer, datagram: UdpDatagram) -> None:
+    def _observe(self, transfer: CapturedTransfer, datagram: UDPDatagram) -> None:
         payload = datagram.payload
         if len(payload) < 4 or payload[0]:
             return
@@ -290,7 +290,7 @@ class FlowTracker:
             except TFTPDecodeError:
                 transfer.error = (0, "", "client" if from_client else "server")
 
-    def feed_all(self, datagrams: Iterable[UdpDatagram]) -> Iterator[PacketEvent]:
+    def feed_all(self, datagrams: Iterable[UDPDatagram]) -> Iterator[PacketEvent]:
         for datagram in datagrams:
             event = self.feed(datagram)
             if event is not None:

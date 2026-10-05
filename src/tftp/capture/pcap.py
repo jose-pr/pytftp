@@ -16,7 +16,7 @@ from typing import IO, Any, BinaryIO, Iterator, List, Optional, Tuple, Union
 
 from ..exceptions import CaptureFormatError
 from .events import PacketEvent
-from .frames import FrameDecoder, UdpDatagram
+from .frames import FrameDecoder, UDPDatagram
 
 __all__ = ["read_frames", "read_datagrams", "PcapWriter"]
 
@@ -129,7 +129,7 @@ def read_frames(source: Union[str, "os.PathLike[str]", BinaryIO]) -> Iterator[Tu
         raise CaptureFormatError("not a pcap or pcapng capture")
 
 
-def read_datagrams(source: Union[str, "os.PathLike[str]", BinaryIO]) -> Iterator[UdpDatagram]:
+def read_datagrams(source: Union[str, "os.PathLike[str]", BinaryIO]) -> Iterator[UDPDatagram]:
     """Every UDP datagram in a capture, IP fragments reassembled."""
     decoders = {}
     for time, linktype, frame in read_frames(source):

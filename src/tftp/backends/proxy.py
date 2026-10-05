@@ -21,7 +21,7 @@ from ..exceptions import RemoteError, TFTPError
 from ..packet import TFTPErrorCode
 from .pipe import Pipe
 
-__all__ = ["UpstreamHandler"]
+__all__ = ["UpstreamBackend"]
 
 Upstream = Union[str, Tuple[str, int]]
 
@@ -61,7 +61,7 @@ def _relayable(exc: BaseException) -> TFTPError:
     return TFTPError(TFTPErrorCode.NOT_DEFINED, "upstream unreachable")
 
 
-class UpstreamHandler:
+class UpstreamBackend:
     """Serve every request from an upstream TFTP server.
 
     :param upstream: ``"host"``, ``"host:port"``, ``("host", port)``, or a

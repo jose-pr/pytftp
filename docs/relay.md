@@ -44,7 +44,7 @@ error).
 
 ## Relay or proxy?
 
-| | `TFTPRelay` | `UpstreamHandler` + `TFTPServer` |
+| | `TFTPRelay` | `UpstreamBackend` + `TFTPServer` |
 | --- | --- | --- |
 | packets | forwarded unchanged | each side is its own transfer |
 | options | client and upstream negotiate directly | each side negotiates its own |

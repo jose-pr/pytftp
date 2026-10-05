@@ -1,5 +1,7 @@
 # `tftp.backends`
 
+::: tftp.backends.filesystem
+
 ::: tftp.backends.memory
 
 ::: tftp.backends.http

@@ -80,7 +80,7 @@ pip install "tftp[cli]"     # plus the pytftp command
 | Extra | Adds | Needed for |
 | --- | --- | --- |
 | `cli` | `duho` | the `pytftp` command and `python -m tftp` |
-| `path` | `pathlib-next[uri]` | `TftpPath`, and `tftp://` URLs in `pathlib_next.uri.UriPath` |
+| `path` | `pathlib-next[uri]` | `TFTPPath`, and `tftp://` URLs in `pathlib_next.uri.UriPath` |
 
 Requires Python 3.9+. The one required dependency, `netimps`, has no
 dependencies of its own.
@@ -122,7 +122,7 @@ Generated content:
 import io
 import tftp
 
-class Menu(tftp.FileSystemHandler):
+class Menu(tftp.FilesystemBackend):
     def open_read(self, context):
         if context.filename == "menu.cfg":
             return io.BytesIO(b"client %s\n" % context.peer[0].encode())
@@ -172,8 +172,8 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | Module | Purpose |
 | --- | --- |
 | `tftp.client` | `TFTPClient`, `download`, `upload` |
-| `tftp.server` | `TFTPServer`, `ServerLimits`, `FileSystemHandler`, `AtomicWriter`, `TFTPRequestContext` |
-| `tftp.backends` | `MemoryHandler`, `HttpHandler`, `UpstreamHandler` (proxy), `Pipe` |
+| `tftp.server` | `TFTPServer`, `ServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
+| `tftp.backends` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` (proxy), `Pipe` |
 | `tftp.relay` | `TFTPRelay` and routing helpers |
 | `tftp.aio` | `AsyncTFTPClient`, `AsyncTFTPServer` |
 | `tftp.capture` | trace events, `PcapWriter`, pcap/pcapng reading, `analyze`, filters |
@@ -181,7 +181,7 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |
 | `tftp.uri` | `tftp://` URLs |
-| `tftp.path` | `TftpPath`, `TftpUriPath` (`path` extra) |
+| `tftp.path` | `TFTPPath`, `TFTPURIPath` (`path` extra) |
 | `tftp.netascii` | streaming netascii translation |
 | `tftp.exceptions` | every exception: `TFTPError`, the typed `RemoteError` subclasses, `TFTPValueError` and its decode, filter and capture-format subclasses |
 | `tftp.cli` | the `pytftp` command (`cli` extra) |
