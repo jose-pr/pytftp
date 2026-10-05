@@ -12,7 +12,7 @@ import pytest
 import tftp
 from conftest import client_for
 from test_engine import Link, neg
-from tftp import ErrorCode, Opcode, decode, encode_ack, encode_data, encode_oack, encode_request
+from tftp import ErrorCode, Opcode, decode, encode_ack, encode_data, encode_error, encode_oack, encode_request
 from tftp.transfer import WouldBlock, as_readinto, as_write
 
 # -- duplicate OACK --------------------------------------------------------
@@ -499,3 +499,209 @@ def test_interface_lookups_reuse_netimps_cache():
     before = netimps.interface_enumerations()
     blksizes = {_mtu_blksize(ipaddress.ip_address("127.0.0.1")) for _ in range(5)}
     assert netimps.interface_enumerations() - before <= 1 and len(blksizes) == 1
+
+
+# -- what a transfer holds, and for how long -------------------------------------------------
+
+
+def test_an_unanswered_oack_holds_no_window_memory():
+    import gc
+    import tracemalloc
+
+    gc.collect()
+
+    big = neg(blksize=65464, windowsize=64, timeout=255.0)
+    tracemalloc.start()
+    try:
+        before = tracemalloc.get_traced_memory()[0]
+        sender = tftp.Sender(
+            lambda packet: None,
+            as_readinto(io.BytesIO(b"x" * 5)),
+            big,
+            5,
+            0.0,
+            oack=encode_oack({"windowsize": 64}),
+        )
+        held = tracemalloc.get_traced_memory()[0] - before
+    finally:
+        tracemalloc.stop()
+    assert held < 64 * 1024, "%d octets held for a request nothing has answered" % held
+    assert sender.deadline is not None
+
+
+def test_a_transfer_holds_the_blocks_it_has_read_not_the_window():
+    import gc
+    import tracemalloc
+
+    gc.collect()
+
+    big = neg(blksize=65464, windowsize=64)
+    sent = []
+    tracemalloc.start()
+    try:
+        before = tracemalloc.get_traced_memory()[0]
+        tftp.Sender(sent.append, as_readinto(io.BytesIO(b"x" * 100)), big, 5, 0.0)
+        held = tracemalloc.get_traced_memory()[0] - before
+    finally:
+        tracemalloc.stop()
+    assert len(sent) == 1
+    assert 65_000 < held < 200_000  # one block, not 64
+
+
+def test_a_finished_transfer_is_not_pinned_by_its_stale_timer_entry(make_server):
+    """The timer heap keeps an entry until its deadline; it must not keep the transfer."""
+    import gc
+    import time
+    import weakref
+
+    class Stream(io.BytesIO):
+        pass
+
+    streams = []
+
+    class Handler:
+        _tftp_fast_open_ = True
+
+        def open_read(self, context):
+            stream = Stream(b"x")
+            streams.append(weakref.ref(stream))
+            return stream
+
+    server = make_server(Handler(), options=tftp.ServerOptions(max_windowsize=64))
+    client = client_for(server, timeout=255, windowsize=64, blksize=1428)
+    assert client.get("f") == b"x"
+    deadline = time.monotonic() + 5
+    while server.active_sessions and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert server.active_sessions == 0 and server._timers  # a stale entry is still queued
+    while time.monotonic() < deadline:  # the loop thread may still be unwinding
+        gc.collect()
+        if streams[0]() is None:
+            break
+        time.sleep(0.01)
+    assert streams[0]() is None
+
+
+def test_the_default_bounds_are_finite():
+    assert tftp.ServerLimits().max_idle == 60.0
+    with pytest.raises(ValueError):
+        tftp.ServerLimits(max_idle=0)
+    assert tftp.ServerLimits(max_idle=None).max_idle is None
+    server = tftp.Server(".", "127.0.0.1", 0)
+    try:
+        assert server.max_sessions == 500
+    finally:
+        server.close()
+
+
+def test_a_silent_peer_ends_the_transfer_at_max_idle_whatever_timeout_it_negotiated():
+    sent = []
+    sender = tftp.Sender(
+        sent.append,
+        as_readinto(io.BytesIO(b"x" * 5000)),
+        neg(timeout=255.0, blksize=512),
+        5,
+        100.0,
+        oack=encode_oack({"timeout": 255}),
+        max_idle=10.0,
+    )
+    assert sender.deadline == 110.0  # not 355
+    sender.on_timeout(110.0)
+    assert sender.done and isinstance(sender.error, tftp.TransferTimeout)
+    assert "no datagram" in sender.error.message
+
+
+def test_a_peer_that_keeps_sending_is_never_idle_however_long_the_transfer_takes():
+    link = Link()
+    sender = tftp.Sender(
+        link.from_sender, as_readinto(io.BytesIO(b"x" * 512 * 40)), neg(timeout=255.0), 5, 0.0, max_idle=10.0
+    )
+    now = 0.0
+    for block in range(1, 40):
+        now += 8.0  # a slow peer: one ACK every 8 s, 312 s in all
+        assert sender.deadline is not None and sender.deadline > now
+        sender.handle(memoryview(encode_ack(block)), 4, now)
+        assert not sender.done, "ended at %.0f s" % now
+    sender.on_timeout(sender.deadline)  # then it goes quiet
+    assert sender.done and isinstance(sender.error, tftp.TransferTimeout)
+
+
+def test_the_receiver_ends_when_the_peer_goes_quiet_and_not_before():
+    receiver = tftp.Receiver(
+        lambda packet: None,
+        as_write(io.BytesIO()),
+        neg(timeout=255.0),
+        5,
+        0.0,
+        reply=encode_ack(0),
+        max_idle=10.0,
+    )
+    data = encode_data(1, b"x" * 512)
+    receiver.handle(memoryview(data), len(data), 6.0)
+    assert receiver.deadline == 16.0
+    receiver.on_timeout(16.0)
+    assert receiver.done and isinstance(receiver.error, tftp.TransferTimeout)
+
+
+def test_time_spent_waiting_on_the_local_source_is_not_idle_time():
+    class Slow:
+        blocked = True
+        reads = 0
+
+        def readinto(self, view):
+            if self.blocked:
+                raise WouldBlock
+            self.reads += 1
+            if self.reads > 1:
+                return 0  # the end of the source
+            view[:3] = b"abc"
+            return 3
+
+    slow = Slow()
+    sender = tftp.Sender(lambda packet: None, as_readinto(slow), neg(timeout=255.0), 5, 0.0, max_idle=10.0)
+    assert sender.stalled
+    slow.blocked = False
+    sender.resume(500.0)  # the source took 500 s; the peer was never asked
+    assert not sender.done
+    assert sender.deadline == 510.0
+
+
+def test_a_request_nothing_follows_up_is_released_after_max_idle(root, make_server):
+    import time
+
+    results = []
+    server = make_server(root, limits=tftp.ServerLimits(max_idle=0.5), timeout=30, on_complete=results.append)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as raw:
+        raw.bind(("127.0.0.1", 0))
+        raw.settimeout(2)
+        options = {"blksize": 8000, "windowsize": 8, "timeout": 255}
+        raw.sendto(encode_request(Opcode.RRQ, "big.bin", options=options), server.server_address)
+        assert decode(raw.recvfrom(70000)[0]).options["timeout"] == "255"
+        deadline = time.monotonic() + 5
+        while server.active_sessions and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert server.active_sessions == 0
+    assert len(results) == 1 and isinstance(results[0].error, tftp.TransferTimeout)
+
+
+def test_a_slow_client_is_not_cut_off_by_max_idle(root, make_server):
+    """Each ACK is inside max_idle of the last; the transfer takes four times as long."""
+    import time
+
+    results = []
+    server = make_server(root, limits=tftp.ServerLimits(max_idle=0.6), timeout=30, on_complete=results.append)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as raw:
+        raw.bind(("127.0.0.1", 0))
+        raw.settimeout(3)
+        raw.sendto(encode_request(Opcode.RRQ, "big.bin", options={"blksize": 8192}), server.server_address)
+        _, tid = raw.recvfrom(70000)
+        raw.sendto(encode_ack(0), tid)
+        started = time.monotonic()
+        for block in range(1, 6):
+            packet, _ = raw.recvfrom(70000)
+            assert decode(packet).block == block
+            time.sleep(0.5)
+            raw.sendto(encode_ack(block), tid)
+        assert time.monotonic() - started > 2.4
+        assert server.active_sessions == 1 and not results
+        raw.sendto(encode_error(0, "done"), tid)

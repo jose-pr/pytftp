@@ -109,6 +109,9 @@ class Transfer:
         times the timeout.
     :param expires: absolute time (driver's clock) by which the transfer must
         finish, or ``None``.
+    :param max_idle: seconds with no datagram from the peer after which the
+        transfer fails, whatever timeout was negotiated; ``None`` is no bound.
+        Time spent waiting on the local source or sink does not count.
 
     :ivar done: the transfer is finished, successfully or not.
     :ivar error: the failure, or ``None``.
@@ -132,6 +135,8 @@ class Transfer:
         "backoff",
         "max_timeout",
         "expires",
+        "max_idle",
+        "_heard",
         "done",
         "error",
         "deadline",
@@ -150,6 +155,7 @@ class Transfer:
         backoff: float = 2.0,
         max_timeout: Optional[float] = None,
         expires: Optional[float] = None,
+        max_idle: Optional[float] = None,
     ) -> None:
         self._send = send
         self.negotiated = negotiated
@@ -166,6 +172,8 @@ class Transfer:
         #: The retransmission wait: doubles on silence, back to ``timeout`` on progress.
         self._timer = Backoff(self.timeout, multiplier=self.backoff, max_delay=self.max_timeout)
         self.expires = expires
+        self.max_idle = max_idle
+        self._heard: Optional[float] = None  # when the peer last sent us a datagram
         self.done = False
         self.error: Optional[TftpError] = None
         self.deadline: Optional[float] = None
@@ -181,6 +189,12 @@ class Transfer:
 
     def _arm(self, now: float) -> None:
         deadline = now + self._timer.delay
+        if self.max_idle is not None:
+            if self._heard is None:
+                self._heard = now
+            idle_at = self._heard + self.max_idle
+            if idle_at < deadline:
+                deadline = idle_at
         if self.expires is not None and deadline > self.expires:
             deadline = self.expires
         self.deadline = deadline
@@ -232,6 +246,11 @@ class Transfer:
         """Account for one timeout; ``True`` (and failed) when it was the last."""
         if self.expires is not None and now >= self.expires:
             self.fail(TransferTimeout("transfer exceeded its time limit"), notify=True)
+            return True
+        if self.max_idle is not None and self._heard is not None and now >= self._heard + self.max_idle:
+            self.fail(
+                TransferTimeout("no datagram from the peer for %g seconds" % self.max_idle), notify=False
+            )
             return True
         timer = self._timer
         if timer.attempt >= self.retries:

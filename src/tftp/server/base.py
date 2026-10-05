@@ -34,8 +34,10 @@ __all__ = ["ServerBase"]
 log = logging.getLogger("tftp.server")
 
 _WINDOWS = sys.platform == "win32"
-#: select() on Windows handles at most 512 sockets.
-WINDOWS_SESSION_CAP = 500
+#: Concurrent transfers by default.
+DEFAULT_MAX_SESSIONS = 500
+#: select() on Windows watches 512 descriptors; the listener and the wake socket take two.
+SELECT_SESSIONS = 510
 
 
 class ServerBase:
@@ -53,7 +55,7 @@ class ServerBase:
         timeout: float = 1.0,
         retries: int = 5,
         options: Optional[ServerOptions] = None,
-        max_sessions: Optional[int] = None,
+        max_sessions: Optional[int] = DEFAULT_MAX_SESSIONS,
         reply_from_request_address: bool = True,
         dally: bool = True,
         on_complete: Optional[Callable[[TransferResult], Any]] = None,
@@ -62,7 +64,6 @@ class ServerBase:
         backoff: float = 2.0,
         max_timeout: Optional[float] = None,
         trace: Optional[Callable[[PacketEvent], Any]] = None,
-        session_cap: Optional[int] = None,
         port_range: Any = None,
         interface: Any = None,
     ) -> None:
@@ -78,8 +79,8 @@ class ServerBase:
         self.timeout = timeout
         self.retries = retries
         self.options = options or ServerOptions()
-        if max_sessions is None:
-            max_sessions = session_cap
+        if max_sessions is None and _WINDOWS:
+            max_sessions = SELECT_SESSIONS  # a selector loop cannot watch more
         self.max_sessions = max_sessions
         self.dally = dally
         self.on_complete = on_complete
@@ -206,6 +207,7 @@ class ServerBase:
             "backoff": self.backoff,
             "max_timeout": self.max_timeout,
             "expires": None if max_duration is None else now + max_duration,
+            "max_idle": self.limits.max_idle,
         }
 
     def _open(self, session: Session) -> Any:
@@ -284,6 +286,10 @@ class ServerBase:
         if session.closed:
             return False
         session.closed = True
+        # A stale timer entry may outlive the session; it must not keep the
+        # transfer, and with it the window ring, alive.
+        session.transfer = None
+        session.stream = None
         if self._sessions.pop(session.key, None) is not None:
             host = session.key[0]
             left = self._per_client.get(host, 1) - 1

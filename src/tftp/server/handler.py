@@ -26,6 +26,9 @@ except ImportError:  # pragma: no cover
 __all__ = ["Handler", "RequestContext", "FileSystemHandler", "AtomicWriter"]
 
 _WINDOWS = sys.platform == "win32"
+#: Read buffer of a served file: an open file costs this much until it ends,
+#: and a request nothing follows up is held open for a while.
+_READ_BUFFER = 16 * 1024
 _RESERVED = frozenset(
     ["CON", "PRN", "AUX", "NUL"] + ["COM%d" % i for i in range(1, 10)] + ["LPT%d" % i for i in range(1, 10)]
 )
@@ -233,7 +236,7 @@ class FileSystemHandler:
             return DirectoryListing(path, self.root)  # type: ignore[return-value]
         if not os.path.isfile(path):
             raise TftpError(ErrorCode.FILE_NOT_FOUND)
-        return open(path, "rb")
+        return open(path, "rb", buffering=_READ_BUFFER)
 
     def open_write(self, context: RequestContext, size: Optional[int]) -> Any:
         if not self.writable:

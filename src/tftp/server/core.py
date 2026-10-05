@@ -29,7 +29,7 @@ from ..options import ServerOptions
 from ..packet import ErrorCode, encode_error
 from ..result import TransferResult
 from ..transfer import Transfer
-from .base import WINDOWS_SESSION_CAP, ServerBase
+from .base import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
 from .policy import ServerLimits
 from .session import Session
 
@@ -40,8 +40,6 @@ log = logging.getLogger("tftp.server")
 _RECV_SIZE = 65536  # one receive buffer, shared by every session
 _DRAIN = 64  # packets read per readiness event before yielding to others
 _WAKE_BYTE = bytes(1)
-#: select() on Windows watches 512 descriptors; the listener and the wake socket take two.
-_SELECT_SESSIONS = 510
 
 
 class Server(ServerBase):
@@ -59,8 +57,9 @@ class Server(ServerBase):
     :param retries: retransmissions of one packet before abandoning a transfer.
     :param options: what the server negotiates (:class:`ServerOptions`).
     :param max_sessions: concurrent transfers; requests beyond it get
-        ERROR 0 "server busy". ``None`` is unlimited, except on Windows,
-        where ``select()`` caps it at 500.
+        ERROR 0 "server busy". The default is 500 on every platform; ``None``
+        is unlimited, except on Windows, where ``select()`` caps it at 510
+        (a larger number there is a ``ValueError``).
     :param reply_from_request_address: answer each request from the address
         it was sent to (pktinfo). When the platform cannot report it, replies
         come from the listening address, or the routing table's choice when
@@ -113,7 +112,7 @@ class Server(ServerBase):
         timeout: float = 1.0,
         retries: int = 5,
         options: Optional[ServerOptions] = None,
-        max_sessions: Optional[int] = None,
+        max_sessions: Optional[int] = DEFAULT_MAX_SESSIONS,
         reply_from_request_address: bool = True,
         dally: bool = True,
         on_complete: Optional[Callable[[TransferResult], Any]] = None,
@@ -127,10 +126,10 @@ class Server(ServerBase):
         port_range: Any = None,
         interface: Any = None,
     ) -> None:
-        if sys.platform == "win32" and max_sessions is not None and max_sessions > _SELECT_SESSIONS:
+        if sys.platform == "win32" and max_sessions is not None and max_sessions > SELECT_SESSIONS:
             raise ValueError(
                 "max_sessions=%d is more than the %d transfers select() can watch on Windows"
-                % (max_sessions, _SELECT_SESSIONS)
+                % (max_sessions, SELECT_SESSIONS)
             )
         super().__init__(
             root_or_handler,
@@ -153,7 +152,6 @@ class Server(ServerBase):
             trace=trace,
             port_range=port_range,
             interface=interface,
-            session_cap=WINDOWS_SESSION_CAP if sys.platform == "win32" else None,
         )
         self._ready: "collections.deque[Session]" = collections.deque()
         self._pending_opens: "collections.deque[Tuple[Session, Any]]" = collections.deque()

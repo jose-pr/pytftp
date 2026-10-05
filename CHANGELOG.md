@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Defaults that bound what a request can hold.** `ServerLimits(max_idle=60.0)`
+  is new: a transfer with no datagram from its peer for 60 seconds ends with
+  `TransferTimeout`, and a `timeout` the client negotiated cannot extend it
+  (pass `max_idle=None` for the old behaviour: a request asking `timeout=255`
+  was held for over two hours). It counts the peer's silence, not the
+  transfer's length. `max_sessions` now defaults to 500 on every platform,
+  where it was unlimited outside Windows (`None` still means unlimited, and on
+  Windows 510, the most `select()` can watch). `pytftp serve --max-sessions`
+  defaults to 500; 0 is unlimited.
 - `TftpError(code, message)` raises `TypeError` for a `code` that is not an
   `int` (so `TftpError("no such file")` is refused instead of taking the text
   as its code) or a `message` that is not text, and `ValueError` for a code
@@ -34,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A request nothing follows up no longer costs the whole negotiated window: a
+  transfer allocates the buffer for a block when it first reads it, where a
+  single 53-octet request asking `blksize=65464 windowsize=64` made the server
+  allocate 4 MiB at once. A served file's read buffer is 16 KiB.
+- A finished transfer is released when it finishes: its timer entry, which
+  stays queued until its deadline, no longer keeps the transfer, its file and
+  its window alive (200 downloads asking `timeout=255` kept 799 MiB
+  referenced, outside every limit).
 - A handler's `TftpError` that could not be encoded as an ERROR (a NUL in
   the message, a code outside 0..65535) ended the synchronous server's thread
   for every client, and left an `AsyncServer` session open for good. Every

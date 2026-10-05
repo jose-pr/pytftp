@@ -48,9 +48,10 @@ class Sender(Transfer):
     ) -> None:
         super().__init__(send, negotiated, retries, **kwargs)
         self._read = read
-        size = 4 + self.blksize
-        self._ring = [bytearray(size) for _ in range(self.windowsize)]
-        self._views = [memoryview(b) for b in self._ring]
+        # Slots are allocated when their block is first read, so a transfer
+        # costs what it has sent, not the window it negotiated.
+        self._ring: list = [None] * self.windowsize
+        self._views: list = [None] * self.windowsize
         self._lens = [0] * self.windowsize
         self._base = 1  # first block not yet acknowledged
         self._next = 1  # next block to transmit in the current window pass
@@ -67,6 +68,9 @@ class Sender(Transfer):
     def _load(self, block: int) -> int:
         slot = block % self.windowsize
         view = self._views[slot]
+        if view is None:
+            buffer = self._ring[slot] = bytearray(4 + self.blksize)
+            view = self._views[slot] = memoryview(buffer)
         _pack_header(view, 0, _DATA, self._wire(block))
         try:
             n = self._read(view[4:])
@@ -121,9 +125,11 @@ class Sender(Transfer):
 
     def resume(self, now: float) -> None:
         if self.stalled and not self.done:
+            self._heard = now  # the wait was on our source, not the peer
             self._pump(now)
 
     def handle(self, packet: memoryview, n: int, now: float) -> None:
+        self._heard = now
         if self.done or n < 2 or packet[0]:
             return
         op = packet[1]

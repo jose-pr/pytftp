@@ -134,6 +134,7 @@ class Receiver(Transfer):
         payload, wire, size, written = self._pending
         self._pending = None
         self.stalled = False
+        self._heard = now  # the wait was on our sink, not the peer
         self._accept(memoryview(payload), wire, size, now, written)
         if self._dropped and not self.done and not self.stalled:
             # The rest of the window was dropped while we stalled: say where
@@ -147,6 +148,7 @@ class Receiver(Transfer):
                 self._ack_last()
 
     def handle(self, packet: memoryview, n: int, now: float) -> None:
+        self._heard = now
         if n < 4 or packet[0]:
             return
         op = packet[1]

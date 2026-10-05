@@ -134,7 +134,7 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 
 ## Server
 
-**`Server(root_or_handler, host=None, port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=None, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None, interface=None)`**
+**`Server(root_or_handler, host=None, port=69, *, writable=False, create=True, overwrite=False, timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True, dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0, max_timeout=None, open_in_thread=None, workers=8, port_range=None, interface=None)`**
 
 - `root_or_handler` — a directory (wrapped in `FileSystemHandler` with
   `writable`, `create`, `overwrite`) or any handler object (see below).
@@ -146,9 +146,10 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
 - `timeout`, `retries` — per transfer, unless the client negotiates `timeout`.
 - `options` — a `ServerOptions` policy.
 - `max_sessions` — concurrent transfers; beyond it a request gets ERROR 0
-  `"server busy"`. `None` is unlimited, **except on Windows, where it defaults
-  to 500** because `select()` handles at most 512 sockets; an explicit value
-  above 510 there is a `ValueError` at construction.
+  `"server busy"`. **The default is 500 on every platform.** `None` is
+  unlimited, except on Windows, where it is 510 because `select()` watches at
+  most 512 sockets; an explicit value above 510 there is a `ValueError` at
+  construction.
 - `reply_from_request_address` — each transfer's socket is bound to the
   address the request was sent to (pktinfo), so a multi-homed host or a VIP
   answers from the address the client used. Where the platform cannot report
@@ -224,12 +225,17 @@ Behaviour worth knowing:
 `range` or a `PortRange`; `len()`, iteration (every port once, from the
 round-robin cursor). `ValueError` outside 1..65535 or with `low > high`.
 
-**`ServerLimits(max_request_size=1024, max_filename_length=512, max_options=16, max_option_length=255, max_sessions_per_client=None, max_duration=None)`**
+**`ServerLimits(max_request_size=1024, max_filename_length=512, max_options=16, max_option_length=255, max_sessions_per_client=None, max_duration=None, max_idle=60.0)`**
 — bounds on untrusted input. A request over a size/name/option limit gets
 ERROR 4 from the listening port; a client over `max_sessions_per_client`
 (counted per address, any port) gets ERROR 0 `"server busy"`.
 `max_duration` ends a transfer that runs longer (ERROR 0 to the peer,
-`TransferTimeout` in the result).
+`TransferTimeout` in the result). **`max_idle`** (seconds, default 60; `None`
+for no bound) ends a transfer that has had no datagram from its peer for that
+long, with `TransferTimeout`, whatever `timeout` the client negotiated: it
+counts the peer's silence, not the transfer's length, and not time the
+handler keeps the server waiting. A transfer holds memory for the blocks it
+has read, not for the window it negotiated, and none of it once it ends.
 
 **`ServerOptions(max_blksize=65464, max_windowsize=64, max_window_bytes=4 MiB, allowed=None, refused=(), fit_mtu=False, registry=None)`**
 — the negotiation policy.
@@ -405,8 +411,8 @@ close()`. Handlers:
 - pktinfo is kept on every loop: the listener is read with netimps'
   `UDPEndpoint.arecv` (`add_reader`, or a readiness thread where the loop
   has none — Windows' Proactor loop).
-- On Windows the default `max_sessions` is 500 (a selector loop's
-  `select()`).
+- `max_sessions` defaults to 500; `None` is 510 on Windows (a selector
+  loop's `select()`).
 
 **`AsyncReaderBridge(source, capacity=1 MiB, size=None)`** /
 **`AsyncWriterBridge(sink, capacity=1 MiB, close_sink=True)`** — the

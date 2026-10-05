@@ -21,6 +21,10 @@ class ServerLimits:
     :param max_sessions_per_client: concurrent transfers from one client
         address (any port); ``None`` is unlimited.
     :param max_duration: seconds one transfer may take; ``None`` is unlimited.
+    :param max_idle: seconds a transfer may go with no datagram from its
+        peer before it ends; a timeout the client negotiated cannot extend
+        it. Time the server spends waiting on its own handler does not count.
+        ``None`` is unbounded.
 
     A request over a limit is answered with ERROR 4 (ERROR 0 "server busy"
     for the per-client cap). Window memory is bounded separately, by
@@ -34,6 +38,7 @@ class ServerLimits:
         "max_option_length",
         "max_sessions_per_client",
         "max_duration",
+        "max_idle",
     )
 
     def __init__(
@@ -44,13 +49,17 @@ class ServerLimits:
         max_option_length: int = 255,
         max_sessions_per_client: Optional[int] = None,
         max_duration: Optional[float] = None,
+        max_idle: Optional[float] = 60.0,
     ) -> None:
+        if max_idle is not None and max_idle <= 0:
+            raise ValueError("max_idle must be positive, or None for no bound")
         self.max_request_size = max_request_size
         self.max_filename_length = max_filename_length
         self.max_options = max_options
         self.max_option_length = max_option_length
         self.max_sessions_per_client = max_sessions_per_client
         self.max_duration = max_duration
+        self.max_idle = max_idle
 
     def check(self, request: Request) -> None:
         """Raise :class:`TftpError` (4) if ``request`` exceeds a limit."""

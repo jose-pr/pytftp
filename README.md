@@ -63,8 +63,9 @@ with tftp.Server("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 - **pathlib** — `client.path("boot/x").read_bytes()`, and `tftp://` URLs in
   [pathlib-next](https://github.com/jose-pr/pathlib-next), so
   `UriPath("tftp://h/x").copy("s3://bucket/x")` just works (optional extra).
-- **Bounded** — limits on requests, sessions per client, window memory and
-  transfer time; counters for metrics.
+- **Bounded** — limits on requests, sessions (500 by default), sessions per
+  client, idle time (60 s by default), window memory and transfer time;
+  counters for metrics.
 - **CLI** — `pytftp get|put|serve|relay|capture` with `--json`, `--trace` and
   `--pcap` (optional extra).
 

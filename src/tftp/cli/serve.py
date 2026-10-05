@@ -99,8 +99,8 @@ class Serve(Traced):
     "Lower blksize to fit the arrival interface's MTU (no IP fragments)"
     ("--fit-mtu",)
 
-    max_sessions: int = 0
-    "Concurrent transfers; 0 is unlimited"
+    max_sessions: int = 500
+    "Concurrent transfers; 0 is unlimited (510 at most on Windows)"
     ("--max-sessions",)
 
     max_per_client: int = 0

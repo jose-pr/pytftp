@@ -17,7 +17,6 @@ import asyncio
 import inspect
 import logging
 import socket
-import sys
 import time
 from typing import TYPE_CHECKING, Any, Optional, Tuple
 
@@ -25,7 +24,7 @@ if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
 from ..packet import ErrorCode, encode_error
-from ..server.base import WINDOWS_SESSION_CAP, ServerBase
+from ..server.base import ServerBase
 from ..server.listener import _RECV_SIZE, Arrival
 from ..server.session import Session
 from .bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
@@ -75,8 +74,6 @@ class AsyncServer(ServerBase):
         executor: Any = None,
         **kwargs: Any,
     ) -> None:
-        if sys.platform == "win32":
-            kwargs.setdefault("session_cap", WINDOWS_SESSION_CAP)  # a selector loop's select()
         super().__init__(root_or_handler, host, port, **kwargs)
         self.executor = executor
         self._loop: Optional[asyncio.AbstractEventLoop] = None
