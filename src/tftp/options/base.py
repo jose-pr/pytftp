@@ -16,8 +16,8 @@ __all__ = [
     "MAX_UTIMEOUT",
     "Negotiated",
     "OptionHandler",
-    "ServerContext",
-    "ClientContext",
+    "ServerOptionContext",
+    "ClientOptionContext",
     "refuse",
     "parse_int",
 ]
@@ -82,13 +82,13 @@ def refuse(message: str) -> TFTPProtocolError:
     return TFTPProtocolError(message, TFTPErrorCode.OPTION_REFUSED)
 
 
-class ServerContext:
+class ServerOptionContext:
     """What a server-side option handler sees while negotiating one request.
 
     :ivar result: the :class:`Negotiated` being built; handlers set fields on it.
     :ivar requested: every requested option (lower-case names).
     :ivar acked: what has been acknowledged so far, in registry order.
-    :ivar policy: the server's :class:`ServerOptions`.
+    :ivar policy: the server's :class:`TFTPServerOptions`.
     :ivar is_read: RRQ (``True``) or WRQ.
     :ivar size: the file size for an RRQ (``tsize``), or ``None``.
     :ivar mtu: link MTU of the interface the request arrived on, when known.
@@ -133,7 +133,7 @@ class ServerContext:
         return limit
 
 
-class ClientContext:
+class ClientOptionContext:
     """What a client-side option handler sees while checking an OACK."""
 
     __slots__ = ("result", "requested", "is_read")
@@ -155,7 +155,7 @@ class OptionHandler:
     name: str = ""
     standard: bool = False
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         """Server side: the value to acknowledge, or ``None`` to leave it out.
 
         Leaving an option out is how RFC 2347 refuses it; the transfer then
@@ -163,7 +163,7 @@ class OptionHandler:
         """
         return None
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         """Client side: check the server's answer and apply it.
 
         Raise :func:`refuse` for a value the RFC does not allow; the client

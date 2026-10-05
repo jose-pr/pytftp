@@ -25,12 +25,12 @@ if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
 from ..capture.events import PacketEvent
-from ..options import ServerOptions
+from ..options import TFTPServerOptions
 from ..packet import TFTPErrorCode, encode_error
 from ..result import TransferResult
 from ..transfer import Transfer
 from .base import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
-from .policy import ServerLimits
+from .policy import TFTPServerLimits
 from .session import Session
 
 __all__ = ["TFTPServer"]
@@ -55,7 +55,7 @@ class TFTPServer(ServerBase):
     :param port: UDP port; ``0`` picks a free one (see :attr:`server_address`).
     :param timeout: retransmission timeout, unless a client negotiates its own.
     :param retries: retransmissions of one packet before abandoning a transfer.
-    :param options: what the server negotiates (:class:`ServerOptions`).
+    :param options: what the server negotiates (:class:`TFTPServerOptions`).
     :param max_sessions: concurrent transfers; requests beyond it get
         ERROR 0 "server busy". The default is 500 on every platform; ``None``
         is unlimited, except on Windows, where ``select()`` caps it at 510
@@ -70,7 +70,7 @@ class TFTPServer(ServerBase):
     :param on_complete: called with a :class:`TransferResult` after every
         transfer, failed ones included (``result.error`` is set).
     :param limits: request, per-client and duration bounds
-        (:class:`ServerLimits`).
+        (:class:`TFTPServerLimits`).
     :param ignore_broadcast: silently drop requests sent to a broadcast or
         multicast address (RFC 1123 4.2.3.4). Needs pktinfo to see the
         destination; without it every request looks unicast.
@@ -111,12 +111,12 @@ class TFTPServer(ServerBase):
         overwrite: bool = False,
         timeout: float = 1.0,
         retries: int = 5,
-        options: Optional[ServerOptions] = None,
+        options: Optional[TFTPServerOptions] = None,
         max_sessions: Optional[int] = DEFAULT_MAX_SESSIONS,
         reply_from_request_address: bool = True,
         dally: bool = True,
         on_complete: Optional[Callable[[TransferResult], Any]] = None,
-        limits: Optional[ServerLimits] = None,
+        limits: Optional[TFTPServerLimits] = None,
         ignore_broadcast: bool = True,
         backoff: float = 2.0,
         max_timeout: Optional[float] = None,
@@ -206,10 +206,10 @@ class TFTPServer(ServerBase):
         finally:
             self._running.clear()
             for session in list(self._sessions.values()):
-                if session.transfer is not None and not session.transfer.done:
+                if session.transfer is not None and not session.transfer.is_done:
                     session.transfer.abort("server shutting down")
                 if session.transfer is not None and session.stream is not None:
-                    session.close_stream(session.transfer.error is None and session.transfer.done)
+                    session.close_stream(session.transfer.error is None and session.transfer.is_done)
                 self._release(session)
             while self._pending_opens:
                 session, outcome = self._pending_opens.popleft()
@@ -279,11 +279,11 @@ class TFTPServer(ServerBase):
         while self._ready:
             session = self._ready.popleft()
             transfer = session.transfer
-            if session.closed or transfer is None or transfer.done:
+            if session.closed or transfer is None or transfer.is_done:
                 continue
             try:
                 transfer.resume(now)
-                if transfer.done:
+                if transfer.is_done:
                     self._done(session, now)
                 else:
                     self._schedule(session)
@@ -339,7 +339,7 @@ class TFTPServer(ServerBase):
             assert transfer is not None
             try:
                 transfer.on_timeout(now)
-                if transfer.done:
+                if transfer.is_done:
                     self._done(session, now)
                 else:
                     self._schedule(session)
@@ -377,9 +377,9 @@ class TFTPServer(ServerBase):
                 except OSError:
                     pass
                 continue
-            was_done = transfer.done
+            was_done = transfer.is_done
             transfer.handle(view, n, now)
-            if transfer.done and not was_done:
+            if transfer.is_done and not was_done:
                 self._done(session, now)
                 if session.closed:
                     return
@@ -426,7 +426,7 @@ class TFTPServer(ServerBase):
         session.transfer = outcome
         self.stats.add("started")
         self._selector.register(session.sock, selectors.EVENT_READ, session)
-        if outcome.done:  # e.g. the first read failed
+        if outcome.is_done:  # e.g. the first read failed
             self._done(session, now)
         else:
             self._schedule(session)

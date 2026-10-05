@@ -13,9 +13,9 @@ import logging as _logging
 import os as _os
 import typing as _ty
 
-from ..options import LISTING_OPTIONS, PROFILES, STANDARD_OPTIONS, ServerOptions
+from ..options import LISTING_OPTIONS, PROFILES, STANDARD_OPTIONS, TFTPServerOptions
 from ..result import TransferResult
-from ..server import TFTPServer, ServerLimits
+from ..server import TFTPServer, TFTPServerLimits
 from .common import (
     PROFILE_NAMES,
     Choice,
@@ -165,13 +165,13 @@ class Serve(Traced):
         # Always a handler object: --remap wraps it.
         return PerClient(self.root, make) if self.per_client else make(self.root)
 
-    def _options(self) -> ServerOptions:
+    def _options(self) -> TFTPServerOptions:
         listing = LISTING_OPTIONS if self.listing else frozenset()
         if self.compat:
             profile = PROFILES[self.compat].server
             if not listing:
                 return profile
-            return ServerOptions(
+            return TFTPServerOptions(
                 max_blksize=profile.max_blksize,
                 max_windowsize=profile.max_windowsize,
                 max_window_bytes=profile.max_window_bytes,
@@ -180,7 +180,7 @@ class Serve(Traced):
                 fit_mtu=profile.fit_mtu,
                 registry=profile.registry,
             )
-        return ServerOptions(
+        return TFTPServerOptions(
             max_blksize=self.max_blksize,
             max_windowsize=self.max_windowsize,
             allowed=STANDARD_OPTIONS | set(self.allow) | listing,
@@ -211,7 +211,7 @@ class Serve(Traced):
                 retries=self.retries,
                 options=options,
                 max_sessions=self.max_sessions or None,
-                limits=ServerLimits(max_sessions_per_client=self.max_per_client or None),
+                limits=TFTPServerLimits(max_sessions_per_client=self.max_per_client or None),
                 on_complete=on_complete,
                 trace=self._tracer(),
                 port_range=ports,
@@ -227,8 +227,8 @@ class Serve(Traced):
             source,
             address[0],
             address[1],
-            " (dual-stack)" if server.dual_stack else "",
-            "" if server.supports_pktinfo else " (replies from the routing table's source address)",
+            " (dual-stack)" if server.is_dual_stack else "",
+            "" if server.has_pktinfo else " (replies from the routing table's source address)",
         )
         try:
             with shutdown_on_signal(server):

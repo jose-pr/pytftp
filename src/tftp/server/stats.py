@@ -5,10 +5,10 @@ from __future__ import annotations
 import threading
 from typing import Dict
 
-__all__ = ["Stats"]
+__all__ = ["TFTPStats"]
 
 
-class Stats:
+class TFTPStats:
     """Monotonic counters, safe to read from any thread.
 
     Server counters: ``requests`` (RRQ/WRQ seen on the listening port),
@@ -38,7 +38,7 @@ class Stats:
             return dict(self._values)
 
     def __repr__(self) -> str:
-        return "Stats(%s)" % ", ".join("%s=%d" % item for item in self.snapshot().items())
+        return "TFTPStats(%s)" % ", ".join("%s=%d" % item for item in self.snapshot().items())
 
 
 SERVER_COUNTERS = (

@@ -153,7 +153,7 @@ def ipxe(workdir: str) -> bool:
         )
         time.sleep(0.5)
     _report("ipxe", lab)
-    ok = any(r.filename == "big.bin" and r.ok and r.bytes == len(payload) for r in lab.results)
+    ok = any(r.filename == "big.bin" and r.is_ok and r.bytes == len(payload) for r in lab.results)
     if not ok:
         print(out[-2500:])
     return ok and "pytftp: FETCHED" in out
@@ -199,7 +199,7 @@ def uefi(workdir: str) -> bool:
         )
         time.sleep(0.5)
     _report("uefi", lab)
-    ok = any(r.filename == "bootx64.efi" and r.ok and r.bytes == len(payload) for r in lab.results)
+    ok = any(r.filename == "bootx64.efi" and r.is_ok and r.bytes == len(payload) for r in lab.results)
     if not ok:
         print(out[-2500:])
     return ok

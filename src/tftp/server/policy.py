@@ -7,10 +7,10 @@ from typing import Optional
 from ..exceptions import TFTPError
 from ..packet import TFTPErrorCode, RequestPacket
 
-__all__ = ["ServerLimits"]
+__all__ = ["TFTPServerLimits"]
 
 
-class ServerLimits:
+class TFTPServerLimits:
     """Bounds on what one request, one client and one transfer may use.
 
     :param max_request_size: bytes in an RRQ/WRQ datagram. RFC 2347 keeps a
@@ -28,7 +28,7 @@ class ServerLimits:
 
     A request over a limit is answered with ERROR 4 (ERROR 0 "server busy"
     for the per-client cap). Window memory is bounded separately, by
-    :class:`ServerOptions` ``max_window_bytes``.
+    :class:`TFTPServerOptions` ``max_window_bytes``.
     """
 
     __slots__ = (

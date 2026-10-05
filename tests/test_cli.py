@@ -113,7 +113,7 @@ def test_get_and_put_by_url_with_trace_and_pcap(root, make_server, tmp_path_fact
     from tftp.capture import analyze
 
     (transfer,) = analyze(pcap, ports=[server.server_address[1]]).transfers
-    assert transfer.complete and transfer.data() == b"nested"
+    assert transfer.is_complete and transfer.data() == b"nested"
     (out / "up.txt").write_bytes(b"a\nb\n")
     assert run(["put", url + "up-url.txt;mode=netascii", str(out / "up.txt")]) in (None, 0)
     assert (root / "up-url.txt").read_bytes() == b"a\nb\n"

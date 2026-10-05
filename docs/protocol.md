@@ -26,7 +26,7 @@ The client asks; the server answers with an OACK holding only what it
 accepts. Unknown options and unusable values are ignored rather than
 refused, as RFC 2347 requires, and the transfer runs on the default for
 anything not acknowledged. The server clamps `blksize` and `windowsize` to
-its `ServerOptions` limits; the client refuses (ERROR 8) an OACK that grants
+its `TFTPServerOptions` limits; the client refuses (ERROR 8) an OACK that grants
 more than it asked for, or an option it never requested.
 
 A client whose request is refused with ERROR 8 retries once with no options
@@ -39,7 +39,7 @@ curl rejects `tsize 0` in an OACK, and the transfer shows the size anyway.
 
 Options are handlers in a registry, so an application can add its own. A
 server acknowledges the RFC options by default; tftp-hpa's extensions only
-when allowed (`ServerOptions(allowed=...)`), and any option can be refused
+when allowed (`TFTPServerOptions(allowed=...)`), and any option can be refused
 outright for firmware that asks for it and then mishandles it
 (`refused={"windowsize"}`). Profiles bundle coherent settings: `pxe` (fit
 `blksize` to the interface MTU so boot ROMs never see IP fragments), `hpa`,
@@ -52,7 +52,7 @@ server answers `27182` and both start with a window of 4 blocks. The client
 can then resize the window through its ACKs, in a format Microsoft has not
 published, so this library keeps the window at 4 (bytes after an ACK's block
 number are ignored). Allow it with `--allow mstfwindow` or
-`ServerOptions(allowed=STANDARD_OPTIONS | {"mstfwindow"})`. Recent bootmgr
+`TFTPServerOptions(allowed=STANDARD_OPTIONS | {"mstfwindow"})`. Recent bootmgr
 also negotiates the standard `windowsize`, which wins when both are
 acknowledged.
 

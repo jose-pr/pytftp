@@ -122,11 +122,11 @@ class Listener:
         self.sock.setblocking(False)
 
     @property
-    def supports_pktinfo(self) -> bool:
+    def has_pktinfo(self) -> bool:
         return self.endpoint.has_pktinfo
 
     @property
-    def dual_stack(self) -> bool:
+    def is_dual_stack(self) -> bool:
         return self.family == socket.AF_INET6 and not self.v6only
 
     def recv(self) -> Optional[Arrival]:

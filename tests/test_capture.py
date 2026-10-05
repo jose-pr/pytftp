@@ -94,13 +94,13 @@ def test_pcap_roundtrip_reconstructs_transfers(root, make_server, tmp_path_facto
     analysis = analyze(path, ports=[server.server_address[1]])
     by_name = {t.filename: t for t in analysis.transfers}
     big = by_name["big.bin"]
-    assert big.complete and big.data() == (root / "big.bin").read_bytes()
+    assert big.is_complete and big.data() == (root / "big.bin").read_bytes()
     assert (big.blksize, big.windowsize, big.tsize) == (1024, 4, 300_001)
     assert big.acknowledged["blksize"] == "1024" and big.missing_blocks == []
     up = by_name["uploaded.bin"]
-    assert up.operation == "write" and up.complete and up.data() == b"u" * 3000
+    assert up.operation == "write" and up.is_complete and up.data() == b"u" * 3000
     missing = by_name["missing"]
-    assert missing.error == (1, "file not found", "server") and not missing.complete
+    assert missing.error == (1, "file not found", "server") and not missing.is_complete
     assert all(e.session for e in analysis.events)
 
 
@@ -215,7 +215,7 @@ def test_flow_retransmission_error_and_stray():
     (transfer,) = tracker.transfers
     assert transfer.request_retransmissions == 1 and transfer.retransmissions == 1
     assert transfer.server_tid == T and transfer.error == (0, "client gave up", "client")
-    assert not transfer.complete and transfer.data() == b"a" * 512
+    assert not transfer.is_complete and transfer.data() == b"a" * 512
     assert len(events) == 6 and all(e.session == transfer.session for e in events)
 
 
@@ -232,7 +232,7 @@ def test_flow_rollover_and_netascii():
     for datagram in _flow(*packets):
         tracker.feed(datagram)
     (transfer,) = tracker.transfers
-    assert transfer.complete and transfer.missing_blocks == []
+    assert transfer.is_complete and transfer.missing_blocks == []
     assert len(transfer.data(decode_netascii=False)) == (count - 1) * 8 + 2
     assert transfer.data().count(b"\n") == count - 1 + 0  # CR LF -> LF
 
@@ -311,6 +311,6 @@ def test_flow_counters_are_the_same_with_or_without_payloads(keep):
     list(tracker.feed_all(_lossy_capture()))
     (transfer,) = tracker.transfers
     assert (transfer.bytes, transfer.retransmissions, transfer.missing_blocks) == (1546, 1, [3])
-    assert transfer.complete
+    assert transfer.is_complete
     record = transfer.to_dict()
     assert (record["bytes"], record["retransmissions"], record["missing_blocks"]) == (1546, 1, 1)

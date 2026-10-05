@@ -132,7 +132,7 @@ def bind_failure(exc: OSError, address: str, port: int) -> int:
 def result_json(result: TransferResult) -> dict:
     negotiated = result.negotiated
     return {
-        "ok": result.ok,
+        "ok": result.is_ok,
         "operation": result.operation,
         "filename": result.filename,
         "mode": result.mode,

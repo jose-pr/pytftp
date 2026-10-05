@@ -8,7 +8,7 @@ with its own options) use :class:`tftp.backends.UpstreamBackend` with a
 from __future__ import annotations
 
 from .core import TFTPRelay
-from .routing import Route, RouteTable, Upstream, by_interface, by_prefix, by_subnet, upstream
+from .routing import RouteFunction, RouteTable, Upstream, by_interface, by_prefix, by_subnet, upstream
 from .session import RelaySummary
 
 __all__ = [
@@ -16,7 +16,7 @@ __all__ = [
     "RelaySummary",
     "Upstream",
     "upstream",
-    "Route",
+    "RouteFunction",
     "RouteTable",
     "by_subnet",
     "by_prefix",

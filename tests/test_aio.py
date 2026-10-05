@@ -264,7 +264,7 @@ def test_async_server_memory_handler_trace_and_results():
         await asyncio.sleep(0.05)
 
     serve(MemoryBackend(writable=True), scenario, on_complete=results.append, trace=events.append)
-    assert [r.operation for r in results] == ["write", "read"] and all(r.ok for r in results)
+    assert [r.operation for r in results] == ["write", "read"] and all(r.is_ok for r in results)
     assert {e.role for e in events} == {"server"} and len({e.session for e in events}) == 2
 
 
@@ -272,7 +272,7 @@ def test_async_server_memory_handler_trace_and_results():
 @pytest.mark.parametrize("loop_type", ["SelectorEventLoop", "ProactorEventLoop"])
 def test_both_windows_loops(root, loop_type):
     async def scenario(server):
-        assert server.supports_pktinfo  # kept on Proactor through the reader thread
+        assert server.has_pktinfo  # kept on Proactor through the reader thread
         assert await async_client(server).get("513.bin") == (root / "513.bin").read_bytes()
 
     serve(str(root), scenario, loop_factory=getattr(asyncio, loop_type))

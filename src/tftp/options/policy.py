@@ -7,7 +7,13 @@ from typing import FrozenSet, Iterable, Optional
 from .base import MAX_BLKSIZE, MAX_WINDOWSIZE, MIN_BLKSIZE
 from .registry import DEFAULT_REGISTRY, OptionRegistry
 
-__all__ = ["ServerOptions", "STANDARD_OPTIONS", "EXTENSION_OPTIONS", "LISTING_OPTIONS", "SUPPORTED_OPTIONS"]
+__all__ = [
+    "TFTPServerOptions",
+    "STANDARD_OPTIONS",
+    "EXTENSION_OPTIONS",
+    "LISTING_OPTIONS",
+    "SUPPORTED_OPTIONS",
+]
 
 #: RFC 2348, 2349, 7440: what a server acknowledges by default.
 STANDARD_OPTIONS: FrozenSet[str] = DEFAULT_REGISTRY.standard()
@@ -22,7 +28,7 @@ LISTING_OPTIONS: FrozenSet[str] = frozenset({"x-list", "x-mtime"})
 SUPPORTED_OPTIONS: FrozenSet[str] = STANDARD_OPTIONS | EXTENSION_OPTIONS
 
 
-class ServerOptions:
+class TFTPServerOptions:
     """A server's negotiation policy.
 
     :param max_blksize: largest ``blksize`` granted; a larger request is
@@ -87,7 +93,7 @@ class ServerOptions:
         return name in self.allowed and name not in self.refused
 
     def __repr__(self) -> str:
-        return "ServerOptions(max_blksize=%d, max_windowsize=%d, allowed=%s%s%s)" % (
+        return "TFTPServerOptions(max_blksize=%d, max_windowsize=%d, allowed=%s%s%s)" % (
             self.max_blksize,
             self.max_windowsize,
             sorted(self.allowed),

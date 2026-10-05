@@ -1,10 +1,10 @@
 """Named compatibility profiles: one switch for a coherent set of behaviours.
 
-Each profile carries a server policy (``.server``, a :class:`ServerOptions`)
+Each profile carries a server policy (``.server``, a :class:`TFTPServerOptions`)
 and client settings (``.client``, keyword arguments for ``TFTPClient``)::
 
-    tftp.TFTPServer("/srv/tftp", options=tftp.PXE.server)
-    tftp.TFTPClient("192.0.2.1", **tftp.LEGACY.client)
+    tftp.TFTPServer("/srv/tftp", options=tftp.Profile.PXE.server)
+    tftp.TFTPClient("192.0.2.1", **tftp.Profile.LEGACY.client)
 
 ========  ===================================================================
 profile   for
@@ -22,11 +22,11 @@ legacy    old or quirky peers: plain RFC 1350 requests, answers accepted
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping
+from typing import Any, ClassVar, Dict, Mapping
 
-from .policy import STANDARD_OPTIONS, ServerOptions
+from .policy import STANDARD_OPTIONS, TFTPServerOptions
 
-__all__ = ["Profile", "STRICT", "DEFAULT", "PXE", "HPA", "LEGACY", "PROFILES"]
+__all__ = ["Profile", "PROFILES"]
 
 
 class Profile:
@@ -34,7 +34,13 @@ class Profile:
 
     __slots__ = ("name", "server", "_client")
 
-    def __init__(self, name: str, server: ServerOptions, client: Mapping[str, Any]) -> None:
+    STRICT: ClassVar["Profile"]
+    DEFAULT: ClassVar["Profile"]
+    PXE: ClassVar["Profile"]
+    HPA: ClassVar["Profile"]
+    LEGACY: ClassVar["Profile"]
+
+    def __init__(self, name: str, server: TFTPServerOptions, client: Mapping[str, Any]) -> None:
         self.name = name
         self.server = server
         self._client = dict(client)
@@ -48,19 +54,21 @@ class Profile:
         return "Profile(%r)" % self.name
 
 
-STRICT = Profile("strict", ServerOptions(), {"fallback": False, "strict_source": True})
-DEFAULT = Profile("default", ServerOptions(), {})
-PXE = Profile(
+Profile.STRICT = Profile("strict", TFTPServerOptions(), {"fallback": False, "strict_source": True})
+Profile.DEFAULT = Profile("default", TFTPServerOptions(), {})
+Profile.PXE = Profile(
     "pxe",
-    ServerOptions(allowed=STANDARD_OPTIONS | {"rollover", "utimeout"}, fit_mtu=True),
+    TFTPServerOptions(allowed=STANDARD_OPTIONS | {"rollover", "utimeout"}, fit_mtu=True),
     {"blksize": 1428},
 )
 #: tftp-hpa's own extensions.
 _HPA_EXTENSIONS = frozenset({"blksize2", "utimeout", "rollover", "cookie"})
-HPA = Profile("hpa", ServerOptions(allowed=STANDARD_OPTIONS | _HPA_EXTENSIONS), {"utimeout": True})
-LEGACY = Profile(
+Profile.HPA = Profile(
+    "hpa", TFTPServerOptions(allowed=STANDARD_OPTIONS | _HPA_EXTENSIONS), {"utimeout": True}
+)
+Profile.LEGACY = Profile(
     "legacy",
-    ServerOptions(allowed=STANDARD_OPTIONS, refused={"windowsize"}),
+    TFTPServerOptions(allowed=STANDARD_OPTIONS, refused={"windowsize"}),
     {
         "blksize": None,
         "windowsize": None,
@@ -71,4 +79,6 @@ LEGACY = Profile(
     },
 )
 
-PROFILES: Dict[str, Profile] = {p.name: p for p in (STRICT, DEFAULT, PXE, HPA, LEGACY)}
+PROFILES: Dict[str, Profile] = {
+    p.name: p for p in (Profile.STRICT, Profile.DEFAULT, Profile.PXE, Profile.HPA, Profile.LEGACY)
+}

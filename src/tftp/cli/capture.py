@@ -117,10 +117,10 @@ class CaptureCmd(Base):
         written = 0
         for transfer in tracker.transfers:
             data = transfer.data()
-            if not data and not transfer.complete:
+            if not data and not transfer.is_complete:
                 continue
             name = _UNSAFE.sub("_", transfer.filename.replace("\\", "/").rsplit("/", 1)[-1]) or "file"
-            suffix = "" if transfer.complete and not transfer.missing_blocks else ".partial"
+            suffix = "" if transfer.is_complete and not transfer.missing_blocks else ".partial"
             path = _os.path.join(self.extract, "%s-%s%s" % (transfer.session, name, suffix))  # type: ignore[arg-type]
             with open(path, "wb") as handle:
                 handle.write(data)

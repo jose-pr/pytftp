@@ -33,7 +33,7 @@ def test_download(root, make_server, name, shape):
     result_sink = io.BytesIO()
     result = client_for(server, **shape).download(name, result_sink)
     assert result_sink.getvalue() == expected
-    assert result.ok and result.bytes == len(expected) and result.operation == "read"
+    assert result.is_ok and result.bytes == len(expected) and result.operation == "read"
     if shape.get("tsize", True) and shape.get("blksize") is not None:
         assert result.negotiated.tsize == (len(expected) or None)
 
@@ -47,7 +47,7 @@ def test_upload(root, make_server, name, shape):
     data = (root / name).read_bytes()
     result = client_for(server, **shape).upload("up-" + name, data)
     assert (root / ("up-" + name)).read_bytes() == data
-    assert result.ok and result.bytes == len(data) and result.operation == "write"
+    assert result.is_ok and result.bytes == len(data) and result.operation == "write"
 
 
 def test_download_to_path_and_failure_cleans_up(root, make_server, tmp_path_factory):
@@ -77,7 +77,7 @@ def test_upload_from_path_and_file(root, make_server, tmp_path_factory):
 @pytest.mark.parametrize("host", ["::1", "127.0.0.1"])
 def test_dual_stack_listener(root, make_server, host):
     server = make_server(root, host="::")
-    if host == "127.0.0.1" and not server.dual_stack:
+    if host == "127.0.0.1" and not server.is_dual_stack:
         pytest.skip("this platform does not allow dual-stack sockets")
     result = client_for(server, host=host).download("513.bin", io.BytesIO())
     assert result.bytes == 513
@@ -119,13 +119,13 @@ def test_mode_aliases_and_bad_mode(root, make_server):
 
 
 def test_negotiation_is_clamped_by_server_policy(root, make_server):
-    server = make_server(root, options=tftp.ServerOptions(max_blksize=1000, max_windowsize=2))
+    server = make_server(root, options=tftp.TFTPServerOptions(max_blksize=1000, max_windowsize=2))
     result = client_for(server, blksize=65464, windowsize=50).download("big.bin", io.BytesIO())
     assert (result.negotiated.blksize, result.negotiated.windowsize) == (1000, 2)
 
 
 def test_fractional_timeout_negotiates_utimeout(root, make_server):
-    server = make_server(root, options=tftp.HPA.server)
+    server = make_server(root, options=tftp.Profile.HPA.server)
     result = client_for(server, timeout=0.25, utimeout=True).download("one.bin", io.BytesIO())
     assert result.negotiated.options.get("utimeout") == "250000"
     plain = make_server(root)  # extension not allowed by default: left out
@@ -153,7 +153,7 @@ def test_on_complete_reports_every_transfer(root, make_server):
     deadline = time.monotonic() + 2
     while len(results) < 2 and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert [r.ok for r in results] == [True, False]
+    assert [r.is_ok for r in results] == [True, False]
     assert results[1].error.code == tftp.TFTPErrorCode.FILE_NOT_FOUND
 
 
@@ -337,14 +337,14 @@ def test_size_probe(root, make_server):
     assert client.size("one.bin") == 1
     with pytest.raises(tftp.FileNotFound):
         client.size("missing")
-    plain = make_server(root, options=tftp.ServerOptions(allowed=()))  # no tsize: DATA 1 instead
+    plain = make_server(root, options=tftp.TFTPServerOptions(allowed=()))  # no tsize: DATA 1 instead
     assert client_for(plain).size("511.bin") == 511  # fits in the first block
     assert client_for(plain).size("big.bin") is None
     # The probe never completes a transfer on the server.
     deadline = time.monotonic() + 2
     while len(results) < 2 and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert not any(r.ok for r in results if r.filename == "big.bin")
+    assert not any(r.is_ok for r in results if r.filename == "big.bin")
 
 
 def test_size_probes_count_as_declined(root, make_server):

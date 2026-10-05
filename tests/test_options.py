@@ -3,7 +3,7 @@ import pytest
 import tftp
 from tftp.options import accept_oack, negotiate, request_options
 
-POLICY = tftp.ServerOptions(max_blksize=8192, max_windowsize=16, allowed=tftp.SUPPORTED_OPTIONS)
+POLICY = tftp.TFTPServerOptions(max_blksize=8192, max_windowsize=16, allowed=tftp.SUPPORTED_OPTIONS)
 
 
 def test_negotiate_accepts_and_clamps():
@@ -55,8 +55,8 @@ def test_negotiate_write_tsize_echoes():
 def test_negotiate_utimeout_and_allowed():
     result = negotiate({"utimeout": "250000"}, POLICY, is_read=True, timeout=1)
     assert result.timeout == 0.25
-    assert negotiate({"utimeout": "250000"}, tftp.ServerOptions(), is_read=True, timeout=1).options == {}
-    narrow = tftp.ServerOptions(allowed=frozenset({"blksize"}))
+    assert negotiate({"utimeout": "250000"}, tftp.TFTPServerOptions(), is_read=True, timeout=1).options == {}
+    narrow = tftp.TFTPServerOptions(allowed=frozenset({"blksize"}))
     assert negotiate({"tsize": "0", "blksize": "1024"}, narrow, is_read=True, timeout=1, size=5).options == {
         "blksize": "1024"
     }
@@ -64,11 +64,11 @@ def test_negotiate_utimeout_and_allowed():
 
 def test_server_options_validation():
     with pytest.raises(ValueError):
-        tftp.ServerOptions(max_blksize=4)
+        tftp.TFTPServerOptions(max_blksize=4)
     with pytest.raises(ValueError):
-        tftp.ServerOptions(max_windowsize=0)
+        tftp.TFTPServerOptions(max_windowsize=0)
     with pytest.raises(ValueError):
-        tftp.ServerOptions(allowed=frozenset({"multicast"}))
+        tftp.TFTPServerOptions(allowed=frozenset({"multicast"}))
 
 
 def test_request_options():

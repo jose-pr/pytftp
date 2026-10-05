@@ -27,7 +27,7 @@ class Receiver(Transfer):
         final ACK (a server committing an upload to disk). It may raise
         :class:`WouldBlock` too, holding the final ACK.
 
-    After the final ACK, ``done`` is set and the receiver keeps answering a
+    After the final ACK, ``is_done`` is set and the receiver keeps answering a
     repeated final DATA with that ACK, so a driver can "dally" (RFC 1350
     section 6) by feeding it packets for a while longer.
 
@@ -113,7 +113,7 @@ class Receiver(Transfer):
         if size < self.blksize:
             self._final = _ACK_HDR.pack(_ACK, wire)
             self._send(self._final)
-            self.done = True
+            self.is_done = True
             self.deadline = None
             return
         self._in_window += 1
@@ -125,19 +125,19 @@ class Receiver(Transfer):
     def _hold(self, payload, wire: int, size: int, written: bool) -> None:
         # Copy: the payload is usually a view of a reused receive buffer.
         self._pending = (bytes(payload), wire, size, written)
-        self.stalled = True
+        self.is_stalled = True
         # Our sink is the holdup, not the peer: only the time limit applies.
         self.deadline = self.expires
 
     def resume(self, now: float) -> None:
-        if not self.stalled or self.done or self._pending is None:
+        if not self.is_stalled or self.is_done or self._pending is None:
             return
         payload, wire, size, written = self._pending
         self._pending = None
-        self.stalled = False
+        self.is_stalled = False
         self._heard = now  # the wait was on our sink, not the peer
         self._accept(memoryview(payload), wire, size, now, written)
-        if self._dropped and not self.done and not self.stalled:
+        if self._dropped and not self.is_done and not self.is_stalled:
             # The rest of the window was dropped while we stalled: say where
             # we are now rather than wait for a window that cannot complete
             # (RFC 7440: ACK the last block received in order). Nothing to
@@ -155,11 +155,11 @@ class Receiver(Transfer):
         op = packet[1]
         if op == _DATA:
             wire = (packet[2] << 8) | packet[3]
-            if self.done:
+            if self.is_done:
                 if self._final is not None and wire == self._wire(self._expected - 1):
                     self._send(self._final)
                 return
-            if self.stalled:
+            if self.is_stalled:
                 self._dropped = True
                 return  # unacknowledged on purpose; the sender will resend
             if wire == self._expected_wire:
@@ -203,19 +203,19 @@ class Receiver(Transfer):
                 self._ack_last()
         elif op == _OACK:
             # The server repeated its OACK: our ACK 0 was lost (RFC 2347).
-            if not self.done and self._expected == 1 and self._reply is not None:
+            if not self.is_done and self._expected == 1 and self._reply is not None:
                 self.retransmits += 1
                 self._send(self._reply)
         elif op == _ERROR:
-            if not self.done:
+            if not self.is_done:
                 self._remote_error(packet, n)
-        elif not self.done:
+        elif not self.is_done:
             self._illegal("unexpected opcode %d while receiving" % op)
 
     def on_timeout(self, now: float) -> None:
-        if self.done or self._out_of_tries(now):
+        if self.is_done or self._out_of_tries(now):
             return
-        if self.stalled:
+        if self.is_stalled:
             return  # only reached through the time limit
         self._in_window = 0
         self._nacks = 0

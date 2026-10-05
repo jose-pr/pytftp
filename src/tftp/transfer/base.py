@@ -103,11 +103,11 @@ class Transfer:
         transfer fails, whatever timeout was negotiated; ``None`` is no bound.
         Time spent waiting on the local source or sink does not count.
 
-    :ivar done: the transfer is finished, successfully or not.
+    :ivar is_done: the transfer is finished, successfully or not.
     :ivar error: the failure, or ``None``.
     :ivar deadline: when :meth:`on_timeout` is due, in the driver's clock;
         ``None`` while nothing is outstanding.
-    :ivar stalled: waiting for the source or sink (see :class:`WouldBlock`).
+    :ivar is_stalled: waiting for the source or sink (see :class:`WouldBlock`).
     :ivar bytes: payload bytes moved so far.
     :ivar retransmits: packets sent again after loss.
     """
@@ -127,10 +127,10 @@ class Transfer:
         "expires",
         "max_idle",
         "_heard",
-        "done",
+        "is_done",
         "error",
         "deadline",
-        "stalled",
+        "is_stalled",
         "bytes",
         "blocks",
         "retransmits",
@@ -164,10 +164,10 @@ class Transfer:
         self.expires = expires
         self.max_idle = max_idle
         self._heard: Optional[float] = None  # when the peer last sent us a datagram
-        self.done = False
+        self.is_done = False
         self.error: Optional[TFTPError] = None
         self.deadline: Optional[float] = None
-        self.stalled = False
+        self.is_stalled = False
         self.bytes = 0
         self.blocks = 0
         self.retransmits = 0
@@ -195,15 +195,15 @@ class Transfer:
 
     def fail(self, exc: BaseException, notify: bool = True) -> None:
         """End the transfer with ``exc``, sending the peer an ERROR if asked."""
-        if self.done:
+        if self.is_done:
             return
         error = error_for_exception(exc)
         if not isinstance(exc, TFTPError):
             error.__cause__ = exc
         self.error = error
-        self.done = True
+        self.is_done = True
         self.deadline = None
-        self.stalled = False
+        self.is_stalled = False
         if notify:
             try:
                 self._send(encode_error(error.code, error.message))

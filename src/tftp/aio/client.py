@@ -120,7 +120,7 @@ class _Transfer:
         if self.progress is not None and engine.bytes != self.reported:
             self.reported = engine.bytes
             self.progress(self.reported, self.total)
-        if engine.done:
+        if engine.is_done:
             if self.timer is not None:
                 self.timer.cancel()
             if not self.done.done():
@@ -143,7 +143,7 @@ class _Transfer:
         self.timer = None
         self.timer_at = None
         engine = self.engine
-        if engine is None or engine.done:
+        if engine is None or engine.is_done:
             return
         now = self.loop.time()
         if engine.deadline is not None and engine.deadline > now:
@@ -154,7 +154,7 @@ class _Transfer:
 
     def resume(self) -> None:
         engine = self.engine
-        if engine is not None and not engine.done:
+        if engine is not None and not engine.is_done:
             engine.resume(self.loop.time())
             self.after()
 
@@ -451,6 +451,6 @@ class AsyncTFTPClient(TFTPClient):
         finally:
             if driver.timer is not None:
                 driver.timer.cancel()
-            if driver.engine is not None and not driver.engine.done:
+            if driver.engine is not None and not driver.engine.is_done:
                 driver.engine.abort("cancelled")
             transport.abort()

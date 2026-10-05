@@ -27,7 +27,7 @@ group it: `tftp.packet` (wire format), `tftp.options` (negotiation),
 | RFC 2348 | `blksize` 8..65464 | server clamps to its `max_blksize` |
 | RFC 2349 | `timeout` (1..255 s), `tsize` | `tsize` 0 is never sent in an OACK (curl rejects it) |
 | RFC 7440 | `windowsize` 1..65535 | server clamps to its `max_windowsize` (default 64) |
-| tftp-hpa | `blksize2`, `utimeout`, `rollover`, `cookie` | **off unless a server allows them** (`ServerOptions(allowed=...)`, a profile) |
+| tftp-hpa | `blksize2`, `utimeout`, `rollover`, `cookie` | **off unless a server allows them** (`TFTPServerOptions(allowed=...)`, a profile) |
 | Microsoft | `mstfwindow` (bootmgr/WDS variable window) | off unless allowed; runs a fixed window of 4 (the in-transfer resize is unpublished) |
 | pytftp | `x-list` (directory listing), `x-mtime` (modification time) | off unless allowed (`LISTING_OPTIONS`); other servers ignore them |
 | — | block-number rollover | blocks wrap after 65535 (to 0, or 1 with `rollover`); file size is unlimited |
@@ -150,7 +150,7 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
   there alone. An `ipaddress` address or `netimps.Host` works too.
 - `port` — `0` picks a free port; read it from `server_address`.
 - `timeout`, `retries` — per transfer, unless the client negotiates `timeout`.
-- `options` — a `ServerOptions` policy.
+- `options` — a `TFTPServerOptions` policy.
 - `max_sessions` — concurrent transfers; beyond it a request gets ERROR 0
   `"server busy"`. **The default is 500 on every platform.** `None` is
   unlimited, except on Windows, where it is 510 because `select()` watches at
@@ -160,13 +160,13 @@ and **`upload(host, filename, source, ...)`** — one-shot wrappers;
   address the request was sent to (pktinfo), so a multi-homed host or a VIP
   answers from the address the client used. Where the platform cannot report
   it, replies come from the listening address, or from the routing table's
-  choice when listening on a wildcard. Check `supports_pktinfo`.
+  choice when listening on a wildcard. Check `has_pktinfo`.
 - `dally` — keep a finished upload's socket for one timeout to re-ACK a
   repeated last DATA.
 - `on_complete(result)` — called with a `TransferResult` after **every**
   transfer, refused and failed ones included (`result.error` set). Exceptions
   it raises are logged and swallowed.
-- `limits` — a `ServerLimits` (below).
+- `limits` — a `TFTPServerLimits` (below).
 - `ignore_broadcast` — silently drop requests addressed to a broadcast
   (limited or subnet) or multicast address. Needs pktinfo to see the
   destination; without it every request looks unicast.
@@ -204,7 +204,7 @@ Lifecycle:
 - **`close()`** — stop and release every socket. Also the context-manager
   exit. A closed server cannot serve again.
 
-Statistics: **`stats`** (a `Stats`: `stats["completed"]`, `snapshot()`)
+Statistics: **`stats`** (a `TFTPStats`: `stats["completed"]`, `snapshot()`)
 counts `requests`, `refused` (refused before a transfer, including limits
 and `server busy`), `started`, `completed`, `failed`, `bytes_sent`,
 `bytes_received`, `retransmits`; **`stats_snapshot()`** returns them plus
@@ -212,7 +212,7 @@ and `server busy`), `started`, `completed`, `failed`, `bytes_sent`,
 with `bytes_to_clients`/`bytes_from_clients`.
 
 Properties: `server_address` (the bound `(host, port, ...)`, valid after
-close), `supports_pktinfo`, `dual_stack`, `active_sessions`.
+close), `has_pktinfo`, `is_dual_stack`, `active_sessions`.
 
 Behaviour worth knowing:
 
@@ -231,7 +231,7 @@ Behaviour worth knowing:
 `range` or a `PortRange`; `len()`, iteration (every port once, from the
 round-robin cursor). `ValueError` outside 1..65535 or with `low > high`.
 
-**`ServerLimits(max_request_size=1024, max_filename_length=512, max_options=16, max_option_length=255, max_sessions_per_client=None, max_duration=None, max_idle=60.0)`**
+**`TFTPServerLimits(max_request_size=1024, max_filename_length=512, max_options=16, max_option_length=255, max_sessions_per_client=None, max_duration=None, max_idle=60.0)`**
 — bounds on untrusted input. A request over a size/name/option limit gets
 ERROR 4 from the listening port; a client over `max_sessions_per_client`
 (counted per address, any port) gets ERROR 0 `"server busy"`.
@@ -243,7 +243,7 @@ counts the peer's silence, not the transfer's length, and not time the
 handler keeps the server waiting. A transfer holds memory for the blocks it
 has read, not for the window it negotiated, and none of it once it ends.
 
-**`ServerOptions(max_blksize=65464, max_windowsize=64, max_window_bytes=4 MiB, allowed=None, refused=(), fit_mtu=False, registry=None)`**
+**`TFTPServerOptions(max_blksize=65464, max_windowsize=64, max_window_bytes=4 MiB, allowed=None, refused=(), fit_mtu=False, registry=None)`**
 — the negotiation policy.
 
 - A larger `blksize`/`windowsize` request is answered with the maximum
@@ -269,10 +269,10 @@ Every option is an **`OptionHandler`** (`name`, `standard`) with
 `negotiate(value, ctx) -> str | None` (server: the value to acknowledge, or
 `None` to leave it out — RFC 2347's refusal; set fields on `ctx.result`) and
 `accept(requested, acked, ctx)` (client: validate and apply; raise
-`tftp.options.refuse(msg)` for ERROR 8). `ServerContext` carries `result`,
+`tftp.options.refuse(msg)` for ERROR 8). `ServerOptionContext` carries `result`,
 `requested`, `acked`, `policy`, `is_read`, `size`, `mtu`, `ipv6`, `stream`
 (what the handler opened for an RRQ, else `None`) and `max_blksize` (policy
-limit after `fit_mtu`); `ClientContext` carries
+limit after `fit_mtu`); `ClientOptionContext` carries
 `result`, `requested`, `is_read`. Custom values go in `ctx.result.extra`.
 
 **`OptionRegistry(handlers=BUILTIN_OPTIONS)`** — `register(handler,
@@ -287,28 +287,29 @@ Built-ins: `blksize`, `timeout`, `tsize`, `windowsize` (standard), and
 `blksize2` (largest power of two ≤ the request and the limit; ignored when
 `blksize` was acknowledged), `utimeout` (10 000..255 000 000 µs),
 `rollover` (0/1), `cookie` (echoed unchanged; a client refuses a changed
-one), `mstfwindow` (`Mstfwindow`: answers `31416` with `27182` and runs a
+one), `mstfwindow` (`MstfwindowOption`: answers `31416` with `27182` and runs a
 window of 4 unless `windowsize` was also acknowledged; a client refuses any
-other answer), `x-list` (`XList`: acknowledged `1` only when the RRQ's stream
-is a listing, `_tftp_listing_`), `x-mtime` (`XMtime`: an RRQ's OACK carries
+other answer), `x-list` (`XListOption`: acknowledged `1` only when the RRQ's stream
+is a listing, `_tftp_listing_`), `x-mtime` (`XMtimeOption`: an RRQ's OACK carries
 the stream's `mtime` attribute or `fstat` time, whole seconds; omitted when
 unknown). `stream_mtime(stream)` is that lookup.
 
 **Profiles** — `Profile(name, server, client)`: `.server` is a
-`ServerOptions`, `.client` a fresh dict of `TFTPClient` keyword arguments.
-`PROFILES` maps names to the five presets:
+`TFTPServerOptions`, `.client` a fresh dict of `TFTPClient` keyword arguments.
+The five presets are class attributes of `Profile`; `PROFILES` maps their names
+(`"strict"`, `"default"`, `"pxe"`, `"hpa"`, `"legacy"`) to them:
 
 | profile | server | client |
 | --- | --- | --- |
-| `STRICT` | standard options | `fallback=False` |
-| `DEFAULT` | standard options | library defaults |
-| `PXE` | standard + `rollover`, `utimeout`; `fit_mtu=True` | `blksize=1428` |
-| `HPA` | tftp-hpa's extensions | `utimeout=True` |
-| `LEGACY` | standard, `windowsize` refused | no options at all, `strict_source=False` |
+| `Profile.STRICT` | standard options | `fallback=False` |
+| `Profile.DEFAULT` | standard options | library defaults |
+| `Profile.PXE` | standard + `rollover`, `utimeout`; `fit_mtu=True` | `blksize=1428` |
+| `Profile.HPA` | tftp-hpa's extensions | `utimeout=True` |
+| `Profile.LEGACY` | standard, `windowsize` refused | no options at all, `strict_source=False` |
 
 ```python
-tftp.TFTPServer("/srv/tftp", options=tftp.PXE.server)
-tftp.TFTPClient("192.0.2.1", **tftp.LEGACY.client)
+tftp.TFTPServer("/srv/tftp", options=tftp.Profile.PXE.server)
+tftp.TFTPClient("192.0.2.1", **tftp.Profile.LEGACY.client)
 ```
 
 ## Handlers
@@ -524,7 +525,8 @@ use `UpstreamBackend` (a terminating proxy) instead.
   (client side and upstream side).
 - `route` — an upstream (`"host"`, `"host:port"`, `"[v6]:port"`, an address
   object or `netimps.Host`, `(host, port)`, `Upstream`) or `route(request, context) -> upstream | None`;
-  `None` refuses with ERROR 2 `"no route"`. Hostnames are resolved per
+  `None` refuses with ERROR 2 `"no route"`. `RouteFunction` is the type of that
+  callable (`tftp.relay.RouteFunction`). Hostnames are resolved per
   request (cached 60 s). Routes run on the relay's loop: keep them fast.
 - A transfer ends on: an ERROR either way (after ≤1 s), the final DATA/ACK
   exchange (the block size followed from an OACK's `blksize`/`blksize2`, then
@@ -542,7 +544,7 @@ use `UpstreamBackend` (a terminating proxy) instead.
   message)` of an ERROR that passed through, or `None`).
 - Lifecycle and properties as for `TFTPServer`: `serve_forever`, `shutdown`,
   `start`, `stop`, `close`, context manager; `server_address`,
-  `supports_pktinfo`, `active_sessions`.
+  `has_pktinfo`, `active_sessions`.
 
 Routing helpers (`tftp.relay`): **`upstream(value) -> Upstream(host, port)`**
 (`host` read by `netimps.split_host`: brackets dropped, a `"host:port"`
@@ -604,7 +606,7 @@ reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
 - **`CapturedTransfer`** — `session`, `client`, `server`, `server_tid`,
   `filename`, `mode`, `operation`, `requested`, `acknowledged`, `blksize`,
   `windowsize`, `tsize`, `error` (`(code, message, "client"|"server")`),
-  `complete` (final DATA seen and ACKed), `packets`, `retransmissions` (DATA
+  `is_complete` (final DATA seen and ACKed), `packets`, `retransmissions` (DATA
   seen again), `request_retransmissions`, `bytes`, `missing_blocks`,
   `started`, `ended`, `duration`; `data(decode_netascii=True)` returns the
   file up to the first gap (block numbers followed across rollover);
@@ -627,7 +629,7 @@ requests only), `block`, `code` (ERROR code), `session`, `leg`, `direction`.
 **`TransferResult`** — `filename`, `operation` (`"read"` for RRQ, `"write"`
 for WRQ, on both sides), `mode`, `peer`, `local`, `bytes` (payload bytes on
 the wire; netascii-encoded size in netascii mode), `blocks`, `retransmits`,
-`duration` (seconds), `negotiated`, `error` (or `None`); properties `ok` and
+`duration` (seconds), `negotiated`, `error` (or `None`); properties `is_ok` and
 `throughput` (bytes/s).
 
 **`Negotiated`** — what a transfer ran with: `blksize`, `windowsize`,
@@ -735,7 +737,7 @@ are one side of the DATA/ACK exchange **without any I/O**: packets leave
 through `send(packet)`, arrive through `handle(buffer, n, now)`, and the caller
 calls `on_timeout(now)` once `deadline` (in the caller's clock) passes, and
 `resume(now)` when a stalled source/sink (`WouldBlock`) is ready again;
-`abort(message)` cancels. State: `done`, `error`, `stalled`, `bytes`,
+`abort(message)` cancels. State: `is_done`, `error`, `is_stalled`, `bytes`,
 `blocks`, `retransmits`, `deadline`. A repeated OACK is tolerated: a
 receiver re-sends its ACK 0, a sender ignores it (its own timeout resends
 DATA 1). Build `read`

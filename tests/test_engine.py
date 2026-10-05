@@ -78,7 +78,7 @@ def run(
         receiver = Receiver(link.from_receiver, as_write(sink), receiver_neg, retries, now)
         sender = Sender(link.from_sender, as_readinto(io.BytesIO(data)), sender_neg, retries, now)
     steps = 0
-    while not (sender.done and receiver.done) and steps < max_steps:
+    while not (sender.is_done and receiver.is_done) and steps < max_steps:
         steps += 1
         if link.to_receiver:
             packet = link.to_receiver.pop(0)
@@ -89,12 +89,12 @@ def run(
             packet = link.to_sender.pop(0)
             sender.handle(memoryview(packet), len(packet), now)
         else:
-            deadlines = [t.deadline for t in (sender, receiver) if not t.done and t.deadline is not None]
+            deadlines = [t.deadline for t in (sender, receiver) if not t.is_done and t.deadline is not None]
             if not deadlines:
                 break
             now = min(deadlines)
             for side in (sender, receiver):
-                if not side.done and side.deadline is not None and side.deadline <= now:
+                if not side.is_done and side.deadline is not None and side.deadline <= now:
                     side.on_timeout(now)
     return sink.getvalue(), sender, receiver, link
 
@@ -242,7 +242,7 @@ def test_error_packet_ends_transfer_without_reply():
     receiver = Receiver(link.from_receiver, as_write(io.BytesIO()), neg(), 3, 0.0)
     packet = b"\x00\x05\x00\x03disk full\x00"
     receiver.handle(memoryview(packet), len(packet), 0.0)
-    assert receiver.done and receiver.error.code == 3 and receiver.error.message == "disk full"
+    assert receiver.is_done and receiver.error.code == 3 and receiver.error.message == "disk full"
     assert link.sent["r"] == []
 
 
@@ -253,7 +253,7 @@ def test_source_failure_is_reported_to_peer():
 
     link = Link()
     sender = Sender(link.from_sender, as_readinto(Broken()), neg(), 3, 0.0)
-    assert sender.done and sender.error.code == 2
+    assert sender.is_done and sender.error.code == 2
     assert link.sent["s"] == [b"\x00\x05\x00\x02access violation\x00"]
 
 
@@ -339,9 +339,9 @@ def run_timed(blocks, windowsize, rule, blksize=64, retries=20):
     receiver = Receiver(link.from_receiver, as_write(sink), n, retries, 0.0)
     sender = Sender(link.from_sender, as_readinto(io.BytesIO(data)), n, retries, 0.0)
     steps = 0
-    while not (sender.done and receiver.done) and steps < 200_000:
+    while not (sender.is_done and receiver.is_done) and steps < 200_000:
         steps += 1
-        deadlines = [t.deadline for t in (sender, receiver) if not t.done and t.deadline is not None]
+        deadlines = [t.deadline for t in (sender, receiver) if not t.is_done and t.deadline is not None]
         due = min(deadlines) if deadlines else None
         if link.queue and (due is None or link.queue[0][0] <= due):
             link.now, _, direction, packet = heapq.heappop(link.queue)
@@ -350,7 +350,7 @@ def run_timed(blocks, windowsize, rule, blksize=64, retries=20):
         elif due is not None:
             link.now = due
             for side in (sender, receiver):
-                if not side.done and side.deadline is not None and side.deadline <= link.now:
+                if not side.is_done and side.deadline is not None and side.deadline <= link.now:
                     side.on_timeout(link.now)
         else:
             break

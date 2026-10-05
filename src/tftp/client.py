@@ -668,11 +668,11 @@ class TFTPClient:
         peer_host, peer_port = peer[0], peer[1]
 
         # Transfer phase.
-        while not session.done:
-            if session.stalled:
+        while not session.is_done:
+            if session.is_stalled:
                 # A non-blocking local source/sink had nothing ready: poll it.
                 session.resume(clock())
-                if session.stalled:
+                if session.is_stalled:
                     remaining = 0.01
                     if session.deadline is not None and session.deadline <= clock():
                         session.on_timeout(clock())
@@ -690,7 +690,7 @@ class TFTPClient:
             try:
                 n, addr = recv_into(buf)
             except socket.timeout:
-                if not session.stalled:
+                if not session.is_stalled:
                     session.on_timeout(clock())
                 continue
             except ConnectionResetError:  # pragma: no cover - connreset is off

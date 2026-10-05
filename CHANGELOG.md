@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **Defaults that bound what a request can hold.** `ServerLimits(max_idle=60.0)`
+- **Defaults that bound what a request can hold.** `TFTPServerLimits(max_idle=60.0)`
   is new: a transfer with no datagram from its peer for 60 seconds ends with
   `TransferTimeoutError`, and a `timeout` the client negotiated cannot extend it
   (pass `max_idle=None` for the old behaviour: a request asking `timeout=255`
@@ -81,6 +81,14 @@ Old names are not kept as aliases.
 | `MemoryHandler`, `HttpHandler`, `UpstreamHandler` | `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` |
 | `TftpBackend` (`tftp.path`) | private |
 | entry point `tftp.path.uri:TftpUriPath` | `tftp.path:TFTPURIPath` (the scheme is still `tftp`) |
+| `ServerOptions`, `ServerLimits` | `TFTPServerOptions`, `TFTPServerLimits` |
+| `ServerContext`, `ClientContext` | `ServerOptionContext`, `ClientOptionContext` |
+| `Blksize`, `Blksize2`, `Timeout`, `Utimeout`, `Tsize`, `Windowsize`, `Rollover`, `Cookie`, `Mstfwindow`, `XList`, `XMtime` (`tftp.options`) | the same with the suffix `Option`: `BlksizeOption` ... `XMtimeOption` |
+| `Stats` | `TFTPStats` |
+| `Route` (`tftp.relay`, the callable's type) | `RouteFunction` |
+| `tftp.DEFAULT`, `tftp.STRICT`, `tftp.PXE`, `tftp.HPA`, `tftp.LEGACY` | `Profile.DEFAULT`, `Profile.STRICT`, `Profile.PXE`, `Profile.HPA`, `Profile.LEGACY` (`PROFILES[name]` is unchanged) |
+| `supports_pktinfo`, `dual_stack` (properties of the servers and the relay) | `has_pktinfo`, `is_dual_stack` |
+| `TransferResult.ok`, `CapturedTransfer.complete`, `Transfer.done`, `Transfer.stalled` | `is_ok`, `is_complete`, `is_done`, `is_stalled` (the `"ok"` and `"complete"` keys of the command line's and `CapturedTransfer`'s dictionaries are unchanged) |
 
 ### Fixed
 

@@ -76,7 +76,7 @@ class Sender(Transfer):
         try:
             n = self._read(view[4:])
         except WouldBlock:
-            self.stalled = True
+            self.is_stalled = True
             return -1
         except Exception as exc:  # the source failed: tell the peer why
             self.fail(exc)
@@ -96,7 +96,7 @@ class Sender(Transfer):
         end = self._base + self.windowsize
         if self._last is not None and self._last < end:
             end = self._last + 1
-        self.stalled = False
+        self.is_stalled = False
         while block < end:
             if block > self._hi:
                 slot = self._load(block)
@@ -110,9 +110,9 @@ class Sender(Transfer):
             send(self._views[slot][: self._lens[slot]])
             block += 1
         self._next = block
-        if self.done:
+        if self.is_done:
             return
-        if self.stalled and self._hi < self._base:
+        if self.is_stalled and self._hi < self._base:
             # Waiting on our own source with nothing outstanding: no peer
             # timeout applies, only the transfer's own time limit.
             self.deadline = self.expires
@@ -126,13 +126,13 @@ class Sender(Transfer):
         self._pump(now)
 
     def resume(self, now: float) -> None:
-        if self.stalled and not self.done:
+        if self.is_stalled and not self.is_done:
             self._heard = now  # the wait was on our source, not the peer
             self._pump(now)
 
     def handle(self, packet: memoryview, n: int, now: float) -> None:
         self._heard = now
-        if self.done or n < 2 or packet[0]:
+        if self.is_done or n < 2 or packet[0]:
             return
         op = packet[1]
         if op == _ACK and n >= 4:
@@ -167,7 +167,7 @@ class Sender(Transfer):
                 self._base = acked + 1
                 self._progress()
                 if self._last is not None and acked >= self._last:
-                    self.done = True
+                    self.is_done = True
                     self.deadline = None
                     return
                 if self._next < self._base:
@@ -184,7 +184,7 @@ class Sender(Transfer):
             self._illegal("unexpected opcode %d while sending" % op)
 
     def on_timeout(self, now: float) -> None:
-        if self.done or self._out_of_tries(now):
+        if self.is_done or self._out_of_tries(now):
             return
         if self._control is not None:
             self.retransmits += 1

@@ -58,7 +58,7 @@ def test_download_and_upload_through_the_relay(root, make_server, make_relay):
 
 
 def test_client_sees_the_relay_and_negotiates_with_the_upstream(root, make_server, make_relay):
-    server = make_server(root, options=tftp.ServerOptions(max_blksize=1000))
+    server = make_server(root, options=tftp.TFTPServerOptions(max_blksize=1000))
     relay = make_relay(upstream_of(server))
     result = client_for(relay, blksize=4000).download("513.bin", io.BytesIO())
     assert result.peer[0] == "127.0.0.1" and result.peer[1] not in (

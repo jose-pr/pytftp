@@ -12,7 +12,7 @@ import tftp.aio
 from conftest import client_for
 from tftp.listing import DirectoryListing, ListEntry, format_listing, parse_listing
 
-LISTING = tftp.ServerOptions(allowed=tftp.STANDARD_OPTIONS | tftp.LISTING_OPTIONS)
+LISTING = tftp.TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | tftp.LISTING_OPTIONS)
 
 
 @pytest.fixture
@@ -80,7 +80,9 @@ def test_server_without_listing(root, make_server):
 
 
 def test_listing_not_offered_when_not_allowed(root, make_server):
-    only_mtime = make_server(root, options=tftp.ServerOptions(allowed=tftp.STANDARD_OPTIONS | {"x-mtime"}))
+    only_mtime = make_server(
+        root, options=tftp.TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | {"x-mtime"})
+    )
     info = client_for(only_mtime).stat("one.bin")
     assert info.size == 1 and info.mtime and not info.is_dir
     with pytest.raises(tftp.FileNotFound):

@@ -8,13 +8,13 @@ import pytest
 
 import tftp
 from conftest import client_for
-from tftp.options import Blksize2, Cookie, accept_oack, negotiate, request_options
+from tftp.options import Blksize2Option, CookieOption, accept_oack, negotiate, request_options
 
-ALL = tftp.ServerOptions(allowed=tftp.SUPPORTED_OPTIONS)
+ALL = tftp.TFTPServerOptions(allowed=tftp.SUPPORTED_OPTIONS)
 
 
 def test_standard_options_are_the_default_policy():
-    assert tftp.ServerOptions().allowed == {"blksize", "timeout", "tsize", "windowsize"}
+    assert tftp.TFTPServerOptions().allowed == {"blksize", "timeout", "tsize", "windowsize"}
     assert tftp.STANDARD_OPTIONS == {"blksize", "timeout", "tsize", "windowsize"}
     assert tftp.EXTENSION_OPTIONS == {
         "blksize2",
@@ -33,7 +33,9 @@ def test_standard_options_are_the_default_policy():
         "blksize2": "3000",
         "mstfwindow": "31416",
     }
-    assert set(negotiate(requested, tftp.ServerOptions(), is_read=False, timeout=1).options) == {"blksize"}
+    assert set(negotiate(requested, tftp.TFTPServerOptions(), is_read=False, timeout=1).options) == {
+        "blksize"
+    }
 
 
 def test_mstfwindow_server_side():
@@ -42,10 +44,10 @@ def test_mstfwindow_server_side():
     assert result.extra["mstfwindow"] is True
     both = negotiate({"windowsize": "16", "mstfwindow": "31416"}, ALL, is_read=True, timeout=1)
     assert both.options == {"windowsize": "16", "mstfwindow": "27182"} and both.windowsize == 16
-    small = tftp.ServerOptions(allowed={"mstfwindow"}, max_windowsize=2)
+    small = tftp.TFTPServerOptions(allowed={"mstfwindow"}, max_windowsize=2)
     assert negotiate({"mstfwindow": "31416"}, small, is_read=True, timeout=1).windowsize == 2
     assert negotiate({"mstfwindow": "1"}, ALL, is_read=True, timeout=1).options == {}
-    assert "mstfwindow" not in tftp.HPA.server.allowed
+    assert "mstfwindow" not in tftp.Profile.HPA.server.allowed
 
 
 def test_mstfwindow_client_side():
@@ -59,7 +61,7 @@ def test_mstfwindow_client_side():
 
 
 def test_mstfwindow_end_to_end(root, make_server):
-    server = make_server(root, options=tftp.ServerOptions(allowed=tftp.STANDARD_OPTIONS | {"mstfwindow"}))
+    server = make_server(root, options=tftp.TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | {"mstfwindow"}))
     seen = []
     client = client_for(
         server, extra_options={"mstfwindow": 31416}, on_negotiated=lambda n, peer: seen.append(n)
@@ -69,7 +71,7 @@ def test_mstfwindow_end_to_end(root, make_server):
 
 
 def test_refused_overrides_allowed():
-    policy = tftp.ServerOptions(refused={"windowsize"})
+    policy = tftp.TFTPServerOptions(refused={"windowsize"})
     result = negotiate({"windowsize": "8", "blksize": "1024"}, policy, is_read=False, timeout=1)
     assert result.options == {"blksize": "1024"} and result.windowsize == 1
 
@@ -104,7 +106,7 @@ def test_cookie_is_echoed_and_checked():
 
 
 def test_window_bounded_by_bytes():
-    policy = tftp.ServerOptions(max_windowsize=1000, max_window_bytes=64 * 1024)
+    policy = tftp.TFTPServerOptions(max_windowsize=1000, max_window_bytes=64 * 1024)
     result = negotiate({"blksize": "8192", "windowsize": "1000"}, policy, is_read=True, timeout=1, size=1)
     assert result.windowsize == 8  # 8 x 8192 = 64 KiB
     tiny = negotiate({"blksize": "65464", "windowsize": "5"}, policy, is_read=True, timeout=1, size=1)
@@ -113,7 +115,7 @@ def test_window_bounded_by_bytes():
 
 @pytest.mark.parametrize("ipv6,expected", [(False, 1468), (True, 1448)])
 def test_fit_mtu_lowers_blksize(ipv6, expected):
-    policy = tftp.ServerOptions(fit_mtu=True)
+    policy = tftp.TFTPServerOptions(fit_mtu=True)
     result = negotiate({"blksize": "65464"}, policy, is_read=True, timeout=1, size=1, mtu=1500, ipv6=ipv6)
     assert result.blksize == expected
     unknown = negotiate({"blksize": "65464"}, policy, is_read=True, timeout=1, size=1, mtu=None)
@@ -135,9 +137,9 @@ def test_custom_option_through_a_registry(root, make_server):
     registry.register(Flavor())
     with pytest.raises(ValueError):
         registry.register(Flavor())
-    policy = tftp.ServerOptions(allowed=tftp.STANDARD_OPTIONS | {"flavor"}, registry=registry)
+    policy = tftp.TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | {"flavor"}, registry=registry)
     with pytest.raises(ValueError):
-        tftp.ServerOptions(allowed={"flavor"})  # not in the default registry
+        tftp.TFTPServerOptions(allowed={"flavor"})  # not in the default registry
     server = make_server(root, options=policy)
     result = client_for(server, extra_options={"flavor": "strawberry"}).download("one.bin", io.BytesIO())
     assert result.negotiated.options["flavor"] == "vanilla"
@@ -155,10 +157,10 @@ def test_registry_basics():
     assert [h.name for h in registry][:2] == ["blksize", "blksize2"]
     registry.unregister("cookie")
     assert "cookie" not in registry and "cookie" in tftp.DEFAULT_REGISTRY
-    registry.register(Cookie())
+    registry.register(CookieOption())
     with pytest.raises(ValueError):
         registry.register(tftp.OptionHandler())
-    assert isinstance(registry.copy().get("blksize2"), Blksize2)
+    assert isinstance(registry.copy().get("blksize2"), Blksize2Option)
 
 
 @pytest.mark.parametrize("name", ["strict", "default", "pxe", "hpa", "legacy"])
@@ -172,12 +174,12 @@ def test_profiles_work_end_to_end(root, make_server, name):
 def test_legacy_profile_sends_a_plain_request(root, make_server):
     results = []
     server = make_server(root, on_complete=results.append)
-    result = client_for(server, **tftp.LEGACY.client).download("513.bin", io.BytesIO())
+    result = client_for(server, **tftp.Profile.LEGACY.client).download("513.bin", io.BytesIO())
     assert result.negotiated.options == {} and result.negotiated.blksize == 512
 
 
 def test_legacy_server_refuses_windowsize(root, make_server):
-    server = make_server(root, options=tftp.LEGACY.server)
+    server = make_server(root, options=tftp.Profile.LEGACY.server)
     result = client_for(server, windowsize=8).download("big.bin", io.BytesIO())
     assert result.negotiated.windowsize == 1 and "windowsize" not in result.negotiated.options
 
@@ -192,7 +194,7 @@ def test_client_blksize_mtu(root, make_server):
 
 def test_server_fit_mtu_end_to_end(root, make_server):
     """The arrival interface's MTU bounds the grant (MTU injected: loopback's is huge)."""
-    server = make_server(root, options=tftp.ServerOptions(fit_mtu=True))
+    server = make_server(root, options=tftp.TFTPServerOptions(fit_mtu=True))
     server._mtu = lambda session: 1500
     result = client_for(server, blksize=65464).download("big.bin", io.BytesIO())
     assert result.negotiated.blksize == 1468

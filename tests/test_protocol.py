@@ -178,8 +178,8 @@ def test_reply_comes_from_the_address_the_request_was_sent_to(root, make_server)
         pytest.skip("127.0.0.2 is not a local address here (macOS configures only 127.0.0.1)")
     server = make_server(root, host="0.0.0.0")
     if sys.platform in ("linux", "win32"):
-        assert server.supports_pktinfo
-    elif not server.supports_pktinfo:
+        assert server.has_pktinfo
+    elif not server.has_pktinfo:
         pytest.skip("no pktinfo on this platform")
     with raw_socket() as client:
         client.sendto(encode_request(TFTPOpcode.RRQ, "one.bin"), ("127.0.0.2", server.server_address[1]))
@@ -193,12 +193,12 @@ def test_reply_address_on_dual_stack_listener(root, make_server):
     if not _bindable("127.0.0.2"):
         pytest.skip("127.0.0.2 is not a local address here")
     server = make_server(root, host="::")
-    if not server.dual_stack:
+    if not server.is_dual_stack:
         pytest.skip("no dual-stack sockets here")
     with raw_socket() as client:
         client.sendto(encode_request(TFTPOpcode.RRQ, "one.bin"), ("127.0.0.2", server.server_address[1]))
         _, source = expect(client)
-        if server.supports_pktinfo:
+        if server.has_pktinfo:
             assert source[0] == "127.0.0.2"
         client.sendto(encode_ack(1), source)
 
@@ -443,7 +443,7 @@ def test_a_windowed_download_costs_one_window_after_a_duplicated_ack(make_server
     blksize, blocks = 512, 1500
     payload = os.urandom(blksize * blocks)
     server = make_server(
-        MemoryBackend({"f": payload}), options=tftp.ServerOptions(max_windowsize=windowsize), timeout=2
+        MemoryBackend({"f": payload}), options=tftp.TFTPServerOptions(max_windowsize=windowsize), timeout=2
     )
     with raw_socket(5.0) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)

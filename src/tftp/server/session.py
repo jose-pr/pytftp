@@ -17,7 +17,7 @@ from typing import Any, Callable, Optional, Tuple
 from .._sockets import fit_window
 from ..exceptions import TFTPError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
-from ..options import Negotiated, ServerOptions, negotiate
+from ..options import Negotiated, TFTPServerOptions, negotiate
 from ..packet import TFTPErrorCode, RequestPacket, encode_ack, encode_oack
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from ..capture.events import PacketEvent, new_session_id
@@ -201,7 +201,7 @@ class Session:
             log.exception("trace hook failed")
 
     def call_handler(
-        self, handler: Any, policy: ServerOptions, timeout: float, mtu: Optional[int] = None
+        self, handler: Any, policy: TFTPServerOptions, timeout: float, mtu: Optional[int] = None
     ) -> Any:
         """Step 1: ask ``handler`` for the stream (may return an awaitable).
 
@@ -225,7 +225,7 @@ class Session:
     def start(
         self,
         stream: Any,
-        policy: ServerOptions,
+        policy: TFTPServerOptions,
         timeout: float,
         retries: int,
         now: float,
@@ -276,7 +276,7 @@ class Session:
     def open(
         self,
         handler: Any,
-        policy: ServerOptions,
+        policy: TFTPServerOptions,
         timeout: float,
         retries: int,
         now: float,

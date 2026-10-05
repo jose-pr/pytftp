@@ -152,9 +152,9 @@ def test_v4_client_of_dual_stack_listener_without_pktinfo(root, make_server):
     """No destination address: the reply must still reach a v4 client (netimps
     answers it from a v4 socket, at Datagram.reply_address)."""
     server = make_server(root, "::", reply_from_request_address=False)
-    if not server.dual_stack:
+    if not server.is_dual_stack:
         pytest.skip("no dual-stack listener here")
-    assert not server.supports_pktinfo
+    assert not server.has_pktinfo
     client = tftp.TFTPClient("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
     assert client.get("one.bin") == b"x"
     ports = _free_ports(2)

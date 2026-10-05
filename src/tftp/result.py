@@ -68,7 +68,7 @@ class TransferResult:
         self.error = error
 
     @property
-    def ok(self) -> bool:
+    def is_ok(self) -> bool:
         return self.error is None
 
     @property

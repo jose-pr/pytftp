@@ -33,10 +33,10 @@ from ..exceptions import TFTPDecodeError, TFTPError
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode, encode_error
 from ..server.handler import TFTPRequestContext
 from ..server.listener import Arrival, Listener
-from ..server.policy import ServerLimits
+from ..server.policy import TFTPServerLimits
 from ..server.session import PortRange, bind_transfer
-from .routing import Route, Upstream, upstream as to_upstream
-from ..server.stats import RELAY_COUNTERS, Stats
+from .routing import RouteFunction, Upstream, upstream as to_upstream
+from ..server.stats import RELAY_COUNTERS, TFTPStats
 from .session import RelaySession, RelaySummary
 
 __all__ = ["TFTPRelay"]
@@ -86,7 +86,7 @@ class TFTPRelay:
         max_lifetime: float = 3600.0,
         linger: float = 2.0,
         upstream_source: "IPAddressLike | Host | None" = None,
-        limits: Optional[ServerLimits] = None,
+        limits: Optional[TFTPServerLimits] = None,
         max_sessions: Optional[int] = None,
         ignore_broadcast: bool = True,
         reply_from_request_address: bool = True,
@@ -96,7 +96,7 @@ class TFTPRelay:
         interface: Any = None,
     ) -> None:
         if callable(route):
-            self.route: Route = route
+            self.route: RouteFunction = route
         else:
             fixed = to_upstream(route)
             self.route = lambda request, context: fixed
@@ -104,7 +104,7 @@ class TFTPRelay:
         self.max_lifetime = max_lifetime
         self.linger = linger
         self.upstream_source = upstream_source
-        self.limits = limits or ServerLimits()
+        self.limits = limits or TFTPServerLimits()
         if sys.platform == "win32":
             if max_sessions is None:
                 max_sessions = 250  # two sockets each; select() handles 512
@@ -119,8 +119,8 @@ class TFTPRelay:
         self.on_session_end = on_session_end
         #: Ports for both of a transfer's sockets (:class:`PortRange`), or ``None``.
         self.port_range = PortRange.of(port_range)
-        #: Counters since start (:class:`Stats`).
-        self.stats = Stats(*RELAY_COUNTERS)
+        #: Counters since start (:class:`TFTPStats`).
+        self.stats = TFTPStats(*RELAY_COUNTERS)
         self._listener = Listener(host, port, pktinfo=reply_from_request_address, interface=interface)
         self._address = self._listener.sock.getsockname()
         self._selector = selectors.DefaultSelector()
@@ -144,8 +144,8 @@ class TFTPRelay:
         return self._address
 
     @property
-    def supports_pktinfo(self) -> bool:
-        return self._listener.supports_pktinfo
+    def has_pktinfo(self) -> bool:
+        return self._listener.has_pktinfo
 
     @property
     def active_sessions(self) -> int:

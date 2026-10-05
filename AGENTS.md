@@ -28,8 +28,8 @@ src/tftp/
 │   ├── listener.py    # listening socket: bind (host or interface), netimps UDPEndpoint, reply sockets
 │   ├── session.py     # one transfer: PortRange, handler -> engine
 │   ├── handler.py     # TFTPHandler protocol, TFTPRequestContext, AtomicWriter
-│   ├── policy.py      # ServerLimits
-│   └── stats.py       # Stats counters (server and relay)
+│   ├── policy.py      # TFTPServerLimits
+│   └── stats.py       # TFTPStats counters (server and relay)
 ├── backends/          # filesystem.py, memory.py, http.py (urllib gateway), proxy.py (upstream TFTP), pipe.py
 ├── relay/             # transparent relay: core.py (loop), session.py (per transfer), routing.py
 ├── capture/           # packet events, trace hooks, pcap decoding

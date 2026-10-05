@@ -99,7 +99,7 @@ class AsyncTFTPServer(ServerBase):
             except asyncio.CancelledError:
                 pass
             for session in list(self._sessions.values()):
-                if session.transfer is not None and not session.transfer.done:
+                if session.transfer is not None and not session.transfer.is_done:
                     session.transfer.abort("server shutting down")
                 if session.stream is not None:
                     session.close_stream(ok=False)
@@ -208,7 +208,7 @@ class AsyncTFTPServer(ServerBase):
         session.transfer = transfer
         self.stats.add("started")
         try:
-            if transfer.done:
+            if transfer.is_done:
                 self._done(session, time.monotonic())
             else:
                 self._schedule(session)
@@ -241,10 +241,10 @@ class AsyncTFTPServer(ServerBase):
                 session.emit(stray, "out", addr)
             return
         now = time.monotonic()
-        was_done = transfer.done
+        was_done = transfer.is_done
         try:
             transfer.handle(memoryview(data), len(data), now)
-            if transfer.done and not was_done:
+            if transfer.is_done and not was_done:
                 self._done(session, now)
             else:
                 self._schedule(session)
@@ -253,12 +253,12 @@ class AsyncTFTPServer(ServerBase):
 
     def _resume(self, session: Session) -> None:
         transfer = session.transfer
-        if session.closed or transfer is None or transfer.done:
+        if session.closed or transfer is None or transfer.is_done:
             return
         now = time.monotonic()
         try:
             transfer.resume(now)
-            if transfer.done:
+            if transfer.is_done:
                 self._done(session, now)
             else:
                 self._schedule(session)
@@ -297,7 +297,7 @@ class AsyncTFTPServer(ServerBase):
         assert transfer is not None
         try:
             transfer.on_timeout(now)
-            if transfer.done:
+            if transfer.is_done:
                 self._done(session, now)
             else:
                 self._schedule(session)

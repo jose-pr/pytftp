@@ -10,12 +10,12 @@ from .base import (
     MAX_WINDOWSIZE,
     MIN_BLKSIZE,
     MIN_UTIMEOUT,
-    ClientContext,
+    ClientOptionContext,
     Negotiated,
-    ServerContext,
+    ServerOptionContext,
     refuse,
 )
-from .policy import ServerOptions
+from .policy import TFTPServerOptions
 from .registry import DEFAULT_REGISTRY, OptionRegistry
 
 __all__ = ["negotiate", "accept_oack", "request_options"]
@@ -23,7 +23,7 @@ __all__ = ["negotiate", "accept_oack", "request_options"]
 
 def negotiate(
     requested: Mapping[str, str],
-    policy: ServerOptions,
+    policy: TFTPServerOptions,
     *,
     is_read: bool,
     timeout: float,
@@ -42,7 +42,7 @@ def negotiate(
     is the RRQ's opened source, for options that describe it.
     """
     result = Negotiated(timeout=timeout)
-    ctx = ServerContext(result, requested, policy, is_read, size, mtu, ipv6, stream)
+    ctx = ServerOptionContext(result, requested, policy, is_read, size, mtu, ipv6, stream)
     for handler in policy.registry:
         name = handler.name
         if name in requested and policy.accepts(name):
@@ -70,7 +70,7 @@ def accept_oack(
     """
     registry = registry or DEFAULT_REGISTRY
     result = Negotiated(timeout=timeout, options=dict(oack))
-    ctx = ClientContext(result, requested, is_read)
+    ctx = ClientOptionContext(result, requested, is_read)
     for name, value in oack.items():
         if name not in requested:
             raise refuse("server acknowledged unrequested option %r" % name)

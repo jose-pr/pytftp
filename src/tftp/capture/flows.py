@@ -49,7 +49,7 @@ class CapturedTransfer:
     :ivar requested, acknowledged: the request's options, the OACK's.
     :ivar blksize, windowsize: what the transfer ran with.
     :ivar error: ``(code, message, sent_by)`` of an ERROR, or ``None``.
-    :ivar complete: the final DATA was seen and acknowledged.
+    :ivar is_complete: the final DATA was seen and acknowledged.
     :ivar retransmissions: DATA packets seen more than once.
     """
 
@@ -69,7 +69,7 @@ class CapturedTransfer:
         self.windowsize = 1
         self.tsize: Optional[int] = None
         self.error: Optional[Tuple[int, str, str]] = None
-        self.complete = False
+        self.is_complete = False
         self.final_block: Optional[int] = None  # logical
         self.packets = 0
         self.retransmissions = 0
@@ -110,7 +110,7 @@ class CapturedTransfer:
 
     def add_ack(self, wire: int) -> None:
         if self.final_block is not None and self._logical(wire) == self.final_block:
-            self.complete = True
+            self.is_complete = True
 
     @property
     def bytes(self) -> int:
@@ -162,7 +162,7 @@ class CapturedTransfer:
             "packets": self.packets,
             "retransmissions": self.retransmissions,
             "missing_blocks": len(self.missing_blocks),
-            "complete": self.complete,
+            "complete": self.is_complete,
             "error": (
                 None
                 if self.error is None
@@ -173,7 +173,9 @@ class CapturedTransfer:
         }
 
     def __repr__(self) -> str:
-        state = "complete" if self.complete else ("error %d" % self.error[0] if self.error else "incomplete")
+        state = (
+            "complete" if self.is_complete else ("error %d" % self.error[0] if self.error else "incomplete")
+        )
         return "CapturedTransfer(%s %s %r %s->%s, %d bytes, %s)" % (
             self.session,
             self.operation,

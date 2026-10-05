@@ -28,25 +28,25 @@ from .base import (
     MAX_WINDOWSIZE,
     MIN_BLKSIZE,
     MIN_UTIMEOUT,
-    ClientContext,
+    ClientOptionContext,
     OptionHandler,
-    ServerContext,
+    ServerOptionContext,
     parse_int,
     refuse,
 )
 
 __all__ = [
-    "Blksize",
-    "Blksize2",
-    "Timeout",
-    "Utimeout",
-    "Tsize",
-    "Windowsize",
-    "Rollover",
-    "Cookie",
-    "Mstfwindow",
-    "XList",
-    "XMtime",
+    "BlksizeOption",
+    "Blksize2Option",
+    "TimeoutOption",
+    "UtimeoutOption",
+    "TsizeOption",
+    "WindowsizeOption",
+    "RolloverOption",
+    "CookieOption",
+    "MstfwindowOption",
+    "XListOption",
+    "XMtimeOption",
     "stream_mtime",
     "BUILTIN_OPTIONS",
 ]
@@ -59,11 +59,11 @@ def _number(name: str, text: str) -> int:
     return value
 
 
-class Blksize(OptionHandler):
+class BlksizeOption(OptionHandler):
     name = "blksize"
     standard = True
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         size = parse_int(value)
         if size is None or size < MIN_BLKSIZE:
             return None
@@ -71,19 +71,19 @@ class Blksize(OptionHandler):
         ctx.result.blksize = min(size, ctx.max_blksize)
         return str(ctx.result.blksize)
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         size = _number(self.name, acked)
         if not MIN_BLKSIZE <= size <= int(requested):
             raise refuse("server blksize %d outside %d..%s" % (size, MIN_BLKSIZE, requested))
         ctx.result.blksize = size
 
 
-class Blksize2(OptionHandler):
+class Blksize2Option(OptionHandler):
     """``blksize`` restricted to powers of two, for firmware that needs them."""
 
     name = "blksize2"
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         if "blksize" in ctx.acked:
             return None  # one block size per transfer; blksize wins
         size = parse_int(value)
@@ -96,53 +96,53 @@ class Blksize2(OptionHandler):
         ctx.result.blksize = power
         return str(power)
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         size = _number(self.name, acked)
         if size < MIN_BLKSIZE or size > int(requested) or size & (size - 1):
             raise refuse("server blksize2 %d is not a power of two within %s" % (size, requested))
         ctx.result.blksize = size
 
 
-class Timeout(OptionHandler):
+class TimeoutOption(OptionHandler):
     name = "timeout"
     standard = True
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         seconds = parse_int(value)
         if seconds is None or not 1 <= seconds <= 255:
             return None
         ctx.result.timeout = float(seconds)
         return value.strip()  # RFC 2349: echo exactly what was asked
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         seconds = _number(self.name, acked)
         if not 1 <= seconds <= 255:
             raise refuse("server timeout %d outside 1..255" % seconds)
         ctx.result.timeout = float(seconds)
 
 
-class Utimeout(OptionHandler):
+class UtimeoutOption(OptionHandler):
     name = "utimeout"
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         micro = parse_int(value)
         if micro is None or not MIN_UTIMEOUT <= micro <= MAX_UTIMEOUT:
             return None
         ctx.result.timeout = micro / 1e6
         return str(micro)
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         micro = _number(self.name, acked)
         if micro <= 0:
             raise refuse("server utimeout %d is not positive" % micro)
         ctx.result.timeout = micro / 1e6
 
 
-class Tsize(OptionHandler):
+class TsizeOption(OptionHandler):
     name = "tsize"
     standard = True
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         size = parse_int(value)
         if size is None or size < 0:
             return None
@@ -156,18 +156,18 @@ class Tsize(OptionHandler):
             return str(ctx.size)
         return None
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         size = _number(self.name, acked)
         if size < 0:
             raise refuse("server tsize %d is negative" % size)
         ctx.result.tsize = size
 
 
-class Windowsize(OptionHandler):
+class WindowsizeOption(OptionHandler):
     name = "windowsize"
     standard = True
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         window = parse_int(value)
         if window is None or window < 1:
             return None
@@ -177,46 +177,46 @@ class Windowsize(OptionHandler):
         ctx.result.windowsize = min(window, policy.max_windowsize, by_bytes, MAX_WINDOWSIZE)
         return str(ctx.result.windowsize)
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         window = _number(self.name, acked)
         if not 1 <= window <= int(requested):
             raise refuse("server windowsize %d outside 1..%s" % (window, requested))
         ctx.result.windowsize = window
 
 
-class Rollover(OptionHandler):
+class RolloverOption(OptionHandler):
     name = "rollover"
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         target = parse_int(value)
         if target not in (0, 1):
             return None
         ctx.result.rollover = target  # type: ignore[assignment]
         return str(target)
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         target = _number(self.name, acked)
         if target not in (0, 1):
             raise refuse("server rollover %d is not 0 or 1" % target)
         ctx.result.rollover = target
 
 
-class Cookie(OptionHandler):
-    """Opaque; echoed back unchanged. Its length is bounded by ServerLimits."""
+class CookieOption(OptionHandler):
+    """Opaque; echoed back unchanged. Its length is bounded by TFTPServerLimits."""
 
     name = "cookie"
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         ctx.result.extra[self.name] = value
         return value
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         if acked != requested:
             raise refuse("server changed the cookie")
         ctx.result.extra[self.name] = acked
 
 
-class Mstfwindow(OptionHandler):
+class MstfwindowOption(OptionHandler):
     """Microsoft's variable-window extension (Windows 8+ ``bootmgr``, WDS).
 
     The client offers ``mstfwindow=31416``; a server that speaks it answers
@@ -231,7 +231,7 @@ class Mstfwindow(OptionHandler):
     ANSWER = "27182"
     WINDOW = 4
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         if value.strip() != self.OFFER:
             return None
         if "windowsize" not in ctx.acked:
@@ -239,7 +239,7 @@ class Mstfwindow(OptionHandler):
         ctx.result.extra[self.name] = True
         return self.ANSWER
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         if acked.strip() != self.ANSWER:
             raise refuse("server answered mstfwindow=%r, not %s" % (acked, self.ANSWER))
         if "windowsize" not in ctx.result.options:
@@ -247,7 +247,7 @@ class Mstfwindow(OptionHandler):
         ctx.result.extra[self.name] = True
 
 
-class XList(OptionHandler):
+class XListOption(OptionHandler):
     """pytftp's directory listing (see :mod:`tftp.listing`): ``x-list=1``.
 
     Acknowledged only when the handler answered the RRQ with a listing
@@ -258,7 +258,7 @@ class XList(OptionHandler):
     name = "x-list"
     VERSION = "1"
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         if not ctx.is_read or value.strip() != self.VERSION:
             return None
         if not getattr(ctx.stream, "_tftp_listing_", False):
@@ -266,7 +266,7 @@ class XList(OptionHandler):
         ctx.result.extra[self.name] = True
         return self.VERSION
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         if acked.strip() != self.VERSION:
             raise refuse("server answered x-list=%r" % acked)
         ctx.result.extra[self.name] = True
@@ -283,13 +283,13 @@ def stream_mtime(stream: Any) -> Optional[int]:
         return None
 
 
-class XMtime(OptionHandler):
+class XMtimeOption(OptionHandler):
     """pytftp's ``x-mtime``: an RRQ's OACK carries the file's modification
     time (whole seconds since the epoch), when the source knows it."""
 
     name = "x-mtime"
 
-    def negotiate(self, value: str, ctx: ServerContext) -> Optional[str]:
+    def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         if not ctx.is_read:
             return None
         mtime = stream_mtime(ctx.stream)
@@ -298,21 +298,21 @@ class XMtime(OptionHandler):
         ctx.result.extra[self.name] = mtime
         return str(mtime)
 
-    def accept(self, requested: str, acked: str, ctx: ClientContext) -> None:
+    def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         ctx.result.extra[self.name] = _number(self.name, acked)
 
 
 #: In negotiation order: block size first, since the window bound depends on it.
 BUILTIN_OPTIONS = (
-    Blksize(),
-    Blksize2(),
-    Timeout(),
-    Utimeout(),
-    Tsize(),
-    Windowsize(),
-    Rollover(),
-    Cookie(),
-    Mstfwindow(),
-    XList(),
-    XMtime(),
+    BlksizeOption(),
+    Blksize2Option(),
+    TimeoutOption(),
+    UtimeoutOption(),
+    TsizeOption(),
+    WindowsizeOption(),
+    RolloverOption(),
+    CookieOption(),
+    MstfwindowOption(),
+    XListOption(),
+    XMtimeOption(),
 )

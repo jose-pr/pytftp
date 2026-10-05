@@ -161,7 +161,7 @@ def test_http_handler_arguments():
 
 
 def test_proxy_bridges_different_block_and_window_sizes(root, make_server):
-    upstream = make_server(root, options=tftp.ServerOptions(max_blksize=8192, max_windowsize=16))
+    upstream = make_server(root, options=tftp.TFTPServerOptions(max_blksize=8192, max_windowsize=16))
     port = upstream.server_address[1]
     seen = []
     proxy = make_server(

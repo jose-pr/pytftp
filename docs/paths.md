@@ -21,7 +21,7 @@ TFTP moves whole files, so `open()` (read or write), `read_*`/`write_*`,
 `stat()`, `exists()` and `copy()`/`move()` work against any server.
 
 Against a pytftp server with listing allowed (`pytftp serve --listing`, or
-`ServerOptions(allowed=STANDARD_OPTIONS | LISTING_OPTIONS)`), directories
+`TFTPServerOptions(allowed=STANDARD_OPTIONS | LISTING_OPTIONS)`), directories
 work too: `iterdir()`, `is_dir()`, `walk()`, `glob("**/*.cfg")`,
 `copy(dest, recursive=True)`, and `stat().st_mtime`. Each directory costs one
 listing transfer, whose entries already carry type, size and time. Other

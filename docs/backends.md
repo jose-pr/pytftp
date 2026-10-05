@@ -34,7 +34,7 @@ an `opener` for proxies and TLS settings. Only the standard library is used.
 from tftp.backends import UpstreamBackend
 
 proxy = UpstreamBackend("10.0.0.20", client_options={"blksize": 8192, "windowsize": 16})
-tftp.TFTPServer(proxy, options=tftp.LEGACY.server).serve_forever()
+tftp.TFTPServer(proxy, options=tftp.Profile.LEGACY.server).serve_forever()
 ```
 
 Each side negotiates on its own, and they are joined by a bounded buffer: a

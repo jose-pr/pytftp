@@ -19,15 +19,15 @@ if TYPE_CHECKING:
 
 from ..capture.events import PacketEvent
 from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, error_for_exception
-from ..options import Negotiated, ServerOptions
+from ..options import Negotiated, TFTPServerOptions
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode, encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Transfer
 from .handler import TFTPRequestContext
 from .listener import Arrival, Listener
-from .policy import ServerLimits
+from .policy import TFTPServerLimits
 from .session import PortRange, Session
-from .stats import SERVER_COUNTERS, Stats
+from .stats import SERVER_COUNTERS, TFTPStats
 
 __all__ = ["ServerBase"]
 
@@ -54,12 +54,12 @@ class ServerBase:
         overwrite: bool = False,
         timeout: float = 1.0,
         retries: int = 5,
-        options: Optional[ServerOptions] = None,
+        options: Optional[TFTPServerOptions] = None,
         max_sessions: Optional[int] = DEFAULT_MAX_SESSIONS,
         reply_from_request_address: bool = True,
         dally: bool = True,
         on_complete: Optional[Callable[[TransferResult], Any]] = None,
-        limits: Optional[ServerLimits] = None,
+        limits: Optional[TFTPServerLimits] = None,
         ignore_broadcast: bool = True,
         backoff: float = 2.0,
         max_timeout: Optional[float] = None,
@@ -80,13 +80,13 @@ class ServerBase:
         self.handler = handler
         self.timeout = timeout
         self.retries = retries
-        self.options = options or ServerOptions()
+        self.options = options or TFTPServerOptions()
         if max_sessions is None and _WINDOWS:
             max_sessions = SELECT_SESSIONS  # a selector loop cannot watch more
         self.max_sessions = max_sessions
         self.dally = dally
         self.on_complete = on_complete
-        self.limits = limits or ServerLimits()
+        self.limits = limits or TFTPServerLimits()
         self.ignore_broadcast = ignore_broadcast
         self.backoff = backoff
         self.max_timeout = max_timeout
@@ -95,8 +95,8 @@ class ServerBase:
         self.port_range = PortRange.of(port_range)
         self._sessions: Dict[Tuple[str, int], Session] = {}
         self._per_client: Dict[str, int] = {}
-        #: Counters since start (:class:`Stats`); ``stats_snapshot()`` adds ``active``.
-        self.stats = Stats(*SERVER_COUNTERS)
+        #: Counters since start (:class:`TFTPStats`); ``stats_snapshot()`` adds ``active``.
+        self.stats = TFTPStats(*SERVER_COUNTERS)
         self._listener = Listener(host, port, pktinfo=reply_from_request_address, interface=interface)
         self._address: Tuple[Any, ...] = self._listener.sock.getsockname()
 
@@ -108,14 +108,14 @@ class ServerBase:
         return self._address
 
     @property
-    def supports_pktinfo(self) -> bool:
+    def has_pktinfo(self) -> bool:
         """Replies come from the request's own destination address."""
-        return self._listener.supports_pktinfo
+        return self._listener.has_pktinfo
 
     @property
-    def dual_stack(self) -> bool:
+    def is_dual_stack(self) -> bool:
         """The listening socket accepts IPv4 as well as IPv6."""
-        return self._listener.dual_stack
+        return self._listener.is_dual_stack
 
     @property
     def active_sessions(self) -> int:
@@ -262,7 +262,7 @@ class ServerBase:
             if transfer is None:
                 self._refuse(session, exc)
                 return
-            if not transfer.done:
+            if not transfer.is_done:
                 transfer.fail(exc)
             session.close_stream(transfer.error is None)
             self._report(session, transfer.error, transfer)

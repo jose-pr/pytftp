@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from .core import TFTPServer
 from .handler import AtomicWriter, TFTPHandler, TFTPRequestContext
-from .policy import ServerLimits
+from .policy import TFTPServerLimits
 from .session import PortRange
-from .stats import Stats
+from .stats import TFTPStats
 
 __all__ = [
     "TFTPServer",
-    "ServerLimits",
+    "TFTPServerLimits",
     "PortRange",
-    "Stats",
+    "TFTPStats",
     "TFTPHandler",
     "AtomicWriter",
     "TFTPRequestContext",

@@ -31,7 +31,7 @@ class TFTPRequestContext:
     :ivar request: the parsed RRQ/WRQ (``filename``, ``mode``, ``options``).
     :ivar peer: the client's ``(host, port, ...)``.
     :ivar local_address: the address the request was sent to, when the
-        platform reports it (see ``TFTPServer.supports_pktinfo``), else ``None``.
+        platform reports it (see ``TFTPServer.has_pktinfo``), else ``None``.
     :ivar interface_index: the interface it arrived on, or ``0``.
     :ivar interface: that interface as a ``netimps.Interface`` (name,
         addresses, MTU), or ``None`` when unknown.

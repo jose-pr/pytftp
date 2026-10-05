@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, NamedTuple, Opt
 if TYPE_CHECKING:
     from netimps import HostLike, Interface, IPAddressLike, IPNetworkLike
 
-__all__ = ["Upstream", "upstream", "RouteTable", "by_subnet", "by_prefix", "by_interface", "Route"]
+__all__ = ["Upstream", "upstream", "RouteTable", "by_subnet", "by_prefix", "by_interface", "RouteFunction"]
 
 
 class Upstream(NamedTuple):
@@ -27,7 +27,7 @@ class Upstream(NamedTuple):
 
 
 UpstreamLike = Union[Upstream, "HostLike", Tuple["HostLike", int]]
-Route = Callable[[Any, Any], Optional[UpstreamLike]]
+RouteFunction = Callable[[Any, Any], Optional[UpstreamLike]]
 
 
 def upstream(value: UpstreamLike) -> Upstream:
@@ -46,7 +46,7 @@ def upstream(value: UpstreamLike) -> Upstream:
 
 def by_subnet(
     table: "dict[IPNetworkLike, UpstreamLike] | Sequence[Tuple[IPNetworkLike, UpstreamLike]]",
-) -> Route:
+) -> RouteFunction:
     """Route by the client's address: ``{"10.1.0.0/16": "10.1.0.5", ...}``.
 
     Keys are anything ``netimps.parse(..., IPNetwork)`` takes: CIDR strings,
@@ -75,7 +75,7 @@ def by_subnet(
     return route
 
 
-def by_prefix(table: "dict[str, UpstreamLike] | Sequence[Tuple[str, UpstreamLike]]") -> Route:
+def by_prefix(table: "dict[str, UpstreamLike] | Sequence[Tuple[str, UpstreamLike]]") -> RouteFunction:
     """Route by filename prefix: ``{"windows/": "wds.lan", "": "default.lan"}``.
 
     The longest matching prefix wins; leading ``/`` and ``\\`` are ignored
@@ -96,7 +96,7 @@ def by_prefix(table: "dict[str, UpstreamLike] | Sequence[Tuple[str, UpstreamLike
     return route
 
 
-def by_interface(table: "dict[Union[int, Interface, IPAddressLike], UpstreamLike]") -> Route:
+def by_interface(table: "dict[Union[int, Interface, IPAddressLike], UpstreamLike]") -> RouteFunction:
     """Route by arrival: an interface index (``int``), a ``netimps.Interface``,
     or the local address the request was sent to (an address string or
     object, an ``ipaddress`` interface, a ``netimps.Host``).
@@ -136,7 +136,7 @@ class RouteTable:
     ``default`` (optional) answers when none does.
     """
 
-    def __init__(self, routes: Iterable[Route], default: Optional[UpstreamLike] = None) -> None:
+    def __init__(self, routes: Iterable[RouteFunction], default: Optional[UpstreamLike] = None) -> None:
         self.routes = list(routes)
         self.default = upstream(default) if default is not None else None
 

@@ -110,7 +110,7 @@ server = tftp.TFTPServer(
     "::",
     69,
     writable=True,
-    options=tftp.ServerOptions(max_blksize=8192, max_windowsize=32),
+    options=tftp.TFTPServerOptions(max_blksize=8192, max_windowsize=32),
     on_complete=lambda r: print(r.operation, r.filename, r.peer[0], r.error or "ok"),
 )
 server.serve_forever()
@@ -172,12 +172,12 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | Module | Purpose |
 | --- | --- |
 | `tftp.client` | `TFTPClient`, `download`, `upload` |
-| `tftp.server` | `TFTPServer`, `ServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
+| `tftp.server` | `TFTPServer`, `TFTPServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
 | `tftp.backends` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` (proxy), `Pipe` |
 | `tftp.relay` | `TFTPRelay` and routing helpers |
 | `tftp.aio` | `AsyncTFTPClient`, `AsyncTFTPServer` |
 | `tftp.capture` | trace events, `PcapWriter`, pcap/pcapng reading, `analyze`, filters |
-| `tftp.options` | `ServerOptions`, option registry, profiles, `Negotiated` |
+| `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |
 | `tftp.uri` | `tftp://` URLs |
