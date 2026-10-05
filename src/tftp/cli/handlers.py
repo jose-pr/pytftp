@@ -74,9 +74,9 @@ def client_directory(peer: _ty.Tuple[_ty.Any, ...]) -> str:
     ``-`` keeps IPv6 names valid on Windows; an IPv4 client seen through a
     dual-stack socket is named by its IPv4 address.
     """
-    from netimps import unmap
+    from netimps import split_zone, unmap
 
-    return str(unmap(str(peer[0]).split("%", 1)[0])).replace(":", "-")
+    return str(unmap(split_zone(str(peer[0]))[0])).replace(":", "-")
 
 
 class PerClient:

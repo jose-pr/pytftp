@@ -111,3 +111,19 @@ def test_fit_window_reports_the_grant_and_leaves_the_logging_to_netimps(caplog):
         granted = fit_window(sock, 8192, 64)
     assert granted == (100_000, 100_000)
     assert [r.name for r in caplog.records if r.levelno >= logging.DEBUG and r.name.startswith("tftp")] == []
+
+
+# -- scoped addresses ---------------------------------------------------------------
+
+
+def test_a_zone_is_dropped_before_an_address_is_compared():
+    from types import SimpleNamespace
+
+    from tftp.cli.handlers import client_directory
+    from tftp.relay import by_interface
+
+    assert client_directory(("fe80::1%eth0", 1000)) == "fe80--1"
+    assert client_directory(("::ffff:10.0.0.7", 1000)) == "10.0.0.7"
+    route = by_interface({"fe80::1": "10.9.9.9:70"})
+    context = SimpleNamespace(interface_index=0, local_address="fe80::1%eth0")
+    assert route(None, context) == upstream("10.9.9.9:70")

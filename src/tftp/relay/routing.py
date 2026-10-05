@@ -103,7 +103,7 @@ def by_interface(table: "dict[Union[int, Interface, IPAddressLike], UpstreamLike
 
     Needs pktinfo; without it neither is known and nothing matches.
     """
-    from netimps import Host, Interface, unmap
+    from netimps import Host, Interface, split_zone, unmap
 
     by_index: Dict[int, Upstream] = {}
     by_address: Dict[Any, Upstream] = {}
@@ -124,7 +124,7 @@ def by_interface(table: "dict[Union[int, Interface, IPAddressLike], UpstreamLike
         if context.interface_index and context.interface_index in by_index:
             return by_index[context.interface_index]
         if context.local_address is not None and by_address:
-            return by_address.get(unmap(context.local_address.split("%", 1)[0]))
+            return by_address.get(unmap(split_zone(context.local_address)[0]))
         return None
 
     return route

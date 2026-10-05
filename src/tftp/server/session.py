@@ -104,11 +104,11 @@ def bind_transfer(host: Any, family: int, ports: Optional[PortRange] = None) -> 
     from netimps import AddressInUseError, bind
 
     if ports is None:
-        sock = bind(host, 0, family=family, connreset=False)
+        sock = bind(host, 0, family=family)
     else:
         for port in ports.ordered():
             try:
-                sock = bind(host, port, family=family, connreset=False)
+                sock = bind(host, port, family=family)
                 break
             except AddressInUseError:
                 continue

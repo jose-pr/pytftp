@@ -41,7 +41,7 @@ def _bind_interface(
     wildcard naming the family (``"0.0.0.0"`` or ``"::"``)."""
     from netimps import Host, bind, is_wildcard
 
-    plain = {"connreset": False, "interface": interface}
+    plain = {"interface": interface}
     if not host:
         try:
             return bind("", port, family=socket.AF_INET, **plain)
@@ -61,8 +61,8 @@ def _bind(host: "IPAddressLike | Host | None", port: int, interface: "InterfaceL
     if interface is not None:
         return _bind_interface(host, port, interface)
     # netimps' defaults keep the port exclusive for a datagram socket on every
-    # platform (no SO_REUSEADDR on POSIX, SO_EXCLUSIVEADDRUSE on Windows).
-    plain = {"connreset": False}
+    # platform (no SO_REUSEADDR on POSIX, SO_EXCLUSIVEADDRUSE on Windows) and
+    # stop Windows reporting an ICMP port-unreachable as a receive error.
     if host:
         host = split_host(host)[0]  # "[::1]" -> "::1"
     address = Host(host).ip() if host else None
@@ -71,21 +71,19 @@ def _bind(host: "IPAddressLike | Host | None", port: int, interface: "InterfaceL
             sock = bind(
                 "::",
                 port,
-                family=socket.AF_INET6,
                 # Explicit: Windows defaults to v6-only, Linux to dual-stack.
                 options=[(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)],
-                **plain,
             )
         except OSError as exc:
             if exc.errno in (errno.EADDRINUSE, errno.EACCES):
                 raise
             # No IPv6 on this host: IPv4 alone.
-            sock = bind("0.0.0.0", port, family=socket.AF_INET, **plain)
+            sock = bind("0.0.0.0", port)
     else:
         if address is None:
             raise socket.gaierror("cannot resolve %r" % (host,))
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
-        sock = bind(host, port, family=family, **plain)
+        sock = bind(host, port, family=family)
     return sock
 
 

@@ -438,17 +438,32 @@ def test_unconnected_udp_survives_port_unreachable():
     a datagram to a closed port; with it, the receive simply times out, as on
     every other platform.
     """
-    import netimps
+    from tftp.server.listener import Listener
+    from tftp.server.session import bind_transfer
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as closed:
         closed.bind(("127.0.0.1", 0))
         dead = closed.getsockname()
-    # How the client and every server transfer socket are made.
-    with netimps.bind("127.0.0.1", 0, reuse_address=False, connreset=False) as sock:
-        sock.settimeout(0.2)
-        sock.sendto(b"x", dead)
-        with pytest.raises(socket.timeout):
-            sock.recvfrom(100)
+    listener = Listener("127.0.0.1", 0)
+    client = tftp.Client("127.0.0.1", 69)
+    makers = {
+        "client": lambda: client._socket(socket.AF_INET),
+        "transfer": lambda: bind_transfer("127.0.0.1", socket.AF_INET),
+        "listener": lambda: listener.sock,
+    }
+    try:
+        for make in makers.values():
+            sock = make()
+            try:
+                sock.settimeout(0.2)
+                sock.sendto(b"x", dead)
+                with pytest.raises(socket.timeout):
+                    sock.recvfrom(100)
+            finally:
+                if sock is not listener.sock:
+                    sock.close()
+    finally:
+        listener.close()
 
 
 @pytest.mark.skipif(__import__("sys").platform != "win32", reason="Windows-only behaviour")

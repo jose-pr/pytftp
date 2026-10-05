@@ -478,9 +478,7 @@ class Client:
         from netimps import bind
 
         local_host, local_port = self.local_address or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
-        # connreset=False: Windows would otherwise report an ICMP
-        # port-unreachable as ConnectionResetError on our next receive.
-        return bind(local_host, local_port, family=family, connreset=False)
+        return bind(local_host, local_port, family=family)
 
     def size(self, filename: str, *, mode: str = "octet") -> Optional[int]:
         """The size of ``filename`` on the server, without transferring it.
