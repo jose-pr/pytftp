@@ -16,6 +16,7 @@ EXPECTED = {
         "AccessViolation",
         "AckPacket",
         "AsyncTFTPClient",
+        "AsyncTFTPServer",
         "AtomicWriter",
         "DEFAULT_BLKSIZE",
         "DEFAULT_REGISTRY",
@@ -91,6 +92,7 @@ EXPECTED = {
         "upload",
     ],
     "tftp.server": [
+        "AsyncTFTPServer",
         "AtomicWriter",
         "PortRange",
         "PortRangeLike",
@@ -228,9 +230,6 @@ EXPECTED = {
         "Serve",
         "run",
     ],
-    "tftp.aio": [
-        "AsyncTFTPServer",
-    ],
     "tftp.transfer": [
         "Receiver",
         "Sender",
@@ -323,7 +322,7 @@ POSITIONAL = {
     "tftp.OptionRegistry.register": 1,
     "tftp.TFTPRequestContext": 2,
     "tftp.TFTPServer": 1,
-    "tftp.aio.AsyncTFTPServer": 1,
+    "tftp.AsyncTFTPServer": 1,
     "tftp.relay.TFTPRelay": 1,
     "tftp.TFTPClient": 2,
     "tftp.AsyncTFTPClient": 2,

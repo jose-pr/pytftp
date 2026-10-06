@@ -217,6 +217,7 @@ class Serve(Traced):
                 port_range=ports,
                 interface=self.interface,
             )
+            server.bind()
         except OSError as exc:
             return bind_failure(exc, self.listen or self.interface or "::", self.port)
         logger = _logging.getLogger("tftp")

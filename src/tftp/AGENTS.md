@@ -163,7 +163,7 @@ and **`upload(host, filename, src, /, ...)`** — one-shot wrappers;
   socket, falling back to `"0.0.0.0"` on a host without IPv6. `"0.0.0.0"` is
   IPv4 only; a specific address (`"192.0.2.10"`, `"[fe80::1%eth0]"`) listens
   there alone. An `ipaddress` address or `netimps.Host` works too.
-- `port` — `0` picks a free port; read it from `server_address`.
+- `port` — `0` picks a free port; read it from `server_address` after `bind()`.
 - `timeout`, `retries` — per transfer, unless the client negotiates `timeout`.
 - `options` — a `TFTPServerOptions` policy.
 - `max_sessions` — concurrent transfers; beyond it a request gets ERROR 0
@@ -196,8 +196,8 @@ and **`upload(host, filename, src, /, ...)`** — one-shot wrappers;
   `netimps.Interface`, its MAC, or one of its addresses. The listener binds
   **one address** of it: the one named, else the adapter's primary IPv4
   address (non-loopback preferred), else its IPv6 one; `host="0.0.0.0"` or
-  `"::"` picks the family. Another `host`, or an adapter netimps cannot
-  resolve, is a `ValueError`. Requests to the adapter's other addresses are
+  `"::"` picks the family. Another `host` is a `ValueError` at construction,
+  and an adapter netimps cannot resolve is one from `bind()`. Requests to the adapter's other addresses are
   not received; run one server per family or address as needed.
 - `port_range` — a `PortRangeLike`: a `PortRange`, a `(low, high)` pair
   (inclusive), a `range` or `"LOW:HIGH"` text. Transfer sockets take their
@@ -206,20 +206,35 @@ and **`upload(host, filename, src, /, ...)`** — one-shot wrappers;
   no position), for a firewall to allow. With every port taken a
   request gets ERROR 0 `"server busy"` (counted `refused`). `None` lets the
   OS choose.
-- Raises `OSError` if the port cannot be bound (port 69 needs privileges on
+- The constructor checks and stores its arguments and opens nothing; `bind()`
+  raises `OSError` if the port cannot be bound (port 69 needs privileges on
   POSIX).
 
-Lifecycle:
+Lifecycle (the same names on `AsyncTFTPServer` and `TFTPRelay`; a handler
+that wants the server down calls `shutdown()`, never `close()`):
 
-- **`serve_forever()`** — run the event loop in the calling thread until
-  `shutdown()`. One thread serves every transfer.
-- **`shutdown()`** — stop `serve_forever`; safe from any thread, a handler or
-  `on_complete`. Transfers in flight get ERROR 0 `"server shutting down"`
+- **`bind()`** — open and bind the sockets; idempotent. `start()`,
+  `serve_forever()` and entering the context manager call it, so call it
+  yourself to take a privileged port and then drop privileges, or to read
+  `server_address` before serving. Nothing is left open when it raises.
+
+- **`serve_forever()`** — bind, then run the event loop in the calling thread
+  until `shutdown()`. One thread serves every transfer. Raises `RuntimeError`
+  when already serving or closed.
+- **`shutdown()`** — ask serving to stop and return at once; safe from any
+  thread, a handler or `on_complete`; no effect when nothing is serving. Transfers in flight get ERROR 0 `"server shutting down"`
   (their result's `error` is `TransferAbortedError`).
-- **`start() -> TFTPServer`** — run `serve_forever` in a daemon thread.
-- **`stop(timeout=5.0)`** — `shutdown()` and join the `start()` thread.
-- **`close()`** — stop and release every socket. Also the context-manager
-  exit. A closed server cannot serve again.
+- **`start() -> TFTPServer`** — bind, run the loop in a daemon thread and
+  return once serving. Raises what `bind()` raised, and `RuntimeError` when
+  already serving or closed.
+- **`wait_closed(timeout=None) -> bool`** — block until serving has stopped
+  and the `start()` thread has ended; `False` when `timeout` seconds passed
+  first. `RuntimeError` from the serving thread itself.
+- **`close()`** — `shutdown()`, `wait_closed()` (up to five seconds; a handler
+  that has not returned by then is abandoned) and release every socket. Final
+  and repeatable; also the context-manager exit (which does not serve:
+  entering only binds). A closed server cannot bind or serve again; a server
+  stopped with `shutdown()` and not closed can serve again.
 
 Statistics: **`stats`** (a `TFTPStats`: `stats["completed"]`, `snapshot()`)
 counts `requests`, `refused` (refused before a transfer, including limits
@@ -228,8 +243,9 @@ and `server busy`), `started`, `completed`, `failed`, `bytes_sent`,
 `active`. Thread-safe; meant for a metrics exporter. A `TFTPRelay` has the same,
 with `bytes_to_clients`/`bytes_from_clients`.
 
-Properties: `server_address` (the bound `(host, port, ...)`, valid after
-close), `has_pktinfo`, `is_dual_stack`, `active_sessions`.
+Properties: `server_address` (the bound `(host, port, ...)`, `None` before
+`bind()`, kept after close), `has_pktinfo` and `is_dual_stack` (`None` before
+`bind()`), `active_sessions`.
 
 Behaviour worth knowing:
 
@@ -432,10 +448,15 @@ iterable of bytes. Cancelling the task sends the server ERROR 0. Each
 attempt (including the option fallback) uses a fresh socket.
 
 **`AsyncTFTPServer(root_or_handler, *, host=None, port=69, executor=None, **server_options)`**
-(from `tftp.aio`) — `TFTPServer`'s arguments except `open_in_thread`/`workers`. `async with
-AsyncTFTPServer(...) as server: await server.serve_forever()`, or `await
-server.start()` … `await server.stop()`; `shutdown()` is thread-safe; `await
-close()`. Handlers:
+(from `tftp` and `tftp.server`) — `TFTPServer`'s arguments except
+`open_in_thread`/`workers`, and its lifecycle: `bind()` and `shutdown()` are
+plain methods (`shutdown()` is thread-safe), `await start()`, `await
+serve_forever()` and `await wait_closed(timeout=None)` are coroutines, and
+`await aclose()` is the closer: there is no `close()` and no `stop()`. `async
+with AsyncTFTPServer(...) as server: await server.serve_forever()` binds on
+entry and awaits `aclose()` on exit; `aclose()` from another task ends a
+running `serve_forever()` without an exception. A serving task that ended on
+an error is seen by `wait_closed()` and `aclose()`. Handlers:
 
 - `open_read`/`open_write` may be `async def` (awaited on the loop), or
   synchronous: those marked `_tftp_fast_open_` (file, memory) run inline,
@@ -568,9 +589,9 @@ use `UpstreamBackend` (a terminating proxy) instead.
   `bytes_from_client`, `packets`, `duration`, `reason` (`"complete"`,
   `"error"`, `"idle"`, `"lifetime"`, `"shutdown"`), `error` (`(code,
   message)` of an ERROR that passed through, or `None`).
-- Lifecycle and properties as for `TFTPServer`: `serve_forever`, `shutdown`,
-  `start`, `stop`, `close`, context manager; `server_address`,
-  `has_pktinfo`, `active_sessions`.
+- Lifecycle and properties as for `TFTPServer`: `bind`, `serve_forever`,
+  `shutdown`, `start`, `wait_closed`, `close`, context manager;
+  `server_address` (`None` before `bind()`), `has_pktinfo`, `active_sessions`.
 
 Routing helpers (`tftp.relay`): **`Upstream(host, port=69)`** — a frozen,
 hashable value that equals only another `Upstream` (`port` an `int` in

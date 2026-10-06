@@ -38,7 +38,6 @@ nav:
       - Paths: paths.md
   - API Reference:
       - Client: api/client.md
-      - asyncio: api/aio.md
       - Server: api/server.md
       - Backends: api/backends.md
       - Relay: api/relay.md

@@ -104,22 +104,24 @@ class Listener:
         interface: "InterfaceLike" = None,
     ) -> None:
         self.sock = _bind(host, port, interface)
-        self.family = self.sock.family
         try:
-            self.v6only = self.family == socket.AF_INET6 and bool(
-                self.sock.getsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY)
-            )
-        except (AttributeError, OSError):
-            self.v6only = True
-        from netimps import is_wildcard
+            self.family = self.sock.family
+            try:
+                self.v6only = self.family == socket.AF_INET6 and bool(
+                    self.sock.getsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY)
+                )
+            except (AttributeError, OSError):
+                self.v6only = True
+            from netimps import UDPEndpoint, is_wildcard
 
-        bound = self.sock.getsockname()[0]
-        #: The listening address, or ``None`` when it is a wildcard.
-        self.host: Optional[str] = None if is_wildcard(bound) else bound
-        from netimps import UDPEndpoint
-
-        self.endpoint = UDPEndpoint(self.sock, pktinfo=pktinfo)
-        self.sock.setblocking(False)
+            bound = self.sock.getsockname()[0]
+            #: The listening address, or ``None`` when it is a wildcard.
+            self.host: Optional[str] = None if is_wildcard(bound) else bound
+            self.endpoint = UDPEndpoint(self.sock, pktinfo=pktinfo)
+            self.sock.setblocking(False)
+        except BaseException:
+            self.sock.close()
+            raise
 
     @property
     def has_pktinfo(self) -> bool:
@@ -194,3 +196,7 @@ class Listener:
 
     def close(self) -> None:
         self.endpoint.close()  # stops netimps' async notifier too, then the socket
+
+    async def aclose(self) -> None:
+        """:meth:`close` for a coroutine: the reader thread is awaited, not joined on the loop."""
+        await self.endpoint.aclose()

@@ -117,8 +117,15 @@ tftp.TFTPServer("/srv/tftp", on_complete=report).serve_forever()
 ## Running in the background
 
 ```python
-server = tftp.TFTPServer("/srv/tftp", port=0).start()   # daemon thread
+server = tftp.TFTPServer("/srv/tftp", port=0).start()   # binds, then serves on a daemon thread
 print(server.server_address)
 ...
-server.close()
+server.shutdown()      # ask it to stop; returns at once
+server.wait_closed()   # block until it has
+server.close()         # release the sockets; final
 ```
+
+The constructor opens nothing. `bind()` opens the socket (`start()`,
+`serve_forever()` and `with server:` call it), so a privileged port can be taken
+before dropping privileges, and `server_address` is `None` until then. A handler
+that wants the server down calls `shutdown()`, never `close()`.

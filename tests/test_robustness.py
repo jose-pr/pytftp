@@ -304,7 +304,8 @@ def test_shutdown_aborts_running_transfers(root, make_server):
         raw.settimeout(2)
         raw.sendto(encode_request(TFTPOpcode.RRQ, "big.bin"), server.server_address)
         raw.recvfrom(2048)
-        server.stop()
+        server.shutdown()
+        assert server.wait_closed(5.0)
         error = decode(raw.recvfrom(2048)[0])
         assert error.code == TFTPErrorCode.NOT_DEFINED and "shutting down" in error.message
 

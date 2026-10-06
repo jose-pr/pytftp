@@ -11,8 +11,7 @@ import pytest
 
 import tftp
 from conftest import client_for
-from tftp import AsyncTFTPClient
-from tftp.aio import AsyncTFTPServer
+from tftp import AsyncTFTPClient, AsyncTFTPServer
 from tftp.backends import HTTPBackend, MemoryBackend
 
 

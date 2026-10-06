@@ -21,11 +21,11 @@ src/tftp/
 ├── transfer/          # I/O-free engine: base.py, sender.py, receiver.py
 ├── client/            # _core.py (shared base), _sync.py (TFTPClient), _asyncio.py (AsyncTFTPClient)
 ├── _bridge.py         # async streams <-> engine (used by both asyncio drivers)
-├── aio/               # server.py: AsyncTFTPServer
 ├── path/              # pathlib-next: local.py (TFTPPath), uri.py (TFTPURIPath), _stream.py
 ├── server/
-│   ├── base.py        # ServerBase: config, admission, refusal, reporting (shared with aio)
-│   ├── core.py        # TFTPServer: lifecycle, selectors loop, timers, completion
+│   ├── _core.py       # ServerBase: config, admission, refusal, reporting (shared by both servers)
+│   ├── _sync.py       # SelectorService (the lifecycle the relay shares), TFTPServer: selectors loop, timers
+│   ├── _asyncio.py    # AsyncTFTPServer
 │   ├── listener.py    # listening socket: bind (host or interface), netimps UDPEndpoint, reply sockets
 │   ├── session.py     # one transfer: PortRange, handler -> engine
 │   ├── handler.py     # TFTPHandler protocol, TFTPRequestContext, AtomicWriter

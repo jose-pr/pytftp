@@ -1,4 +1,4 @@
-"""The asyncio server: :class:`TFTPServer`'s behaviour on an asyncio event loop.
+"""The asyncio server: :class:`tftp.TFTPServer`'s behaviour on an asyncio event loop.
 
 Handlers may be ``async def``: ``open_read``/``open_write`` are awaited when
 they return an awaitable, and the streams they return may be asynchronous
@@ -16,19 +16,18 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-import socket
 import time
 from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
+from .._bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
 from ..packet import TFTPErrorCode
 from ..packet.codec import _encode_error
-from ..server.base import ServerBase
-from ..server.listener import _RECV_SIZE, Arrival
-from ..server.session import Session
-from .._bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
+from ._core import ServerBase
+from .listener import _RECV_SIZE, Arrival
+from .session import Session
 
 __all__ = ["AsyncTFTPServer"]
 
@@ -47,6 +46,10 @@ class _SessionProtocol(asyncio.DatagramProtocol):
         pass
 
 
+def _skippable(exc: BaseException) -> bool:
+    return isinstance(exc, OSError)
+
+
 class _Timer:
     """A session's pending timer: the handle and when it is due."""
 
@@ -59,11 +62,18 @@ class _Timer:
 
 
 class AsyncTFTPServer(ServerBase):
-    """:class:`TFTPServer` for asyncio; same arguments except ``open_in_thread``/``workers``.
+    """:class:`tftp.TFTPServer` for asyncio; same arguments except ``open_in_thread``/``workers``.
 
     ``executor`` (default: the loop's) runs blocking handler opens.
     Use as ``async with AsyncTFTPServer(...) as server: await server.serve_forever()``,
-    or ``await server.start()`` ... ``await server.stop()``.
+    or ``await server.start()`` ... ``await server.aclose()``.
+
+    The constructor opens nothing: :meth:`bind` does, and :meth:`start`,
+    :meth:`serve_forever` and ``async with`` call it. ``shutdown()`` never
+    blocks and is safe from any thread; ``await wait_closed()`` returns once
+    serving has stopped; ``await aclose()`` shuts down, waits and releases the
+    sockets, and is final: :meth:`start` or :meth:`serve_forever` afterwards,
+    or while serving, raises ``RuntimeError``.
     """
 
     def __init__(
@@ -79,76 +89,148 @@ class AsyncTFTPServer(ServerBase):
         self.executor = executor
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stopped: Optional[asyncio.Event] = None
+        self._serve_ended: Optional["asyncio.Future[None]"] = None
         self._task: Optional["asyncio.Task[None]"] = None
+        self._closing: Optional["asyncio.Task[None]"] = None
+        self._serving = False
         self._closed = False
 
     # -- lifecycle --------------------------------------------------------------------
 
-    async def serve_forever(self) -> None:
-        """Serve until :meth:`shutdown`."""
+    def bind(self) -> None:
+        """Bind the listening socket. Idempotent; raises what the bind raised.
+
+        Raises ``RuntimeError`` after :meth:`aclose`.
+        """
         if self._closed:
             raise RuntimeError("server is closed")
+        if self._listener is None:
+            self._listener = self._bind_listener()
+            self._address = self._listener.sock.getsockname()
+
+    def _claim(self) -> "asyncio.Future[None]":
+        """Bind, then mark this task as the one that serves; the future is ready once listening."""
+        self.bind()
+        if self._serving:
+            raise RuntimeError("server is already serving")
         loop = self._loop = asyncio.get_running_loop()
         self._stopped = asyncio.Event()
+        self._serve_ended = loop.create_future()
+        self._serving = True
+        return loop.create_future()
+
+    async def _serve(self, ready: "asyncio.Future[None]") -> None:
+        loop = self._loop
+        assert loop is not None and self._stopped is not None and self._serve_ended is not None
         listening = loop.create_task(self._listen())
+        stop = loop.create_task(self._stopped.wait())
         try:
-            await self._stopped.wait()
+            await asyncio.sleep(0)  # let the listener register its reader
+            if not ready.done():
+                ready.set_result(None)
+            await asyncio.wait({listening, stop}, return_when=asyncio.FIRST_COMPLETED)
+            if listening.done() and not listening.cancelled():
+                listening.result()  # a failure of the listener ends serving with it
         finally:
-            listening.cancel()
-            try:
-                await listening
-            except asyncio.CancelledError:
-                pass
+            for task in (listening, stop):
+                task.cancel()
+            for task in (listening, stop):
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass  # raised from listening.result() above, or already reported there
             for session in list(self._sessions.values()):
                 if session.transfer is not None and not session.transfer.is_done:
                     session.transfer.abort("server shutting down")
                 if session.stream is not None:
                     session.close_stream(ok=False)
                 self._release(session)
+            self._serving = False
+            if not ready.done():
+                ready.cancel()
+            self._serve_ended.set_result(None)
 
-    def shutdown(self) -> None:
-        """Stop :meth:`serve_forever`; safe from any thread."""
-        loop, stopped = self._loop, self._stopped
-        if loop is not None and stopped is not None:
-            loop.call_soon_threadsafe(stopped.set)
+    async def serve_forever(self) -> None:
+        """Bind, then serve in the caller's task until :meth:`shutdown`."""
+        ready = self._claim()
+        await self._serve(ready)
 
     async def start(self) -> "AsyncTFTPServer":
-        """Serve in a background task; returns once listening."""
-        self._task = asyncio.ensure_future(self.serve_forever())
-        while self._stopped is None:
-            await asyncio.sleep(0)
+        """Bind, serve in a background task, and return once listening.
+
+        Raises what :meth:`bind` raised, and ``RuntimeError`` when already
+        serving or closed. The task's end is seen by :meth:`wait_closed`.
+        """
+        ready = self._claim()
+        task = self._task = asyncio.ensure_future(self._serve(ready))
+        task.add_done_callback(self._ended)
+        await asyncio.wait({task, ready}, return_when=asyncio.FIRST_COMPLETED)
+        if task.done():
+            self._task = None
+            task.result()  # what ended it before it was listening
         return self
 
-    async def stop(self) -> None:
-        self.shutdown()
-        if self._task is not None:
-            await self._task
-            self._task = None
+    def _ended(self, task: "asyncio.Task[None]") -> None:
+        if not task.cancelled() and task.exception() is not None:
+            log.error("the server stopped on an unexpected error", exc_info=task.exception())
 
-    async def close(self) -> None:
-        if self._closed:
+    def shutdown(self) -> None:
+        """Ask serving to stop; returns at once. Safe from any thread, and a no-op when not serving."""
+        loop, stopped = self._loop, self._stopped
+        if not self._serving or loop is None or stopped is None:
             return
-        await self.stop()
+        try:
+            loop.call_soon_threadsafe(stopped.set)
+        except RuntimeError:  # the loop is closed: nothing is serving on it
+            pass
+
+    async def wait_closed(self, timeout: Optional[float] = None) -> bool:
+        """Wait until serving has stopped; ``False`` when ``timeout`` seconds passed first.
+
+        Raises what ended a task begun by :meth:`start`, if it ended on an error.
+        """
+        done = self._serve_ended
+        if done is not None and not done.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(done), timeout)
+            except asyncio.TimeoutError:
+                return False
+        task, self._task = self._task, None
+        if task is not None:
+            await task
+        return True
+
+    async def aclose(self) -> None:
+        """:meth:`shutdown`, :meth:`wait_closed`, then release the socket. Final and repeatable."""
+        if self._closing is None:
+            self._closing = asyncio.ensure_future(self._close())
+        await asyncio.shield(self._closing)
+
+    async def _close(self) -> None:
         self._closed = True
-        self._listener.close()
+        self.shutdown()
+        try:
+            await self.wait_closed()
+        finally:
+            if self._listener is not None:
+                await self._listener.aclose()
 
     async def __aenter__(self) -> "AsyncTFTPServer":
+        self.bind()
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
-        await self.close()
+        await self.aclose()
 
     # -- requests ---------------------------------------------------------------------
 
     async def _listen(self) -> None:
         endpoint = self._listener.endpoint
-        while True:
-            try:
-                datagram = await endpoint.arecv(_RECV_SIZE)
-            except OSError:
-                # An ICMP error surfacing on the listener: skip it, as the
-                # synchronous server does.
-                continue
+        # An ICMP error surfacing on the listener is skipped, as the
+        # synchronous server does; closing the endpoint ends the loop quietly.
+        async for datagram in endpoint.datagrams(_RECV_SIZE, on_error=_skippable):
             self._arrived(self._listener.arrival(datagram))
             # Whatever else is already queued, without another wait.
             for _ in range(63):

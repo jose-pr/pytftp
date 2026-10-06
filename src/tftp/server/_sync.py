@@ -1,5 +1,8 @@
 """The server: one thread, one ``selectors`` event loop, any number of transfers.
 
+:class:`SelectorService` is the lifecycle it shares with the relay: ``bind``,
+``start``, ``serve_forever``, ``shutdown``, ``wait_closed`` and ``close``.
+
 The listening socket is read through :class:`netimps.UDPEndpoint`, which
 reports each request's destination address (``IP_PKTINFO`` /
 ``IPV6_PKTINFO``) where the platform allows it; :mod:`.session` binds the
@@ -12,6 +15,7 @@ from __future__ import annotations
 
 import collections
 import concurrent.futures
+import contextlib
 import heapq
 import logging
 import selectors
@@ -19,7 +23,7 @@ import socket
 import sys
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, TypeVar
 
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
@@ -30,20 +34,178 @@ from ..packet import TFTPErrorCode
 from ..packet.codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Transfer
-from .base import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
+from ._core import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
 from .policy import TFTPServerLimits
 from .session import Session
 
-__all__ = ["TFTPServer"]
+__all__ = ["SelectorService", "TFTPServer"]
 
 log = logging.getLogger("tftp.server")
 
 _RECV_SIZE = 65536  # one receive buffer, shared by every session
 _DRAIN = 64  # packets read per readiness event before yielding to others
 _WAKE_BYTE = bytes(1)
+#: How long close() waits for a loop that has been asked to stop; a handler that
+#: has not returned by then is abandoned (the loop thread is a daemon).
+_CLOSE_WAIT = 5.0
+
+_Service = TypeVar("_Service", bound="SelectorService")
 
 
-class TFTPServer(ServerBase):
+class SelectorService:
+    """The lifecycle of a service run by one selector loop on one thread.
+
+    A subclass provides ``_acquire()`` (take every resource, or none),
+    ``_loop()`` (run until ``self._stopping``), ``_wake()`` (end a wait in the
+    loop from any thread) and ``_free()`` (let go of what ``_acquire`` took).
+
+    ``bind`` opens the sockets and is idempotent. ``start`` and
+    ``serve_forever`` bind, then serve; a second one while serving, or any
+    after ``close``, raises ``RuntimeError``. ``shutdown`` never blocks and is
+    safe from any thread, a handler included; it has no effect when nothing is
+    serving. ``wait_closed`` blocks until serving has stopped. ``close`` is
+    ``shutdown``, ``wait_closed`` (up to five seconds), then release, and is
+    final.
+    """
+
+    _service = "server"
+
+    def _init_service(self) -> None:
+        self._guard = threading.Lock()
+        self._close_guard = threading.Lock()
+        self._bound = False
+        self._serving = False
+        self._closed = False
+        self._stopping = False
+        self._idle = threading.Event()
+        self._idle.set()
+        self._entered = threading.Event()
+        self._serving_ident: Optional[int] = None
+        self._thread: Optional[threading.Thread] = None
+
+    # -- what a service provides -------------------------------------------
+
+    def _acquire(self) -> None:  # pragma: no cover - subclasses
+        raise NotImplementedError
+
+    def _loop(self) -> None:  # pragma: no cover - subclasses
+        raise NotImplementedError
+
+    def _wake(self) -> None:  # pragma: no cover - subclasses
+        raise NotImplementedError
+
+    def _free(self) -> None:  # pragma: no cover - subclasses
+        raise NotImplementedError
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def bind(self) -> None:
+        """Open and bind the sockets. Idempotent; raises what the bind raised.
+
+        Nothing stays open when it raises. Raises ``RuntimeError`` after
+        :meth:`close`.
+        """
+        with self._guard:
+            if self._closed:
+                raise RuntimeError("%s is closed" % self._service)
+            if not self._bound:
+                self._acquire()
+                self._bound = True
+
+    def _claim(self) -> None:
+        """Bind, then mark this caller as the one that serves."""
+        self.bind()
+        with self._guard:
+            if self._closed:
+                raise RuntimeError("%s is closed" % self._service)
+            if self._serving:
+                raise RuntimeError("%s is already serving" % self._service)
+            self._serving = True
+            self._stopping = False
+            self._idle.clear()
+            self._entered.clear()
+
+    def _serve(self) -> None:
+        self._serving_ident = threading.get_ident()
+        self._entered.set()
+        try:
+            self._loop()
+        finally:
+            with self._guard:
+                self._serving_ident = None
+                self._serving = False
+            self._idle.set()
+
+    def serve_forever(self) -> None:
+        """Bind, then serve on the calling thread until :meth:`shutdown`."""
+        self._claim()
+        self._serve()
+
+    def start(self: _Service) -> _Service:
+        """Bind, serve on a daemon thread, and return ``self`` once serving.
+
+        Raises what :meth:`bind` raised, and ``RuntimeError`` when already
+        serving or closed.
+        """
+        self._claim()
+        thread = threading.Thread(target=self._serve, name="tftp-" + self._service, daemon=True)
+        self._thread = thread
+        thread.start()
+        self._entered.wait()
+        return self
+
+    def shutdown(self) -> None:
+        """Ask serving to stop; returns at once. Safe from any thread and from a handler."""
+        with self._guard:
+            if not self._serving:
+                return
+            self._stopping = True
+        self._wake()
+
+    def wait_closed(self, timeout: Optional[float] = None) -> bool:
+        """Block until serving has stopped; ``False`` when ``timeout`` seconds passed first.
+
+        Raises ``RuntimeError`` from the thread that is serving, which would wait for itself.
+        """
+        if self._serving_ident == threading.get_ident():
+            raise RuntimeError("wait_closed() from the serving thread would wait for itself")
+        began = time.monotonic()
+        if not self._idle.wait(timeout):
+            return False
+        thread = self._thread
+        if thread is not None:
+            thread.join(None if timeout is None else max(0.0, timeout - (time.monotonic() - began)))
+            if thread.is_alive():
+                return False
+            self._thread = None
+        return True
+
+    def close(self) -> None:
+        """:meth:`shutdown`, :meth:`wait_closed`, then release every socket. Final and repeatable.
+
+        Raises ``RuntimeError`` from the thread that is serving: a handler
+        that wants the server down calls :meth:`shutdown`.
+        """
+        if self._serving_ident == threading.get_ident():
+            raise RuntimeError("close() from the serving thread: call shutdown()")
+        with self._close_guard:
+            if self._closed:
+                return
+            self.shutdown()
+            self.wait_closed(_CLOSE_WAIT)
+            with self._guard:
+                self._closed = True
+            self._free()
+
+    def __enter__(self: _Service) -> _Service:
+        self.bind()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+
+class TFTPServer(SelectorService, ServerBase):
     """A TFTP server.
 
     :param root_or_handler: a directory to serve (wrapped in
@@ -53,7 +215,8 @@ class TFTPServer(ServerBase):
         ``netimps.Host``. ``None`` (the default) or ``"::"`` listens on IPv6
         and IPv4 at once where the platform allows dual-stack sockets, else
         falls back to ``"0.0.0.0"``. ``"0.0.0.0"`` is IPv4 only.
-    :param port: UDP port; ``0`` picks a free one (see :attr:`server_address`).
+    :param port: UDP port; ``0`` picks a free one (see :attr:`server_address`,
+        valid after :meth:`bind`).
     :param timeout: retransmission timeout, unless a client negotiates its own.
     :param retries: retransmissions of one packet before abandoning a transfer.
     :param options: what the server negotiates (:class:`TFTPServerOptions`).
@@ -155,38 +318,50 @@ class TFTPServer(ServerBase):
             port_range=port_range,
             interface=interface,
         )
+        self._init_service()
         self._ready: "collections.deque[Session]" = collections.deque()
         self._pending_opens: "collections.deque[Tuple[Session, Any]]" = collections.deque()
         if open_in_thread is None:
             open_in_thread = not getattr(self.handler, "_tftp_fast_open_", False)
-        self._workers = (
-            concurrent.futures.ThreadPoolExecutor(max(1, workers), thread_name_prefix="tftp-open")
-            if open_in_thread
-            else None
-        )
-        self._selector = selectors.DefaultSelector()
-        self._wake_r, self._wake_w = socket.socketpair()
-        self._wake_r.setblocking(False)
-        self._wake_w.setblocking(False)
-        self._selector.register(self._listener.sock, selectors.EVENT_READ, None)
-        self._selector.register(self._wake_r, selectors.EVENT_READ, self)
+        self._worker_count = max(1, workers) if open_in_thread else 0
+        self._workers: Optional[concurrent.futures.ThreadPoolExecutor] = None
+        self._selector: Any = None
+        self._wake_r: Any = None
+        self._wake_w: Any = None
         self._timers: List[Tuple[float, int, Session]] = []
         self._seq = 0
         self._buf = bytearray(_RECV_SIZE)
         self._view = memoryview(self._buf)
-        self._stopping = False
-        self._running = threading.Event()
-        self._thread: Optional[threading.Thread] = None
-        self._closed = False
 
     # -- lifecycle ----------------------------------------------------------
 
-    def serve_forever(self) -> None:
-        """Run the event loop until :meth:`shutdown`."""
-        if self._closed:
-            raise RuntimeError("server is closed")
-        self._stopping = False
-        self._running.set()
+    def _acquire(self) -> None:
+        with contextlib.ExitStack() as stack:
+            listener = self._bind_listener()
+            stack.callback(listener.close)
+            workers = None
+            if self._worker_count:
+                workers = concurrent.futures.ThreadPoolExecutor(
+                    self._worker_count, thread_name_prefix="tftp-open"
+                )
+                stack.callback(workers.shutdown)
+            selector = selectors.DefaultSelector()
+            stack.callback(selector.close)
+            wake_r, wake_w = socket.socketpair()
+            stack.callback(wake_r.close)
+            stack.callback(wake_w.close)
+            wake_r.setblocking(False)
+            wake_w.setblocking(False)
+            selector.register(listener.sock, selectors.EVENT_READ, None)
+            selector.register(wake_r, selectors.EVENT_READ, self)
+            stack.pop_all()
+        self._listener = listener
+        self._address = listener.sock.getsockname()
+        self._workers = workers
+        self._selector = selector
+        self._wake_r, self._wake_w = wake_r, wake_w
+
+    def _loop(self) -> None:
         clock = time.monotonic
         select = self._selector.select
         try:
@@ -206,7 +381,6 @@ class TFTPServer(ServerBase):
                 if self._timers and self._timers[0][0] <= clock():
                     self._run_timers(clock())
         finally:
-            self._running.clear()
             for session in list(self._sessions.values()):
                 if session.transfer is not None and not session.transfer.is_done:
                     session.transfer.abort("server shutting down")
@@ -217,51 +391,29 @@ class TFTPServer(ServerBase):
                 session, outcome = self._pending_opens.popleft()
                 self._opened(session, outcome, time.monotonic())
 
-    def shutdown(self) -> None:
-        """Stop :meth:`serve_forever`; safe from any thread or a handler."""
-        self._stopping = True
-        self._wake()
-
-    def start(self) -> "TFTPServer":
-        """Run :meth:`serve_forever` in a daemon thread; returns ``self``."""
-        if self._thread is not None and self._thread.is_alive():
-            raise RuntimeError("server already running")
-        self._thread = threading.Thread(target=self.serve_forever, name="tftp-server", daemon=True)
-        self._thread.start()
-        self._running.wait(5)
-        return self
-
-    def stop(self, timeout: Optional[float] = 5.0) -> None:
-        """:meth:`shutdown`, then wait for the :meth:`start` thread to exit."""
-        self.shutdown()
-        if self._thread is not None:
-            self._thread.join(timeout)
-            self._thread = None
-
-    def close(self) -> None:
-        """Stop serving and release every socket."""
-        if self._closed:
-            return
-        self.stop()
-        self._closed = True
+    def _free(self) -> None:
         if self._workers is not None:
             self._workers.shutdown(wait=True)
             while self._pending_opens:
                 session, outcome = self._pending_opens.popleft()
                 self._opened(session, outcome, time.monotonic())
-        self._selector.close()
-        self._listener.close()
+        if self._selector is not None:
+            self._selector.close()
+        if self._listener is not None:
+            self._listener.close()
         for sock in (self._wake_r, self._wake_w):
-            sock.close()
+            if sock is not None:
+                sock.close()
 
-    def __enter__(self) -> "TFTPServer":
-        return self
-
-    def __exit__(self, *exc: Any) -> None:
-        self.close()
+    def _wake(self) -> None:
+        try:
+            self._wake_w.send(_WAKE_BYTE)
+        except OSError:
+            pass
 
     def __repr__(self) -> str:
-        return "TFTPServer(%r, %d active)" % (self.server_address[:2], len(self._sessions))
+        address = None if self._address is None else self._address[:2]
+        return "TFTPServer(%r, %d active)" % (address, len(self._sessions))
 
     # -- event loop ---------------------------------------------------------
 
@@ -291,12 +443,6 @@ class TFTPServer(ServerBase):
                     self._schedule(session)
             except Exception as exc:
                 self._survive(session, exc)
-
-    def _wake(self) -> None:
-        try:
-            self._wake_w.send(_WAKE_BYTE)
-        except OSError:
-            pass
 
     def _notifier(self, session: Session) -> Callable[[], None]:
         """A thread-safe callback resuming ``session`` on the loop thread."""

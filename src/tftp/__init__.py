@@ -60,6 +60,7 @@ from .client import MODES, AsyncTFTPClient, RemoteStat, TFTPClient, download, up
 from .listing import ListEntry
 from .backends import FilesystemBackend
 from .server import (
+    AsyncTFTPServer,
     AtomicWriter,
     TFTPHandler,
     PortRange,
@@ -105,6 +106,7 @@ __all__ = [
     "upload_url",
     # Server
     "TFTPServer",
+    "AsyncTFTPServer",
     "TFTPServerOptions",
     "TFTPServerLimits",
     "PortRange",

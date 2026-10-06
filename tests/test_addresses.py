@@ -189,7 +189,7 @@ def test_interface_errors(root):
     with pytest.raises(ValueError):
         tftp.TFTPServer(root, host="127.0.0.1", port=0, interface=_loopback())  # host or interface
     with pytest.raises(ValueError):
-        tftp.TFTPServer(root, port=0, interface="no-such-adapter-xyz")
+        tftp.TFTPServer(root, port=0, interface="no-such-adapter-xyz").bind()
 
 
 def test_relay_on_one_interface(root, make_server):

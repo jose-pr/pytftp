@@ -1,9 +1,10 @@
 """What every server front end shares: configuration, admission, reporting.
 
-:class:`tftp.TFTPServer` (a ``selectors`` loop) and :class:`tftp.aio.AsyncTFTPServer`
+:class:`tftp.TFTPServer` (a ``selectors`` loop) and :class:`tftp.AsyncTFTPServer`
 (asyncio) differ only in how they wait for sockets and timers; deciding
 whether a request becomes a transfer, refusing it, and reporting the outcome
-live here so the two cannot drift apart.
+live here so the two cannot drift apart. Nothing here opens a socket until
+``bind()``.
 """
 
 from __future__ import annotations
@@ -68,6 +69,13 @@ class ServerBase:
         port_range: Any = None,
         interface: Any = None,
     ) -> None:
+        if interface is not None and host:
+            from netimps import is_wildcard
+
+            if not is_wildcard(host):
+                raise ValueError(
+                    "give host or interface, not both (host may be '0.0.0.0' or '::' to pick the family)"
+                )
         if isinstance(root_or_handler, (str, os.PathLike)):
             from ..backends.filesystem import FilesystemBackend
 
@@ -99,25 +107,36 @@ class ServerBase:
         self._per_client: Dict[str, int] = {}
         #: Counters since start (:class:`TFTPStats`); ``stats_snapshot()`` adds ``active``.
         self.stats = TFTPStats(*SERVER_COUNTERS)
-        self._listener = Listener(host, port, pktinfo=reply_from_request_address, interface=interface)
-        self._address: Tuple[Any, ...] = self._listener.sock.getsockname()
+        self._listen_on = (host, port, reply_from_request_address, interface)
+        self._listener: Any = None
+        self._address: Optional[Tuple[Any, ...]] = None
+
+    # -- the listening socket -------------------------------------------------------
+
+    def _bind_listener(self) -> Listener:
+        """A bound listener; the caller owns it and closes it if a later step fails."""
+        host, port, pktinfo, interface = self._listen_on
+        return Listener(host, port, pktinfo=pktinfo, interface=interface)
 
     # -- properties -----------------------------------------------------------------
 
     @property
-    def server_address(self) -> Tuple[Any, ...]:
-        """The bound listening address, e.g. to learn the port chosen for ``port=0``."""
+    def server_address(self) -> Optional[Tuple[Any, ...]]:
+        """The bound listening address, or ``None`` before :meth:`bind`.
+
+        Read it to learn the port chosen for ``port=0``.
+        """
         return self._address
 
     @property
-    def has_pktinfo(self) -> bool:
-        """Replies come from the request's own destination address."""
-        return self._listener.has_pktinfo
+    def has_pktinfo(self) -> Optional[bool]:
+        """Replies come from the request's own destination address; ``None`` before :meth:`bind`."""
+        return None if self._listener is None else self._listener.has_pktinfo
 
     @property
-    def is_dual_stack(self) -> bool:
-        """The listening socket accepts IPv4 as well as IPv6."""
-        return self._listener.is_dual_stack
+    def is_dual_stack(self) -> Optional[bool]:
+        """The listening socket accepts IPv4 as well as IPv6; ``None`` before :meth:`bind`."""
+        return None if self._listener is None else self._listener.is_dual_stack
 
     @property
     def active_sessions(self) -> int:

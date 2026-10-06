@@ -211,6 +211,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **A host name that does not resolve is netimps' `ResolutionError`** (an
   `OSError`; `NoAnswerError` when the lookup found no such name) from both
   clients, where it was `socket.gaierror`.
+- **The servers open nothing in their constructor, and share one lifecycle.**
+  `TFTPServer`, `AsyncTFTPServer` and `TFTPRelay` check and store their
+  arguments; `bind()` opens the sockets (idempotent, never a coroutine) and
+  `start()`, `serve_forever()` and entering the context manager call it, so a
+  caller can take a privileged port before dropping privileges. `server_address`
+  (and `has_pktinfo`, `is_dual_stack`) is `None` before `bind()`, and a bind
+  failure (`OSError`, a `ValueError` for an adapter that does not resolve)
+  comes from `bind()`, `start()` or `serve_forever()`, not from the
+  constructor. `shutdown()` never blocks; `wait_closed(timeout=None)` replaces
+  `stop(timeout)` (blocking on the threaded server and the relay, a coroutine on
+  `AsyncTFTPServer`) and returns `False` when the timeout passed first; `close()`
+  is `shutdown()`, `wait_closed()` and release, final and repeatable, and
+  raises `RuntimeError` when called from the thread that is serving (a handler
+  calls `shutdown()`). `start()` raises what `bind()` raised and returns only
+  once serving.
+- **`AsyncTFTPServer.close()` is `aclose()`.** An async class has no `async def
+  close()`: `await server.aclose()` releases the listening socket through
+  netimps' `aclose()`, and `close()` and `stop()` are gone. `AsyncTFTPServer` is
+  exported from `tftp` and `tftp.server`, and the package `tftp.aio` is gone.
+  `AsyncTFTPServer.serve_forever()` iterates the listener's `datagrams()`.
 
 ### Renamed
 
@@ -256,10 +276,26 @@ Old names are not kept as aliases.
 | `Route` (`tftp.relay`, the callable's type) | `RouteFunction` |
 | `tftp.DEFAULT`, `tftp.STRICT`, `tftp.PXE`, `tftp.HPA`, `tftp.LEGACY` | `Profile.DEFAULT`, `Profile.STRICT`, `Profile.PXE`, `Profile.HPA`, `Profile.LEGACY` (`PROFILES[name]` is unchanged) |
 | `supports_pktinfo`, `dual_stack` (properties of the servers and the relay) | `has_pktinfo`, `is_dual_stack` |
+| `TFTPServer.stop(timeout)`, `TFTPRelay.stop(timeout)`, `await AsyncTFTPServer.stop()` | `shutdown()`, then `wait_closed(timeout)` |
+| `await AsyncTFTPServer.close()` | `await AsyncTFTPServer.aclose()` |
+| `tftp.aio.AsyncTFTPServer` | `tftp.AsyncTFTPServer`, `tftp.server.AsyncTFTPServer` |
 | `TransferResult.ok`, `CapturedTransfer.complete`, `Transfer.done`, `Transfer.stalled` | `is_ok`, `is_complete`, `is_done`, `is_stalled` (the `"ok"` and `"complete"` keys of the command line's and `CapturedTransfer`'s dictionaries are unchanged) |
 
 ### Fixed
 
+- `start()` after `close()` raises `RuntimeError` on `TFTPServer`, `AsyncTFTPServer`
+  and `TFTPRelay`. The threaded server waited five seconds and returned as if it
+  were serving (the thread died on the same error), and the asynchronous one
+  returned at once after serving before, or never returned when it had not. A
+  second `start()` raises `RuntimeError`, where the asynchronous one started a
+  second serving task and made `close()` wait for ever.
+- `await server.aclose()` from another task ends a running
+  `AsyncTFTPServer.serve_forever()` without an exception: it raised
+  `RuntimeError: endpoint is closed` from netimps.
+- A server or relay whose startup fails part-way (a selector registration, a
+  socket pair, a worker pool) closes what it had opened: the constructor used to
+  leave the listening socket, the selector, the socket pair and the pool behind.
+  A listener that cannot finish setting up closes its socket.
 - `TransferTimeoutError`, `TransferAbortedError` and `TFTPProtocolError` can be
   copied and pickled, so a `TransferResult` holding one crosses a
   `multiprocessing` boundary; each raised `TypeError` before.

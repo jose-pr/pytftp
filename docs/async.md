@@ -4,8 +4,7 @@
 
 ```python
 import asyncio
-from tftp import AsyncTFTPClient
-from tftp.aio import AsyncTFTPServer
+from tftp import AsyncTFTPClient, AsyncTFTPServer
 
 async def main():
     client = AsyncTFTPClient("192.0.2.1", windowsize=8)
@@ -39,6 +38,11 @@ async def serve():
     async with AsyncTFTPServer(Images(), port=69) as server:
         await server.serve_forever()
 ```
+
+`async with` binds on entry and awaits `aclose()` on exit. `await server.start()`
+serves in a background task and returns once listening; `shutdown()` (safe from any
+thread) and `await server.wait_closed()` stop and wait; `await server.aclose()`
+releases the socket and is final.
 
 Synchronous handlers work too: the built-in file and memory handlers open on
 the loop, others (HTTP, upstream TFTP) in the loop's executor. An upload's

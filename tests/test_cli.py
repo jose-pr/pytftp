@@ -191,7 +191,8 @@ def test_capture_command(root, make_server, tmp_path_factory, capsys):
             client_for_cli.get("missing")
         except Exception:
             pass
-        server.stop()
+        server.shutdown()
+        assert server.wait_closed(5.0)
     assert run(["capture", str(pcap), "-p", port, "--filter", "op=RRQ,ERROR"]) in (None, 0)
     lines = capsys.readouterr().out.strip().splitlines()
     assert len(lines) == 3 and "RRQ '1428x3.bin'" in lines[0] and "ERROR 1" in lines[-1]

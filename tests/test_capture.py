@@ -105,7 +105,8 @@ def test_pcap_roundtrip_reconstructs_transfers(root, make_server, tmp_path_facto
         client.put("uploaded.bin", b"u" * 3000)
         with pytest.raises(tftp.FileNotFound):
             client.get("missing")
-        server.stop()
+        server.shutdown()
+        assert server.wait_closed(5.0)
     analysis = analyze(path, ports=[server.server_address[1]])
     by_name = {t.filename: t for t in analysis.transfers}
     big = by_name["big.bin"]

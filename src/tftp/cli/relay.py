@@ -94,6 +94,7 @@ class RelayCmd(Traced):
                 port_range=ports,
                 interface=self.interface,
             )
+            relay.bind()
         except OSError as exc:
             return bind_failure(exc, self.listen or self.interface or "::", self.port)
         logger = _logging.getLogger("tftp")

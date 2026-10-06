@@ -16,11 +16,11 @@ window instead, terminate both sessions with
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import selectors
 import socket
 import sys
-import threading
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 
@@ -32,6 +32,7 @@ from ..capture.events import PacketEvent, new_session_id
 from ..exceptions import TFTPDecodeError, TFTPError
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
 from ..packet.codec import _encode_error
+from ..server._sync import SelectorService
 from ..server.handler import TFTPRequestContext
 from ..server.listener import Arrival, Listener
 from ..server.policy import TFTPServerLimits
@@ -50,7 +51,7 @@ _DRAIN = 64
 _RESOLVE_TTL = 60.0
 
 
-class TFTPRelay:
+class TFTPRelay(SelectorService):
     """Forward TFTP requests to upstream servers, transparently.
 
     :param route: an upstream (``"host"``, ``"host:port"``, ``(host, port)``,
@@ -75,7 +76,14 @@ class TFTPRelay:
     :param port_range: ports for both sockets of each relayed transfer (the
         client side and the upstream side), as for ``TFTPServer``.
     :param interface: listen on one network adapter, as for ``TFTPServer``.
+
+    The constructor opens nothing: :meth:`bind` does, and :meth:`start`,
+    :meth:`serve_forever` and ``with`` call it. The lifecycle is
+    :class:`TFTPServer`'s: ``shutdown()`` never blocks, ``wait_closed()``
+    returns once serving has stopped, ``close()`` is final.
     """
+
+    _service = "relay"
 
     def __init__(
         self,
@@ -123,31 +131,28 @@ class TFTPRelay:
         self._ports = PortAllocator(self.port_range) if self.port_range is not None else None
         #: Counters since start (:class:`TFTPStats`).
         self.stats = TFTPStats(*RELAY_COUNTERS)
-        self._listener = Listener(host, port, pktinfo=reply_from_request_address, interface=interface)
-        self._address = self._listener.sock.getsockname()
-        self._selector = selectors.DefaultSelector()
-        self._wake_r, self._wake_w = socket.socketpair()
-        self._wake_r.setblocking(False)
-        self._wake_w.setblocking(False)
-        self._selector.register(self._listener.sock, selectors.EVENT_READ, None)
-        self._selector.register(self._wake_r, selectors.EVENT_READ, self)
+        self._listen_on = (host, port, reply_from_request_address, interface)
+        self._listener: Any = None
+        self._address: Optional[Tuple[Any, ...]] = None
+        self._selector: Any = None
+        self._wake_r: Any = None
+        self._wake_w: Any = None
         self._sessions: Dict[Tuple[str, int], RelaySession] = {}
         self._resolved: Dict[str, Tuple[Any, float]] = {}
         self._buf = bytearray(_RECV)
-        self._stopping = False
-        self._running = threading.Event()
-        self._thread: Optional[threading.Thread] = None
-        self._closed = False
+        self._init_service()
 
-    # -- properties and lifecycle (as for TFTPServer) --------------------------------
+    # -- properties -------------------------------------------------------------------
 
     @property
-    def server_address(self) -> Tuple[Any, ...]:
+    def server_address(self) -> Optional[Tuple[Any, ...]]:
+        """The bound listening address, or ``None`` before :meth:`bind`."""
         return self._address
 
     @property
-    def has_pktinfo(self) -> bool:
-        return self._listener.has_pktinfo
+    def has_pktinfo(self) -> Optional[bool]:
+        """Replies come from the request's own destination address; ``None`` before :meth:`bind`."""
+        return None if self._listener is None else self._listener.has_pktinfo
 
     @property
     def active_sessions(self) -> int:
@@ -159,11 +164,44 @@ class TFTPRelay:
         snapshot["active"] = len(self._sessions)
         return snapshot
 
-    def serve_forever(self) -> None:
-        if self._closed:
-            raise RuntimeError("relay is closed")
-        self._stopping = False
-        self._running.set()
+    # -- lifecycle ---------------------------------------------------------------------
+
+    def _acquire(self) -> None:
+        with contextlib.ExitStack() as stack:
+            host, port, pktinfo, interface = self._listen_on
+            listener = Listener(host, port, pktinfo=pktinfo, interface=interface)
+            stack.callback(listener.close)
+            selector = selectors.DefaultSelector()
+            stack.callback(selector.close)
+            wake_r, wake_w = socket.socketpair()
+            stack.callback(wake_r.close)
+            stack.callback(wake_w.close)
+            wake_r.setblocking(False)
+            wake_w.setblocking(False)
+            selector.register(listener.sock, selectors.EVENT_READ, None)
+            selector.register(wake_r, selectors.EVENT_READ, self)
+            stack.pop_all()
+        self._listener = listener
+        self._address = listener.sock.getsockname()
+        self._selector = selector
+        self._wake_r, self._wake_w = wake_r, wake_w
+
+    def _wake(self) -> None:
+        try:
+            self._wake_w.send(bytes(1))
+        except OSError:
+            pass
+
+    def _free(self) -> None:
+        if self._selector is not None:
+            self._selector.close()
+        if self._listener is not None:
+            self._listener.close()
+        for sock in (self._wake_r, self._wake_w):
+            if sock is not None:
+                sock.close()
+
+    def _loop(self) -> None:
         clock = time.monotonic
         next_tick = clock() + _TICK
         try:
@@ -194,50 +232,12 @@ class TFTPRelay:
                         log.exception("unexpected failure sweeping idle transfers")
                     next_tick = now + _TICK
         finally:
-            self._running.clear()
             now = clock()
             for session in list(self._sessions.values()):
                 for sock, peer in ((session.down, session.client), (session.up, session.upstream_tid)):
                     if peer is not None:
                         self._send(session, sock, _encode_error(0, "relay shutting down"), peer, "out")
                 self._end(session, "shutdown", now)
-
-    def shutdown(self) -> None:
-        self._stopping = True
-        try:
-            self._wake_w.send(bytes(1))
-        except OSError:
-            pass
-
-    def start(self) -> "TFTPRelay":
-        if self._thread is not None and self._thread.is_alive():
-            raise RuntimeError("relay already running")
-        self._thread = threading.Thread(target=self.serve_forever, name="tftp-relay", daemon=True)
-        self._thread.start()
-        self._running.wait(5)
-        return self
-
-    def stop(self, timeout: Optional[float] = 5.0) -> None:
-        self.shutdown()
-        if self._thread is not None:
-            self._thread.join(timeout)
-            self._thread = None
-
-    def close(self) -> None:
-        if self._closed:
-            return
-        self.stop()
-        self._closed = True
-        self._selector.close()
-        self._listener.close()
-        self._wake_r.close()
-        self._wake_w.close()
-
-    def __enter__(self) -> "TFTPRelay":
-        return self
-
-    def __exit__(self, *exc: Any) -> None:
-        self.close()
 
     # -- forwarding ---------------------------------------------------------------
 
