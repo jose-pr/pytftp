@@ -45,7 +45,7 @@ def _bind_interface(host: Optional[HostLike], port: int, interface: "InterfaceLi
         except ValueError:  # no IPv4 address on that adapter
             return bind("", port, family=socket.AF_INET6, interface=interface)
     address = Host(host).ip()
-    if address is None or not is_wildcard(host):  # type: ignore[arg-type]  # a Host is accepted at run time
+    if address is None or not is_wildcard(host):
         raise ValueError(
             "give host or interface, not both (host may be '0.0.0.0' or '::' to pick the family)"
         )
@@ -65,7 +65,7 @@ def _bind(host: Optional[HostLike], port: int, interface: "InterfaceLike" = None
         host = split_host(host)[0]  # "[::1]" -> "::1"
     address = Host(host).ip() if host else None
     if not host or (
-        is_wildcard(host)  # type: ignore[arg-type]  # a Host is accepted at run time
+        is_wildcard(host)
         and address is not None
         and address.version == 6
     ):

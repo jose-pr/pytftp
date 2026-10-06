@@ -75,7 +75,7 @@ class ServerBase:
         if interface is not None and host:
             from netimps import is_wildcard
 
-            if not is_wildcard(host):  # type: ignore[arg-type]  # a Host is accepted at run time
+            if not is_wildcard(host):
                 raise ValueError(
                     "give host or interface, not both (host may be '0.0.0.0' or '::' to pick the family)"
                 )
