@@ -14,8 +14,9 @@ import pytest
 
 pytest.importorskip("pathlib_next")
 pytest.importorskip("uritools")
-if not hasattr(pytest.importorskip("pathlib_next.testing"), "PathContract"):
-    pytest.skip("this pathlib_next ships no contract suite", allow_module_level=True)
+_testing = pytest.importorskip("pathlib_next.testing")
+if not all(hasattr(_testing, name) for name in ("FIXTURE_TREE", "PathContract", "populate_fixture_tree")):
+    pytest.skip("this pathlib_next ships no contract suite with a fixture tree", allow_module_level=True)
 
 import tftp  # noqa: E402
 from conftest import client_for  # noqa: E402
