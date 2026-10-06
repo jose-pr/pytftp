@@ -562,7 +562,9 @@ outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
 `overwrite=False` and `path` appeared meanwhile); `abort()` deletes it. The
 temp file is private (0600) unless `mode` is given: it is then created as
 `open()` creates a file with that mode (less the umask) and takes the
-permissions of the file it replaces.
+permissions of the file it replaces. On Windows a rename refused with "access
+denied" is tried again for up to half a second, as a virus scanner or an
+indexer holds the file just written for a moment; after that the error is raised.
 
 ## asyncio
 

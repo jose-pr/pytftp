@@ -18,6 +18,7 @@ import os
 import secrets
 import stat
 import tempfile
+import time
 from typing import TYPE_CHECKING, Any, Mapping, Optional, Protocol, Tuple, Union
 
 if TYPE_CHECKING:
@@ -290,6 +291,25 @@ def _create_beside(directory: str, name: str, mode: int) -> Tuple[int, str]:
             continue
 
 
+#: Seconds a refused rename is tried again, on Windows only. A virus scanner or an indexer
+#: reading the file just written holds it for a moment, and the rename fails with "access denied"
+#: (measured 2026-10-06: one download in four to six, ten busy processes beside the test).
+_REPLACE_PATIENCE = 0.5 if os.name == "nt" else 0.0
+
+
+def _replace(source: str, target: str) -> None:
+    """``os.replace``, again and again for ``_REPLACE_PATIENCE`` seconds while it is refused."""
+    deadline = time.monotonic() + _REPLACE_PATIENCE
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.005)
+
+
 class AtomicWriter:
     """Writes to a temporary file beside ``path`` and renames it on ``close``.
 
@@ -298,7 +318,7 @@ class AtomicWriter:
     (mode 0600) unless ``mode`` is given: then it is created with that mode
     less the process's umask, and takes the permissions of the file it
     replaces. A process killed mid-transfer leaves ``.name.*.part`` beside
-    ``path``.
+    ``path``. On Windows a refused rename is tried again for half a second.
     """
 
     copies_writes = True  # write() copies its argument (see as_write)
@@ -329,7 +349,7 @@ class AtomicWriter:
             self._file.close()
             if not self.overwrite and os.path.exists(self.path):
                 raise TFTPError(TFTPErrorCode.FILE_EXISTS)
-            os.replace(self._tmp, self.path)
+            _replace(self._tmp, self.path)
         except BaseException:
             self._discard()
             raise

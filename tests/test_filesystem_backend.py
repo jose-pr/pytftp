@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+import os
 import shutil
 
 import pytest
@@ -90,3 +91,41 @@ def test_an_upload_that_may_overwrite_replaces_a_file_that_appeared(tmp_path):
     writer.close()
     assert target.read_bytes() == b"upload"
     assert [path.name for path in tmp_path.iterdir()] == ["up.bin"]
+
+
+def _refusing_replace(monkeypatch, times):
+    """``os.replace`` refuses ``times`` calls as Windows does while a scanner holds the new file, then works."""
+    real, calls = os.replace, []
+
+    def replace(source, target):
+        calls.append(source)
+        if len(calls) <= times:
+            raise PermissionError(13, "Access is denied")
+        real(source, target)
+
+    monkeypatch.setattr(os, "replace", replace)
+    return calls
+
+
+def test_a_rename_the_system_refuses_for_a_moment_is_tried_again(tmp_path, monkeypatch):
+    from tftp.server import _handler  # internal: the wait is a constant of this module
+
+    monkeypatch.setattr(_handler, "_REPLACE_PATIENCE", 5.0)
+    calls = _refusing_replace(monkeypatch, 3)
+    writer = tftp.AtomicWriter(str(tmp_path / "up.bin"))
+    writer.write(b"upload")
+    writer.close()
+    assert (tmp_path / "up.bin").read_bytes() == b"upload" and len(calls) == 4
+    assert [path.name for path in tmp_path.iterdir()] == ["up.bin"]
+
+
+def test_a_rename_refused_for_good_fails_with_the_error_and_leaves_no_temporary(tmp_path, monkeypatch):
+    from tftp.server import _handler  # internal: the wait is a constant of this module
+
+    monkeypatch.setattr(_handler, "_REPLACE_PATIENCE", 0.2)
+    _refusing_replace(monkeypatch, 10**6)
+    writer = tftp.AtomicWriter(str(tmp_path / "up.bin"))
+    writer.write(b"upload")
+    with pytest.raises(PermissionError):
+        writer.close()
+    assert list(tmp_path.iterdir()) == []

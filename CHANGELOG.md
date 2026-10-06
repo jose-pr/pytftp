@@ -426,6 +426,10 @@ Old names are not kept as aliases.
 
 ### Fixed
 
+- **On Windows a finished download or upload no longer fails when a virus scanner holds the
+  new file.** The rename of the temporary file into place was refused with "access denied"
+  in about one transfer in six with the machine busy; `AtomicWriter.close()` now tries it
+  again for up to half a second on Windows, then raises the error as before.
 - **A transfer's reported duration is measured on the high-resolution clock.**
   On Windows before Python 3.13 the monotonic clock ticks every 15.6 ms, so a
   transfer that finished inside one tick reported `duration` 0.0 and a
