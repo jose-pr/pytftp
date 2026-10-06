@@ -110,11 +110,14 @@ py -3.14 -m venv .venv/3.14-nt-arm64
 
 ## CI and release
 
-Three workflows: `test.yml` (manual or `ci-*` tag; a lint and type-check job, the full matrix and a job at
-the declared dependency floors), `release.yml` (`v*` tag: tests → build →
-strict docs gate → GitHub release → PyPI → docs dispatch) and `docs.yml`
-(Pages). PyPI publishing uses Trusted Publishing (OIDC): the project and the
+Four workflows: `test.yml` (manual or `ci-*` tag; a lint and type-check job, the full matrix, a job at
+the declared dependency floors, a bare-install import job, the built wheel installed with and without
+its extras on the three systems, and a coverage report that gates nothing), `release.yml` (`v*` tag:
+tests and floors → build → installed-wheel smoke test → strict docs gate → GitHub release → PyPI → docs
+dispatch), `docs.yml` (Pages) and `benchmarks.yml` (dispatched by hand; one result file per system as an
+artifact). PyPI publishing uses Trusted Publishing (OIDC): the project and the
 `release.yml` workflow must be registered on PyPI before the first release.
 
-Benchmarks are run by hand (`python benchmarks/run.py --save <name>`), and the
-JSON is committed; a release's performance claims come from CI, not a laptop.
+Benchmarks are run by hand (`python benchmarks/run.py --save <name>`, or the `Benchmarks` workflow), and
+the JSON is committed; a release's performance claims come from CI, not a laptop. The version in
+`pyproject.toml` is the version in development.

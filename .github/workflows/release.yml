@@ -3,9 +3,10 @@ name: Release
 # Runs when a version tag (e.g. v1.0.0, v1.0.0-rc.1) is pushed. Not wired to
 # push/PR events on branches -- this is a release gate, not general CI.
 #
-# Test gate, build (checking that the tag names the version built), a strict
-# docs build gate, the GitHub Release, then -- for final (non pre-release) tags
-# only -- the PyPI upload and a dispatch of docs.yml at this tag.
+# Test gate and dependency-floor gate, build (checking that the tag names the
+# version built), an installed-wheel smoke test, a strict docs build gate, the
+# GitHub Release, then -- for final (non pre-release) tags only -- the PyPI
+# upload and a dispatch of docs.yml at this tag.
 on:
   push:
     tags:
@@ -37,7 +38,7 @@ jobs:
           sudo apt-get install -y -q tftp-hpa tftpd-hpa busybox dnsmasq-base
           sudo systemctl disable --now tftpd-hpa || true
       - name: Run tests
-        run: python -m pytest -q
+        run: python -m pytest -q -rs
 
   # The declared floors, exercised on a real release: every runtime dependency
   # installed AT the lower bound pyproject.toml declares, on the oldest
@@ -81,7 +82,7 @@ jobs:
           sudo apt-get install -y -q tftp-hpa tftpd-hpa busybox dnsmasq-base
           sudo systemctl disable --now tftpd-hpa || true
       - name: Run tests
-        run: python -m pytest -q
+        run: python -m pytest -q -rs
 
   build:
     name: Build distribution
@@ -127,7 +128,9 @@ jobs:
           path: dist/
 
   # What users install, tested as installed: the built wheel in a fresh venv,
-  # imported from site-packages, shipped docs present, a loopback transfer.
+  # imported from site-packages, shipped files present, a loopback transfer,
+  # and the `pytftp` script naming the extra it needs. test.yml's `wheel` job
+  # runs the same script with the extras, on the three systems.
   wheel-smoke:
     name: Installed-wheel smoke test (py${{ matrix.python-version }})
     needs: build
@@ -151,7 +154,9 @@ jobs:
           python -m venv "$RUNNER_TEMP/smoke"
           "$RUNNER_TEMP/smoke/bin/pip" install dist/*.whl
       - name: Smoke-test the installed distribution
-        run: '"$RUNNER_TEMP/smoke/bin/python" tests/integration/smoke_installed.py'
+        # Outside the checkout, so nothing but site-packages can be imported.
+        working-directory: ${{ runner.temp }}
+        run: '"$RUNNER_TEMP/smoke/bin/python" "$GITHUB_WORKSPACE/tests/integration/smoke_installed.py"'
 
   # Docs are DEPLOYED by docs.yml. This job only GATES the release on a strict
   # docs BUILD: a release must never ship if the docs site is broken, but the
@@ -214,7 +219,7 @@ jobs:
           pathlib.Path("release_notes.md").write_text(match.group(1).strip() + "\n", encoding="utf-8")
       - name: Create GitHub Release
         # Pinned to a commit: this action runs with contents: write.
-        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: dist/*
           # Pin the release object to the tagged commit; left unset it defaults

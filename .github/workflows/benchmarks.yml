@@ -1,0 +1,52 @@
+name: Benchmarks
+
+# Run by hand (workflow_dispatch) and never on a push: a shared runner is too
+# noisy for a number to mean much, so this records one result file per system
+# as a workflow artifact, to be compared on the median with a result of the
+# same system and interpreter (see benchmarks/README.md). Nothing is committed
+# and nothing fails on a number.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to measure (branch, tag, or SHA)"
+        required: false
+        default: ""
+      samples:
+        description: "Timed transfers per metric"
+        required: false
+        default: "9"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Benchmark (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install netimps 0.4 from its branch (until 0.4.0 is on PyPI)
+        # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
+        # yet. Remove this step when netimps 0.4.0 is on PyPI.
+        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
+      - name: Install the package
+        run: python -m pip install -e .
+      - name: Run the benchmark
+        shell: bash
+        env:
+          SAMPLES: ${{ inputs.samples }}
+        run: python benchmarks/run.py --samples "$SAMPLES" --save "ci-${RUNNER_OS}-py3.14"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-${{ runner.os }}
+          path: benchmarks/results/ci-*.json
