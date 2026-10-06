@@ -30,6 +30,7 @@ nav:
   - Home: index.md
   - Guide:
       - Protocol coverage: protocol.md
+      - Command line: cli.md
       - Serving files: serving.md
       - Backends: backends.md
       - Relaying: relay.md
@@ -45,6 +46,7 @@ nav:
       - Options: api/options.md
       - Packets: api/packet.md
       - Transfer engine: api/transfer.md
+      - Listing: api/listing.md
       - Netascii: api/netascii.md
       - URIs: api/uri.md
       - Paths: api/path.md

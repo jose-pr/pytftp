@@ -43,6 +43,7 @@ pytftp serve /srv/tftp --write --json
 
 - [Protocol coverage](protocol.md) — which RFCs and options, and the
   behaviour under loss.
+- [Command line](cli.md) — `pytftp get`, `put`, `ls`, `serve`, `relay`, `capture` and `replay`.
 - [Serving files](serving.md) — handlers, containment, uploads, generated
   content.
 - [Backends](backends.md) — memory, an HTTP(S) gateway, a terminating proxy.
@@ -51,6 +52,9 @@ pytftp serve /srv/tftp --write --json
 - [Paths](paths.md) — `TFTPPath` and `tftp://` URLs for pathlib-next.
 - [asyncio](async.md) — `AsyncTFTPClient`, `AsyncTFTPServer`, async handlers.
 - API reference: [Client](api/client.md), [Server](api/server.md),
+  [Backends](api/backends.md), [Relay](api/relay.md), [Capture](api/capture.md),
   [Options](api/options.md), [Packets](api/packet.md),
-  [Transfer engine](api/transfer.md).
+  [Transfer engine](api/transfer.md), [Listing](api/listing.md),
+  [Netascii](api/netascii.md), [URLs](api/uri.md), [Paths](api/path.md),
+  [Exceptions and results](api/exceptions.md).
 - [Changelog](changelog.md)

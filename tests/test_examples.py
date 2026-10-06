@@ -208,3 +208,23 @@ def test_every_example_script_has_a_test():
     scripts = {path.name for path in EXAMPLES.glob("*.py")}
     source = pathlib.Path(__file__).read_text(encoding="utf-8")
     assert scripts and all(name in source for name in scripts), scripts
+
+
+# -- the command-line page ------------------------------------------------------------------------
+
+#: Options every command takes, which the page names once, as a group.
+GENERAL = {"--help", "--verbose", "--quiet", "--loglevel"}
+
+
+@pytest.mark.parametrize("command", ["get", "put", "ls", "serve", "relay", "capture", "replay"])
+def test_the_command_line_page_names_every_option_the_command_shows(command):
+    pytest.importorskip("duho")
+    page = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
+    done = subprocess.run(
+        [sys.executable, "-m", "tftp", command, "--help"], capture_output=True, text=True, timeout=60
+    )
+    assert done.returncode == 0, done.stderr
+    shown = set(re.findall(r"(?<![\w-])--[a-z][a-z0-9-]*", done.stdout)) - GENERAL
+    assert shown, "no option found in the help of %s" % command
+    assert [flag for flag in sorted(shown) if flag not in page] == []
+    assert "`%s`" % command in page
