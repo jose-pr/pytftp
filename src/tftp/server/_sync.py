@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 from ..capture.events import PacketEvent
 from ..options import TFTPServerOptions
 from ..packet import TFTPErrorCode
-from ..packet.codec import _encode_error
+from ..packet._codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Transfer
 from ._core import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase

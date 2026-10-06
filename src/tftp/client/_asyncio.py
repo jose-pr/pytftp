@@ -17,7 +17,7 @@ from ..exceptions import RemoteError, TransferTimeoutError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import DEFAULT_BLKSIZE
 from ..packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_request
-from ..packet.codec import _encode_error
+from ..packet._codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge

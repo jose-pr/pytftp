@@ -33,7 +33,7 @@ from __future__ import annotations
 import errno
 from typing import Tuple
 
-from .packet.enums import TFTPErrorCode
+from .packet._enums import TFTPErrorCode
 
 __all__ = [
     "TFTPError",

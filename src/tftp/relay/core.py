@@ -32,7 +32,7 @@ from ..capture._hook import HookGuard, guard
 from ..capture.events import PacketEvent, new_session_id
 from ..exceptions import TFTPDecodeError, TFTPError
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
-from ..packet.codec import _encode_error
+from ..packet._codec import _encode_error
 from ..server._sync import SelectorService
 from ..server.handler import TFTPRequestContext
 from ..server.listener import Arrival, Listener

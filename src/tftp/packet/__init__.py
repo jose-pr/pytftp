@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .codec import (
+from ._codec import (
     FILENAME_ENCODING,
     AckPacket,
     DataPacket,
@@ -17,7 +17,7 @@ from .codec import (
     encode_oack,
     encode_request,
 )
-from .enums import TFTPErrorCode, TFTPOpcode
+from ._enums import TFTPErrorCode, TFTPOpcode
 
 __all__ = [
     "TFTPOpcode",

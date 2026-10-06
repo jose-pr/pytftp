@@ -19,7 +19,7 @@ from types import MappingProxyType
 from typing import List, Mapping, Optional, Tuple, Union
 
 from ..exceptions import TFTPDecodeError
-from .enums import TFTPErrorCode, TFTPOpcode
+from ._enums import TFTPErrorCode, TFTPOpcode
 
 __all__ = [
     "RequestPacket",

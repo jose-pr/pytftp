@@ -15,7 +15,7 @@ from ..listing import ListEntry
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options import DEFAULT_BLKSIZE
 from ..packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_request
-from ..packet.codec import _encode_error
+from ..packet._codec import _encode_error
 from ..result import TransferResult
 from .._sockets import fit_window
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write

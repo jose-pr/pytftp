@@ -24,7 +24,7 @@ from ..capture.events import PacketEvent
 from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, TransferAbortedError
 from ..options import Negotiated, TFTPServerOptions
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
-from ..packet.codec import _encode_error
+from ..packet._codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Transfer
 from .handler import TFTPRequestContext

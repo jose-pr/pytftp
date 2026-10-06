@@ -16,7 +16,7 @@ from ..exceptions import (
     WouldBlock,
 )
 from ..options import Negotiated
-from ..packet.codec import _encode_error, _error_text
+from ..packet._codec import _encode_error, _error_text
 
 __all__ = ["Transfer", "as_readinto", "as_write"]
 

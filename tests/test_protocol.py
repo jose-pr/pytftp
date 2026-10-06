@@ -318,7 +318,7 @@ def test_tftp_error_keeps_codes_the_wire_can_carry():
 
 
 def test_the_error_the_library_sends_is_always_encodable():
-    from tftp.packet.codec import _encode_error
+    from tftp.packet._codec import _encode_error  # the encoder every refusal goes through; no public name
 
     assert decode(_encode_error(1, "bad\0name")).message == "bad?name"
     assert decode(_encode_error(70000, "x")).code == 0

@@ -46,7 +46,7 @@ from urllib.parse import quote, quote_from_bytes, unquote, unquote_to_bytes
 from ._arguments import check_seconds
 from .exceptions import TFTPValueError
 from .options import request_options
-from .packet.codec import FILENAME_ENCODING, _ERRORS
+from .packet._codec import FILENAME_ENCODING, _ERRORS
 
 __all__ = ["TFTPURL", "download_url", "upload_url"]
 

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Tuple
 if TYPE_CHECKING:
     from netimps import Host, InterfaceLike, IPAddressLike
 
-from ..packet.codec import _encode_error
+from ..packet._codec import _encode_error
 from .session import PortAllocator
 
 __all__ = ["Listener", "Arrival"]
