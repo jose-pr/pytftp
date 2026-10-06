@@ -30,15 +30,15 @@ class Serve(Content, Negotiation, Traced):
     _parseraliases_ = ["server"]
 
     interface: _ty.Optional[str] = None
-    "Listen on this network adapter (name, MAC or address); IPv4 unless --listen is '::'"
+    "Listen on this network adapter (name, MAC or address); IPv4 unless --listen is '::'. Default: the --listen address"
     ("--interface",)
 
     listen: _ty.Optional[str] = None
-    "Address to listen on; default '::', IPv6 and IPv4 where dual-stack works"
+    "Address to listen on. Default: '::', IPv6 and IPv4 where dual-stack works"
     ("--listen", "-l")
 
     port: int = 69
-    "UDP port"
+    "UDP port to listen on"
     ("--port", "-p")
 
     timeout: float = 1.0
@@ -57,12 +57,18 @@ class Serve(Content, Negotiation, Traced):
     "Concurrent transfers per client address; 0 is unlimited"
     ("--max-per-client",)
 
+    max_duration: _ty.Optional[float] = None
+    "Longest a transfer may run, in seconds. Default: no limit"
+    ("--max-duration",)
+
     port_range: _ty.Optional[str] = None
-    "LOW:HIGH: take transfer ports from this range (for firewalls)"
+    "LOW:HIGH: take transfer ports from this range (for firewalls). Default: any free port"
     ("--port-range",)
 
     def _server(self) -> TFTPServer:
         """The server the flags describe, not yet bound; ``ValueError`` for a flag it cannot honour."""
+        if self.max_duration is not None and not self.max_duration > 0:
+            raise ValueError("--max-duration is a number of seconds above 0, not %g" % self.max_duration)
         handler = self._handler()
         options = self._options()
         ports = None
@@ -80,7 +86,9 @@ class Serve(Content, Negotiation, Traced):
             retries=self.retries,
             options=options,
             max_sessions=self.max_sessions or None,
-            limits=TFTPServerLimits(max_sessions_per_client=self.max_per_client or None),
+            limits=TFTPServerLimits(
+                max_sessions_per_client=self.max_per_client or None, max_duration=self.max_duration
+            ),
             on_complete=_print_json if self.json_out else None,
             port_range=ports,
             interface=self.interface,

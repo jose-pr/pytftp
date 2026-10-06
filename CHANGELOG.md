@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   raises does not keep the others from the event.
 - `by_prefix` and `by_subnet` take `"KEY=HOST[:PORT]"` text in a sequence, in place of
   a pair.
+- `pytftp serve --max-duration SECONDS` (the longest a transfer may run),
+  `--max-upload BYTES` (the largest upload accepted; a directory only) and
+  `--per-client-only` (a client with no directory of its own is refused, where
+  `--per-client` serves it the whole root, other clients' directories included; the
+  help of `--per-client` says it is not isolation).
 
 ### Changed
 
@@ -355,6 +360,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the helper that read the text, `parse_rule`, is no longer separate, and
   `client_directory(peer)` is `PerClient.directory(peer)`. `FilesystemBackend` and its
   subclasses print their root.
+- **The command line reports one way.** `pytftp get` and `put` print their
+  `received N bytes in ...` / `sent ...` line on stdout, where it was on stderr
+  (it stays on stderr when `get HOST FILE -` writes the file to stdout), and `-q`
+  silences it. `--json` prints one object on one line for every command: `get`
+  and `ls` printed an indented multi-line document. `get HOST FILE - --json`,
+  which printed the text and dropped the JSON, is a usage error (exit 2).
+- **The command line refuses what it used to ignore** (exit 2, one `error:` line):
+  a third argument after a `tftp://` URL, `-4` with `-6` (argparse's "not allowed
+  with"), `-b`, `-w`, `--no-tsize` or `--no-options` beside `--compat` and, for
+  `serve`, `--max-blksize`, `--max-windowsize`, `--allow`, `--refuse` or `--fit-mtu`
+  beside `--compat`. `put HOST DIRECTORY` says `not a file: DIRECTORY is a
+  directory`, where it said no such file. `--help` shows each option's default and
+  what omitting a value means, and the `--port-range`, `--remap`, `--route-subnet` and
+  `--route-prefix` errors name their flag.
 
 ### Renamed
 

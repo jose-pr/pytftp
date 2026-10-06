@@ -12,7 +12,6 @@ import typing as _ty
 
 from .._uri import TFTPURL
 from ._client import ClientCmd, is_url
-from ._common import error
 
 __all__ = ["Put"]
 
@@ -35,25 +34,30 @@ class Put(ClientCmd):
     "Name to store it under. Default: the local file's basename"
     ("remote",)
 
+    def _check(self) -> None:
+        super()._check()
+        if is_url(self.host):
+            if self.remote is not None:
+                raise ValueError("a tftp:// URL names the remote file: give no third argument")
+        elif self.local == "-" and not self.remote:
+            raise ValueError("a remote name is required when reading stdin")
+        if self.local == "-":
+            return
+        if _os.path.isdir(self.local):
+            raise ValueError("not a file: %s is a directory" % self.local)
+        if not _os.path.isfile(self.local):
+            raise ValueError("no such file: %s" % self.local)
+
     def __call__(self) -> _ty.Optional[int]:
+        self._check()
         mode = self.mode or "octet"
         url = TFTPURL.parse(self.host) if is_url(self.host) else None
         if url is not None:
-            remote: _ty.Optional[str] = url.filename
+            remote = url.filename
             mode = self.mode or url.mode
         else:
-            remote = self.remote
-        if self.local == "-":
-            if not remote:
-                error("error: a remote name is required when reading stdin")
-                return 2
-            source: _ty.Any = _sys.stdin.buffer
-        else:
-            if not _os.path.isfile(self.local):
-                error("error: no such file: %s" % self.local)
-                return 2
-            source = self.local
-            remote = remote or _os.path.basename(self.local)
+            remote = self.remote or _os.path.basename(self.local)  # `-` has no basename: checked
+        source: _ty.Any = _sys.stdin.buffer if self.local == "-" else self.local
         client = self._client(url.host, url.port, url) if url is not None else self._client(self.host)
         result, status = self._transfer(client, lambda: client.upload(remote, source, mode=mode))
         if status:

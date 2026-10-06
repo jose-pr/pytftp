@@ -5,12 +5,15 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
 
 pytest.importorskip("duho")
 
+import tftp  # noqa: E402
+import tftp.options  # noqa: E402
 from tftp.cli import main  # noqa: E402
 
 
@@ -122,7 +125,7 @@ def test_compat_profile(root, make_server, tmp_path_factory, capsys):
     target = tmp_path_factory.mktemp("compat") / "513.bin"
     assert main(["get", "127.0.0.1", "513.bin", str(target), "-p", _port(server), "--compat", "legacy"]) == 0
     assert target.read_bytes() == (root / "513.bin").read_bytes()
-    assert "blksize 512" in capsys.readouterr().err  # legacy sends a plain RFC 1350 request
+    assert "blksize 512" in capsys.readouterr().out  # legacy sends a plain RFC 1350 request
 
 
 def _serve_subprocess(args):
@@ -657,3 +660,268 @@ def test_the_tool_server_is_not_started_by_the_environment():
     )
     assert done.returncode == 2 and "jsonrpc" not in done.stdout and "tools" not in done.stdout
     assert "required" in done.stderr  # the plain command asking for a subcommand
+
+
+@pytest.fixture
+def serve_refused(monkeypatch, tmp_path, capsys):
+    """``run(*args) -> (status, stderr)`` for a ``serve`` that must refuse its arguments.
+
+    A serve that gets as far as serving raises instead of blocking the test.
+    """
+
+    def never(self):
+        raise AssertionError("the server went on to serve")
+
+    monkeypatch.setattr(tftp.TFTPServer, "serve_forever", never)
+
+    def run(*args):
+        status = main(["serve", str(tmp_path), "-l", "127.0.0.1", "-p", "0", *args])
+        return status, capsys.readouterr().err
+
+    return run
+
+
+# -- one reporting path -------------------------------------------------------------------------
+
+
+def _one_json_line(out: str) -> dict:
+    assert out.endswith("\n") and out.count("\n") == 1, out
+    return json.loads(out)
+
+
+_LISTING_AND_STANDARD = tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS
+
+
+def test_the_text_result_of_get_and_put_is_on_stdout(root, make_server, tmp_path_factory, capsys):
+    tmp_path = tmp_path_factory.mktemp("local")
+    server = make_server(root, writable=True)
+    assert main(["get", "127.0.0.1", "one.bin", str(tmp_path / "o"), "-p", _port(server)]) == 0
+    out, err = capsys.readouterr()
+    assert out.startswith("received 1 bytes in ") and out.count("\n") == 1 and err == ""
+    (tmp_path / "up.bin").write_bytes(b"abcdef")
+    assert main(["put", "127.0.0.1", str(tmp_path / "up.bin"), "-p", _port(server)]) == 0
+    out, err = capsys.readouterr()
+    assert out.startswith("sent 6 bytes in ") and out.count("\n") == 1 and err == ""
+
+
+def test_quiet_silences_the_text_result_and_not_the_json(root, make_server, tmp_path, capsys):
+    server = make_server(root, writable=True)
+    get = ["get", "127.0.0.1", "one.bin", str(tmp_path / "o"), "-p", _port(server)]
+    for quiet in ("-q", "-qq"):
+        assert main(get + [quiet]) == 0
+        assert capsys.readouterr() == ("", "")
+    assert main(["-q", *get]) == 0  # the root takes it too
+    assert capsys.readouterr() == ("", "")
+    assert main(get + ["-q", "--json"]) == 0
+    assert _one_json_line(capsys.readouterr().out)["bytes"] == 1
+
+
+def test_json_is_one_object_on_one_line_for_get_put_and_ls(root, make_server, tmp_path_factory, capsys):
+    tmp_path = tmp_path_factory.mktemp("local")
+    server = make_server(root, writable=True, options=tftp.TFTPServerOptions(allowed=_LISTING_AND_STANDARD))
+    port = _port(server)
+    assert main(["get", "127.0.0.1", "big.bin", str(tmp_path / "o"), "-p", port, "--json", "-w", "4"]) == 0
+    got = _one_json_line(capsys.readouterr().out)
+    assert got["operation"] == "read" and got["bytes"] == 300_001 and got["windowsize"] == 4
+    (tmp_path / "up.bin").write_bytes(b"abcdef")
+    assert main(["put", "127.0.0.1", str(tmp_path / "up.bin"), "-p", port, "--json"]) == 0
+    put = _one_json_line(capsys.readouterr().out)
+    assert put["operation"] == "write" and put["bytes"] == 6 and put["ok"] is True
+    assert main(["ls", "127.0.0.1", "sub", "-p", port, "--json"]) == 0
+    listed = _one_json_line(capsys.readouterr().out)
+    assert [entry["name"] for entry in listed] == ["nested.bin"]
+
+
+def test_a_download_to_stdout_keeps_stdout_for_the_file(root, make_server):
+    server = make_server(root)
+    argv = [sys.executable, "-m", "tftp", "get", "127.0.0.1", "one.bin", "-", "-p", _port(server)]
+    done = subprocess.run(argv, capture_output=True, timeout=60)
+    assert done.returncode == 0 and done.stdout == b"x"
+    assert done.stderr.decode().startswith("received 1 bytes in ")
+    quiet = subprocess.run(argv + ["-q"], capture_output=True, timeout=60)
+    assert quiet.returncode == 0 and quiet.stdout == b"x" and quiet.stderr == b""
+
+
+def test_json_with_stdout_as_the_target_is_a_usage_error_and_no_transfer(spy_server, capsys):
+    spy, base = spy_server()
+    assert main(["get", base + "one.bin", "-", "--json"]) == 2
+    out, err = capsys.readouterr()
+    assert out == "" and err.startswith("error:") and "--json" in err and err.count("\n") == 1
+    assert spy.requests == []
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["get", "{url}one.bin", "out", "third"],
+        ["put", "{url}up.bin", "{src}", "third"],
+        ["ls", "{url}sub", "third"],
+    ],
+)
+def test_a_third_argument_after_a_url_is_refused_not_ignored(spy_server, tmp_path, capsys, argv):
+    spy, base = spy_server()
+    (tmp_path / "src.bin").write_bytes(b"data")
+    argv = [part.format(url=base, src=tmp_path / "src.bin") for part in argv]
+    assert main(argv) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error:") and "URL" in err and err.count("\n") == 1
+    assert spy.requests == []
+
+
+def test_ipv4_and_ipv6_together_are_refused(spy_server, capsys):
+    spy, _ = spy_server()
+    with pytest.raises(SystemExit) as exit:
+        main(["get", "127.0.0.1", "one.bin", "-4", "-6"])
+    assert exit.value.code == 2 and "not allowed with" in capsys.readouterr().err
+    assert spy.requests == []
+
+
+@pytest.mark.parametrize("flags", [["-b", "8192"], ["-w", "8"], ["--no-tsize"], ["--no-options"]])
+def test_option_flags_beside_a_compat_profile_are_refused_by_the_client(spy_server, capsys, flags):
+    spy, base = spy_server()
+    port = base.rsplit(":", 1)[1].rstrip("/")
+    assert main(["get", "127.0.0.1", "one.bin", "-p", port, "--compat", "legacy", *flags]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error:") and "--compat" in err and flags[0] in err
+    assert spy.requests == []
+    assert main(["get", "127.0.0.1", "one.bin", "-p", port, "--compat", "legacy", "-t", "2", "-r", "1"]) == 0
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--max-blksize", "1024"],
+        ["--max-windowsize", "2"],
+        ["--allow", "cookie"],
+        ["--refuse", "tsize"],
+        ["--fit-mtu"],
+    ],
+)
+def test_option_flags_beside_a_compat_profile_are_refused_by_the_server(serve_refused, flags):
+    status, err = serve_refused("--compat", "pxe", *flags)
+    assert status == 2 and err.startswith("error:") and "--compat" in err and flags[0] in err
+
+
+def test_put_says_what_is_wrong_with_the_local_file(root, make_server, tmp_path, capsys):
+    server = make_server(root, writable=True)
+    port = _port(server)
+    assert main(["put", "127.0.0.1", str(tmp_path), "-p", port]) == 2
+    assert "is a directory" in capsys.readouterr().err
+    assert main(["put", "127.0.0.1", str(tmp_path / "missing"), "-p", port]) == 2
+    assert "no such file" in capsys.readouterr().err
+
+
+def test_help_shows_the_defaults_and_says_what_omitting_a_value_means(capsys):
+    for argv, shown in (
+        (["get", "--help"], ["(default: 69)", "(default: 5)", "Default: the URL's, else octet"]),
+        (["serve", "--help"], ["(default: 500)", "(default: 69)", "Default: no limit", "not isolation"]),
+        (["relay", "--help"], ["(default: 30.0)"]),
+    ):
+        with pytest.raises(SystemExit) as exit:
+            main(argv)
+        assert exit.value.code == 0
+        text = " ".join(capsys.readouterr().out.split())
+        assert [part for part in shown if part not in text] == []
+
+
+# -- the deployment flags that bound a server --------------------------------------------------
+
+
+def test_per_client_only_gives_a_client_with_no_directory_nothing(root):
+    (root / "10.9.9.9").mkdir()
+    (root / "10.9.9.9" / "secret.cfg").write_bytes(b"for 10.9.9.9 only")
+    for flags in (["--per-client", "--per-client-only"], ["--per-client-only"]):
+        proc, port = _serve_subprocess(["serve", str(root), "-l", "127.0.0.1", "-p", "0", *flags])
+        try:
+            client = tftp.TFTPClient("127.0.0.1", port, timeout=1.0, retries=2)
+            for name in ("10.9.9.9/secret.cfg", "one.bin"):
+                with pytest.raises(tftp.FileNotFound):
+                    client.get(name)
+        finally:
+            _stop(proc)
+    proc, port = _serve_subprocess(["serve", str(root), "-l", "127.0.0.1", "-p", "0", "--per-client"])
+    try:
+        # without the flag the default stands: the root, other clients' directories included
+        assert tftp.TFTPClient("127.0.0.1", port).get("10.9.9.9/secret.cfg") == b"for 10.9.9.9 only"
+    finally:
+        _stop(proc)
+
+
+def test_max_upload_bounds_what_a_client_may_send(root):
+    proc, port = _serve_subprocess(
+        ["serve", str(root), "-l", "127.0.0.1", "-p", "0", "--write", "--max-upload", "1000"]
+    )
+    try:
+        client = tftp.TFTPClient("127.0.0.1", port)
+        client.put("small.bin", b"s" * 900)
+        assert (root / "small.bin").read_bytes() == b"s" * 900
+        with pytest.raises(tftp.DiskFull):
+            client.put("big-up.bin", b"b" * 2000)
+        with pytest.raises(tftp.DiskFull):  # no announced size: the upload grows past the bound
+            tftp.TFTPClient("127.0.0.1", port, tsize=False).put("grown.bin", b"g" * 2000)
+        assert not (root / "big-up.bin").exists() and not (root / "grown.bin").exists()
+    finally:
+        _stop(proc)
+
+
+def test_max_duration_ends_a_transfer_nobody_finishes(root):
+    import socket
+
+    from tftp.packet import encode_request
+
+    args = ["--max-duration", "1", "-t", "1", "-r", "60", "--json"]
+    proc, port = _serve_subprocess(["serve", str(root), "-l", "127.0.0.1", "-p", "0", *args])
+    lines = []
+    reader = threading.Thread(target=lambda: lines.append(proc.stdout.readline()), daemon=True)
+    reader.start()
+    started = time.monotonic()
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(5)
+            sock.sendto(encode_request(1, "big.bin", mode="octet"), ("127.0.0.1", port))
+            assert sock.recvfrom(2048)[0][:2] == b"\x00\x03"  # DATA 1; never acknowledged
+            reader.join(20)
+        assert lines, "the transfer was not ended"
+        record = json.loads(lines[0])
+        assert record["ok"] is False and record["filename"] == "big.bin"
+        assert time.monotonic() - started < 20  # sixty retransmissions would take a minute
+    finally:
+        _stop(proc)
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--max-upload", "10", "--http", "http://x/"],
+        ["--max-upload", "-1"],
+        ["--max-duration", "0"],
+        ["--max-duration", "-3"],
+        ["--per-client-only", "--http", "http://x/"],
+    ],
+)
+def test_the_bounding_flags_refuse_what_cannot_be_honoured(serve_refused, flags):
+    status, err = serve_refused(*flags)
+    assert status == 2 and err.startswith("error:")
+
+
+def test_the_new_flags_are_documented_where_a_user_reads_them():
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    texts = {
+        "README.md": (root / "README.md").read_text(encoding="utf-8"),
+        "the shipped header": (root / "src" / "tftp" / "AGENTS.md").read_text(encoding="utf-8"),
+    }
+    for flag in ("--max-duration", "--max-upload", "--per-client-only"):
+        assert [name for name, text in texts.items() if flag not in text] == [], flag
+
+
+def test_remap_applies_to_a_proxied_source_too(root, make_server):
+    upstream = make_server(root)
+    target = "127.0.0.1:%d" % upstream.server_address[1]
+    args = ["serve", "--upstream", target, "-l", "127.0.0.1", "-p", "0", "--remap", "^alias$=one.bin"]
+    proc, port = _serve_subprocess(args)
+    try:
+        assert tftp.TFTPClient("127.0.0.1", port).get("alias") == b"x"
+    finally:
+        _stop(proc)

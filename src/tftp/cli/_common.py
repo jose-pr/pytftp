@@ -78,19 +78,28 @@ class Base(LoggingArgs, Cmd):
     _logger_name_ = "tftp"
 
     json_out: bool = False
-    "Emit JSON on stdout instead of human-readable text"
+    "Print each result as one JSON object on one line, instead of text"
     ("--json",)
+
+    def _say(self, text: str, *, to_stderr: bool = False) -> None:
+        """A text result line: on stdout, on stderr when stdout carries the data, nothing under -q."""
+        if self.quiet > 0:
+            return
+        if to_stderr:
+            print(text, file=_sys.stderr, flush=True)
+        else:
+            write_line(text)
 
 
 class Traced(Base):
     """Commands that move packets can show them."""
 
     trace: bool = False
-    "Print every datagram sent and received on stderr"
+    "Print every datagram sent and received on stderr. Default: off"
     ("--trace",)
 
     pcap: _ty.Optional[str] = None
-    "Also write every datagram to this pcap file (opens in Wireshark)"
+    "Also write every datagram to this pcap file (opens in Wireshark). Default: none"
     ("--pcap",)
 
     def _tracer(self) -> _ty.Optional[_ty.Callable[[_ty.Any], None]]:

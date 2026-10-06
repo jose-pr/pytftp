@@ -6,7 +6,7 @@ import os as _os
 import sys as _sys
 import typing as _ty
 
-from duho import AUTO, Cli, LoggingArgs
+from duho import AUTO, Cli, DefaultsFormatter, LoggingArgs
 from duho import main as _duho_main
 
 from ._common import error
@@ -30,6 +30,7 @@ class Pytftp(LoggingArgs, Cli):
     # No command is designed to be a tool a program calls: serve and relay never return, and
     # get replaces files, so PYTFTP_MCP=stdio is not read.
     _mcp_ = False
+    _help_formatter_ = DefaultsFormatter
     _subcommands_ = [Get, Put, Ls, Serve, RelayCmd, CaptureCmd]
 
 

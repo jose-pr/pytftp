@@ -28,10 +28,16 @@ class Ls(ClientCmd):
     ("host",)
 
     remote: str = ""
-    "Directory to list; default: the server's root"
+    "Directory to list. Default: the server's root"
     ("remote",)
 
+    def _check(self) -> None:
+        super()._check()
+        if is_url(self.host) and self.remote:
+            raise ValueError("a tftp:// URL names the directory: give no second argument")
+
     def __call__(self) -> _ty.Optional[int]:
+        self._check()
         if is_url(self.host):
             url = TFTPURL.parse(self.host)
             client = self._client(url.host, url.port, url)
@@ -43,7 +49,7 @@ class Ls(ClientCmd):
         if status:
             return status
         if self.json_out:
-            write_line(_json.dumps([entry._asdict() for entry in entries], indent=2))
+            write_line(_json.dumps([entry._asdict() for entry in entries]))
             return None
         for entry in entries:
             when = (

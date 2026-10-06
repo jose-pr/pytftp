@@ -25,7 +25,7 @@ class RelayCmd(Traced):
     _parsername_ = "relay"
 
     upstream: _ty.Optional[str] = None
-    "Default upstream server (host[:port]) when no route matches"
+    "Upstream server (host[:port]) for a request no route matches. Default: none (an unmatched request is refused)"
     ("upstream",)
 
     route_subnet: _ty.List[str] = []
@@ -37,15 +37,15 @@ class RelayCmd(Traced):
     ("--route-prefix",)
 
     interface: _ty.Optional[str] = None
-    "Listen on this network adapter (name, MAC or address); IPv4 unless --listen is '::'"
+    "Listen on this network adapter (name, MAC or address); IPv4 unless --listen is '::'. Default: the --listen address"
     ("--interface",)
 
     listen: _ty.Optional[str] = None
-    "Address to listen on (default '::')"
+    "Address to listen on. Default: '::', IPv6 and IPv4 where dual-stack works"
     ("--listen", "-l")
 
     port: int = 69
-    "UDP port"
+    "UDP port to listen on"
     ("--port", "-p")
 
     idle_timeout: float = 30.0
@@ -57,7 +57,7 @@ class RelayCmd(Traced):
     ("--max-sessions",)
 
     port_range: _ty.Optional[str] = None
-    "LOW:HIGH: take transfer ports from this range (for firewalls)"
+    "LOW:HIGH: take transfer ports from this range (for firewalls). Default: any free port"
     ("--port-range",)
 
     def __call__(self) -> _ty.Optional[int]:

@@ -151,7 +151,20 @@ Command line:
 pytftp get 192.0.2.1 pxelinux.0 -b 1428 -w 16
 pytftp put 192.0.2.1 firmware.bin
 pytftp serve /srv/tftp --port 6969 --write --json
+pytftp serve /srv/tftp --write --max-upload 1000000 --max-duration 600
+pytftp serve /srv/tftp --per-client-only
 ```
+
+A command exits 0 on success, 1 when the transfer, the peer or a local file
+failed (one `error:` line on stderr) and 2 when the invocation was wrong. A
+result goes to stdout (`get` and `put` print one line, which `-q` silences; on
+stderr when `get HOST FILE -` sends the file to stdout) and `--json` prints one
+JSON object per line instead. `--per-client` serves `ROOT/<client address>/` to
+a client that has one and `ROOT` to the rest, other clients' directories
+included: it is not isolation, and `--per-client-only` refuses a client with no
+directory. `--max-upload BYTES` and `--max-duration SECONDS` bound an upload and
+a transfer. `pytftp --help` shows each option's default, and `AGENT_HELP=1
+pytftp --help` prints the command tree as JSON.
 
 Relay, capture and asyncio:
 

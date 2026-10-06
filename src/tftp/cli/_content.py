@@ -21,39 +21,47 @@ class Content(Base):
     """The flags that choose what a server serves, and the handler they build."""
 
     root: str = "."
-    "Directory to serve (ignored with --http or --upstream)"
+    "Directory to serve; not used with --http or --upstream"
     ("root",)
 
     http: _ty.Optional[str] = None
-    "Serve from this HTTP(S) base URL instead of a directory"
+    "Serve from this HTTP(S) base URL instead of a directory. Default: a directory"
     ("--http",)
 
     upstream: _ty.Optional[str] = None
-    "Serve from this TFTP server (host[:port]): a terminating proxy"
+    "Serve from this TFTP server (host[:port]), as a terminating proxy. Default: a directory"
     ("--upstream",)
 
     write: bool = False
-    "Accept uploads"
+    "Accept uploads. Default: read-only"
     ("--write", "-W")
 
     no_create: bool = False
-    "Uploads may only replace existing files (with --overwrite)"
+    "Uploads may only replace existing files (with --overwrite). Default: they may create"
     ("--no-create",)
 
     overwrite: bool = False
-    "Uploads may replace existing files"
+    "Uploads may replace existing files. Default: an existing file is refused"
     ("--overwrite",)
 
+    max_upload: _ty.Optional[int] = None
+    "Largest upload accepted, in bytes (a directory only). Default: no limit"
+    ("--max-upload",)
+
     per_client: bool = False
-    "Serve ROOT/<client address>/ to a client that has one (IPv6 ':' written '-'), else ROOT"
+    "Serve ROOT/<client address>/ to a client that has one (IPv6 ':' written '-'), else ROOT. This is not isolation: a client with no directory sees ROOT, other clients' directories included (see --per-client-only)"
     ("--per-client",)
 
+    per_client_only: bool = False
+    "Serve only ROOT/<client address>/ and give a client with no directory nothing; implies --per-client. Default: off"
+    ("--per-client-only",)
+
     ignore_case: bool = False
-    "Find files whatever the case of the requested name"
+    "Find files whatever the case of the requested name. Default: the exact name"
     ("--ignore-case",)
 
     remap: _ty.List[str] = []
-    "REGEX=REPLACEMENT: rewrite requested names (first matching rule); repeatable"
+    "REGEX=REPLACEMENT: rewrite requested names (first matching rule); repeatable. Default: names as requested"
     ("--remap",)
 
     def _handler(self) -> TFTPHandler:
@@ -67,8 +75,14 @@ class Content(Base):
     def _source(self) -> TFTPHandler:
         if self.http and self.upstream:
             raise ValueError("give --http or --upstream, not both")
-        if (self.http or self.upstream) and (self.per_client or self.ignore_case):
-            raise ValueError("--per-client and --ignore-case serve a directory")
+        if (self.http or self.upstream) and (
+            self.per_client or self.per_client_only or self.ignore_case or self.max_upload is not None
+        ):
+            raise ValueError(
+                "--per-client, --per-client-only, --ignore-case and --max-upload serve a directory"
+            )
+        if self.max_upload is not None and self.max_upload < 0:
+            raise ValueError("--max-upload is a number of bytes, not %d" % self.max_upload)
         if self.http:
             return HTTPBackend(self.http, writable=self.write)
         if self.upstream:
@@ -78,9 +92,17 @@ class Content(Base):
         kind = CaseInsensitive if self.ignore_case else FilesystemBackend
 
         def make(directory: str) -> TFTPHandler:
-            return kind(directory, writable=self.write, create=not self.no_create, overwrite=self.overwrite)
+            return kind(
+                directory,
+                writable=self.write,
+                create=not self.no_create,
+                overwrite=self.overwrite,
+                max_upload=self.max_upload,
+            )
 
-        return PerClient(self.root, make) if self.per_client else make(self.root)
+        if self.per_client or self.per_client_only:
+            return PerClient(self.root, make, fallback=not self.per_client_only)
+        return make(self.root)
 
     def _described(self) -> str:
         """What is served, for the line that says the server is up."""

@@ -6,7 +6,7 @@ import json as _json
 import socket as _socket
 import typing as _ty
 
-from duho import Choice
+from duho import Choice, Meta
 
 from .._result import TransferResult
 from .._uri import TFTPURL, _client_keywords
@@ -30,11 +30,11 @@ class ClientCmd(Traced):
     """Options every client command takes."""
 
     port: int = 69
-    "Server port"
+    "UDP port of the server"
     ("--port", "-p")
 
     mode: _ty.Annotated[_ty.Optional[str], Choice("octet", "netascii")] = None
-    "Transfer mode (default: the URL's, else octet)"
+    "Transfer mode. Default: the URL's, else octet"
     ("--mode", "-m")
 
     blksize: _ty.Optional[int] = None
@@ -50,28 +50,45 @@ class ClientCmd(Traced):
     ("--timeout", "-t")
 
     retries: int = 5
-    "Retransmissions before giving up"
+    "Retransmissions of an unanswered packet before giving up"
     ("--retries", "-r")
 
     no_tsize: bool = False
-    "Do not request or announce the transfer size"
+    "Do not request or announce the transfer size. Default: it is"
     ("--no-tsize",)
 
     no_options: bool = False
-    "Send a plain RFC 1350 request with no options at all"
+    "Send a plain RFC 1350 request with no options at all. Default: the options above"
     ("--no-options",)
 
     compat: _ty.Annotated[_ty.Optional[str], Choice(*PROFILE_NAMES)] = None
-    "Use a compatibility profile's option settings (replaces the option flags)"
+    "Use this compatibility profile's option settings; not with -b, -w, --no-tsize or --no-options. Default: none"
     ("--compat",)
 
-    ipv4: bool = False
-    "Use IPv4"
+    ipv4: _ty.Annotated[bool, Meta(conflicts="family")] = False
+    "Use IPv4 only. Default: either, as the name resolves"
     ("-4",)
 
-    ipv6: bool = False
-    "Use IPv6"
+    ipv6: _ty.Annotated[bool, Meta(conflicts="family")] = False
+    "Use IPv6 only. Default: either, as the name resolves"
     ("-6",)
+
+    def _check(self) -> None:
+        """Refuse what the command would otherwise ignore (``ValueError``: usage error, status 2)."""
+        if not self.compat:
+            return
+        given = [
+            name
+            for name, value in (
+                ("-b/--blksize", self.blksize is not None),
+                ("-w/--windowsize", self.windowsize is not None),
+                ("--no-tsize", self.no_tsize),
+                ("--no-options", self.no_options),
+            )
+            if value
+        ]
+        if given:
+            raise ValueError("--compat replaces the option flags: drop %s" % ", ".join(given))
 
     def _client(
         self, host: str, port: _ty.Optional[int] = None, url: _ty.Optional[TFTPURL] = None
@@ -118,12 +135,13 @@ class ClientCmd(Traced):
         finally:
             self._close_trace()
 
-    def _report(self, result: TransferResult) -> None:
+    def _report(self, result: TransferResult, *, stdout_is_data: bool = False) -> None:
+        """The result: one JSON line, or one text line (on stderr when stdout carries the file)."""
         if self.json_out:
-            write_line(_json.dumps(result.to_dict(), indent=2))
+            write_line(_json.dumps(result.to_dict()))
             return
         n = result.negotiated
-        error(
+        self._say(
             "%s %d bytes in %.3fs (%.1f KiB/s), blksize %d, windowsize %d, %d retransmits"
             % (
                 "received" if result.operation == "read" else "sent",
@@ -133,5 +151,6 @@ class ClientCmd(Traced):
                 n.blksize,
                 n.windowsize,
                 result.retransmits,
-            )
+            ),
+            to_stderr=stdout_is_data,
         )

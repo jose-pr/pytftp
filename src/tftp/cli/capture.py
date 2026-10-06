@@ -35,27 +35,27 @@ class CaptureCmd(Base):
     ("--interface", "-i")
 
     port: _ty.List[int] = [69]
-    "Request port to recognise transfers by; repeatable"
+    "UDP port a request is sent to, to recognise transfers by; repeatable. Default: 69"
     ("--port", "-p")
 
     filter: _ty.Optional[str] = None
-    "Show only matching packets, e.g. 'op=RRQ,ERROR and host=10.0.0.0/8'"
+    "Show only matching packets, e.g. 'op=RRQ,ERROR and host=10.0.0.0/8'. Default: every packet"
     ("--filter", "-f")
 
     no_packets: bool = False
-    "Do not list packets (use with --transfers or --extract)"
+    "Do not list packets (use with --transfers or --extract). Default: list them"
     ("--no-packets",)
 
     transfers: bool = False
-    "Print a summary of every transfer at the end"
+    "Print a summary of every transfer at the end. Default: off"
     ("--transfers",)
 
     extract: _ty.Optional[str] = None
-    "Write each transfer's file into this directory"
+    "Write each transfer's file into this directory. Default: write none"
     ("--extract",)
 
     payload: bool = False
-    "Include DATA payloads (hex) in --json output"
+    "Include DATA payloads (hex) in --json output. Default: left out"
     ("--payload",)
 
     def _datagrams(self) -> _ty.Iterable[_ty.Any]:

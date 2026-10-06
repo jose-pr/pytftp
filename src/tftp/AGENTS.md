@@ -1093,7 +1093,9 @@ transport or event loop.
 
 `pip install tftp[cli]` adds duho. The `pytftp` console script is installed
 either way; without the extra it prints one line naming the extra and exits 1.
-`python -m tftp` is equivalent.
+`python -m tftp` is equivalent. `tftp.cli.main(argv=None) -> int` runs it and
+returns the exit status (a usage error from the parser raises `SystemExit(2)`);
+the command classes are not API.
 
 ```
 pytftp get HOST REMOTE [LOCAL|-]       [-p PORT] [-m octet|netascii] [-b BLKSIZE] [-w WINDOW]
@@ -1102,10 +1104,11 @@ pytftp get tftp://HOST[:PORT]/FILE [LOCAL|-]      [-t TIMEOUT] [-r RETRIES] [--n
 pytftp put HOST LOCAL|- [REMOTE]       (same options; or put tftp://HOST/FILE LOCAL|-)
 pytftp ls HOST [DIR] | tftp://HOST/DIR (same options) [--json]
 pytftp serve [ROOT] [--http URL | --upstream HOST[:PORT]] [-l ADDRESS | --interface NIC] [-p PORT] [-W/--write]
-             [--overwrite] [--no-create] [--compat PROFILE | --max-blksize N --max-windowsize N
-             --allow OPTION... --refuse OPTION... --fit-mtu] [--listing] [--max-sessions N]
-             [--max-per-client N] [--port-range LOW:HIGH] [--per-client] [--ignore-case]
-             [--remap REGEX=REPLACEMENT]... [--json] [--trace] [--pcap FILE]
+             [--overwrite] [--no-create] [--max-upload BYTES] [--max-duration SECONDS]
+             [--compat PROFILE | --max-blksize N --max-windowsize N --allow OPTION... --refuse OPTION... --fit-mtu]
+             [--listing] [--max-sessions N] [--max-per-client N] [--port-range LOW:HIGH]
+             [--per-client | --per-client-only] [--ignore-case] [--remap REGEX=REPLACEMENT]...
+             [--json] [--trace] [--pcap FILE]
 pytftp relay [UPSTREAM] [--route-subnet CIDR=HOST[:PORT]]... [--route-prefix PREFIX=HOST[:PORT]]...
              [-l ADDRESS | --interface NIC] [-p PORT] [--idle-timeout S] [--max-sessions N] [--port-range LOW:HIGH]
              [--json] [--trace] [--pcap FILE]
@@ -1113,6 +1116,33 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
              [--extract DIR] [--json] [--payload]
 ```
 
+`-v`, `-q` and `--loglevel` go before or after the subcommand. `pytftp --help`
+shows each option's default; `AGENT_HELP=1 pytftp --help` prints the whole
+command tree as one JSON document. `PYTFTP_MCP` is not read: the command is not
+served as a tool.
+
+- **Exit status**: 0 success; 1 the transfer failed, the peer refused, the
+  port could not be bound or a local file or name failed (one `error: ...`
+  line on stderr, with the characters a terminal would interpret escaped, and
+  no traceback); 2 the invocation was wrong (a bad value, a missing or
+  unrecognised capture file, a bad filter, an argument that would be ignored).
+  A reader that closes stdout (`pytftp capture f | head -1`) ends a printing
+  command quietly with status 1.
+- **Output**: a result goes to stdout and diagnostics to stderr. `get` and `put`
+  print one line (`received N bytes in S s (...)` or `sent ...`); it is on
+  stderr when `get HOST FILE -` writes the file to stdout, and `-q` drops it.
+  `ls` prints `type size time name` per entry, which `-q` does not drop.
+  `--json` prints one JSON object on one line instead, for every command and
+  whatever `-q` says: a transfer's (`get`, `put`, `serve`; the keys of
+  `TransferResult.to_dict()`), an entry list's (`ls`: one array), a relayed
+  transfer's (`relay`: `RelaySummary.to_dict()`) or a packet's (`capture`;
+  `{"transfer": ...}` with `--transfers`). `get ... - --json` is a usage error:
+  stdout holds the file.
+- **Refused, not ignored** (status 2): `-4` with `-6`; `-b`, `-w`, `--no-tsize` or
+  `--no-options` beside `--compat` (the profile replaces them), and on `serve`
+  `--max-blksize`, `--max-windowsize`, `--allow`, `--refuse` or `--fit-mtu`
+  beside `--compat` (`--listing` may); a third argument after a `tftp://` URL; a
+  directory given to `put` as the file.
 - `-b 0` / `-w 0` request no `blksize` / `windowsize`; without a flag the
   URL's option is used, else 1428 and none. A flag wins over a URL's option
   of the same name (`-m`, `-b`, `-w`, `-t`), and `--no-options` drops the
@@ -1125,47 +1155,41 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
   options (`"tftp://h/f?blksize=1024&windowsize=8"`; quote the `?` and `&`
   for the shell).
 - `--trace` prints every datagram on stderr; `--pcap FILE` writes them as a
-  capture (Wireshark-readable).
+  capture (Wireshark-readable). The file is created only once the command can
+  run (arguments accepted, port bound): a command that fails first leaves an
+  existing file as it was.
 - `serve --http URL` is the HTTP gateway, `serve --upstream` the terminating
   proxy; `--write` enables uploads for both. `--allow` adds extension options
   to the standard four; `--refuse` removes any.
+- `serve --max-upload BYTES` refuses an upload announced above it and one that
+  grows past it (ERROR 3); `--max-duration SECONDS` ends a transfer that has run
+  that long; both default to no limit, and `--max-upload` serves a directory
+  only. `--max-sessions N` defaults to 500, 0 is unlimited (510 at most on
+  Windows); `--max-per-client N` bounds one address.
 - `--interface NIC` (serve, relay) listens on that adapter's IPv4 address
   (`-l ::` for its IPv6 one).
 - `serve --listing` allows `x-list`/`x-mtime` (with `--compat` too), which
   `pytftp ls` and `TFTPPath.iterdir()` need. `--port-range` pins transfer
   ports. Directory serving only: `--per-client` serves `ROOT/<client
-  address>/` when it exists (IPv6 `:` written `-`), else `ROOT`;
-  `--ignore-case` finds names whatever their case (the exact name wins).
-  `--remap REGEX=REPLACEMENT` (repeatable, split at the first `=`) rewrites
-  requested names with the first matching rule, for any source. They are
-  `PerClient`, `CaseInsensitive` and `Remap` of `tftp.backends`.
-- `ls` prints `type size time name` per entry (`--json`: a list of entries);
-  exit 1 for a file, a missing name, or a server without listing.
+  address>/` when it exists (IPv6 `:` written `-`), else `ROOT` -- **not
+  isolation**: a client with no directory of its own reads every other
+  client's; `--per-client-only` (implies `--per-client`) answers such a client
+  ERROR 1 to everything. `--ignore-case` finds names whatever their case (the
+  exact name wins). `--remap REGEX=REPLACEMENT` (repeatable, split at the first
+  `=`) rewrites requested names with the first matching rule, for any source.
+  They are `PerClient`, `CaseInsensitive` and `Remap` of `tftp.backends`.
 - `relay` needs an UPSTREAM (the default route) or routes; prefix routes are
-  tried before subnet routes. `--json` prints one line per finished transfer
-  (its `RelaySummary`).
+  tried before subnet routes.
 - `capture` reads a pcap/pcapng file, a live pipe on stdin (`tcpdump -i eth0 -U
   -w - udp | pytftp capture -`), or (Linux) an interface. Packets print as they
   are decoded; `--transfers` adds a summary per transfer at the end;
   `--extract DIR` writes each transfer's file as `<session>-<name>`
   (`.partial` when incomplete). Ctrl-C ends a live capture and still prints
   the summaries.
-- Exit codes: 0 success, 1 the transfer failed, the port could not be bound
-  or a local file or name failed (one `error: ...` line on stderr, with the
-  characters a terminal would interpret escaped, and no traceback), 2 a caller
-  error (bad argument, missing file, unreadable capture, bad filter). A
-  `--pcap FILE` is created only once the command can run (arguments accepted,
-  port bound): a command that fails first leaves an existing file as it was. A
-  reader that closes stdout (`pytftp capture f | head -1`) ends a printing
-  command quietly with status 1.
-- `--json`: one JSON object on stdout per transfer, session or packet;
-  diagnostics always go to stderr.
 - `serve` and `relay` log each transfer at INFO on stderr (`-v`/`-q` adjust)
   and their final counters when stopped. Ctrl-C, Ctrl-Break and SIGTERM stop
   them, idle or not (the signal wakes the loop through its wake socket; there
   is no polling), with exit status 0 and the counters logged.
-- `serve --max-sessions N` defaults to 500; 0 is unlimited (510 at most on
-  Windows).
 
 ## Dependencies
 
