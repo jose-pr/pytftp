@@ -11,38 +11,44 @@ does not ship.
 src/tftp/
 ├── __init__.py        # the names the common task needs; every other name's home is its role module
 ├── AGENTS.md          # shipped API header -- update it with any API change
-├── packet/            # wire format: enums.py (TFTPOpcode, TFTPErrorCode), codec.py (types, encode/decode)
-├── options/           # negotiation: base, builtin handlers, registry, policy, negotiate, profiles
+├── exceptions.py      # every exception, and the OSError -> ERROR code mapping
+├── packet/            # wire format: _enums.py (TFTPOpcode, TFTPErrorCode), _codec.py (types, encode/decode)
+├── options/           # negotiation: _handler, _builtin, _registry, _policy, _negotiate, _profiles
+├── transfer/          # I/O-free engine: _engine.py (Transfer), _sender.py, _receiver.py
 ├── netascii.py        # streaming netascii reader/writer
-├── listing.py         # x-list directory listing format (DirectoryListing, parse/format)
+├── listing.py         # x-list directory listing format (DirectoryListing, loads/dumps)
 ├── uri.py             # tftp:// URLs (RFC 3617)
-├── errors.py          # exceptions, OSError -> ERROR code mapping
 ├── result.py          # TransferResult
-├── transfer/          # I/O-free engine: base.py, sender.py, receiver.py
 ├── client/            # _core.py (shared base), _sync.py (TFTPClient), _asyncio.py (AsyncTFTPClient)
-├── _bridge.py         # async streams <-> engine (used by both asyncio drivers)
-├── path/              # pathlib-next: local.py (TFTPPath), uri.py (TFTPURIPath), _stream.py
 ├── server/
 │   ├── _core.py       # ServerBase: config, admission, refusal, reporting (shared by both servers)
 │   ├── _sync.py       # SelectorService (the lifecycle the relay shares), TFTPServer: selectors loop, timers
 │   ├── _asyncio.py    # AsyncTFTPServer
-│   ├── listener.py    # listening socket: bind (host or interface), netimps UDPEndpoint, reply sockets
-│   ├── session.py     # one transfer: PortRange, handler -> engine
-│   ├── handler.py     # TFTPHandler protocol, TFTPRequestContext, AtomicWriter
-│   ├── policy.py      # TFTPServerLimits
-│   └── stats.py       # TFTPStats counters (server and relay)
-├── backends/          # filesystem.py, memory.py, http.py (urllib gateway), proxy.py (upstream TFTP), pipe.py
-├── relay/             # transparent relay: core.py (loop), session.py (per transfer), routing.py
-├── capture/           # packet events, trace hooks, pcap decoding
+│   ├── _listener.py   # listening socket: bind (host or interface), netimps UDPEndpoint, reply sockets
+│   ├── _session.py    # one transfer: PortRange, handler -> engine
+│   ├── _handler.py    # TFTPHandler protocol, TFTPRequestContext, AtomicWriter
+│   ├── _policy.py     # TFTPServerLimits
+│   └── _stats.py      # TFTPStats counters (server and relay)
+├── backends/          # _filesystem, _memory, _http (urllib gateway), _proxy (upstream TFTP), _pipe
+├── relay/             # transparent relay: _core.py (loop), _session.py (per transfer), _routing.py
+├── path/              # pathlib-next: _local.py (TFTPPath), _uri.py (TFTPURIPath), _stream.py
+├── capture/           # _events, _filters, _flows, _hook, _text; pcap.py, frames.py, live.py leave for another package
 ├── cli/               # pytftp (duho): common.py, transfer.py (get/put/ls), serve.py, relay.py,
 │                      # capture.py, handlers.py (serve's --per-client/--ignore-case/--remap)
 ├── _arguments.py      # constructor argument checks: TypeError for a type, ValueError for a value
-└── _sockets.py        # window-sized socket buffers (everything else is netimps)
+├── _bridge.py         # async streams <-> engine (used by both asyncio drivers)
+├── _loggers.py        # the loggers, named for their role (tftp.client, tftp.server, tftp.relay, tftp.backends)
+├── _sockets.py        # window-sized socket buffers (everything else is netimps)
+└── _text.py           # escaping what a peer wrote before it is printed
 tests/                 # pytest; engine tests need no sockets
 benchmarks/            # run.py, compare_tftpy.py + committed results/*.json
 examples/              # runnable scripts
 docs/                  # mkdocs site (hand-written index + mkdocstrings API pages)
 ```
+
+A module is public only if its name has no leading underscore; `tests/test_import_structure.py`
+lists the public ones, caps a module at 500 lines (the exceptions are named there with a
+reason), and requires every internal import to name the module that defines the name.
 
 Keep modules small enough to review in one sitting (a few hundred lines);
 split by responsibility rather than letting one file grow.

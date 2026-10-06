@@ -14,6 +14,8 @@ listing, deleting, renaming, ``move()`` from TFTP and directories raise
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 try:
     import pathlib_next
 except ImportError as exc:  # pragma: no cover - exercised without the extra
@@ -21,6 +23,9 @@ except ImportError as exc:  # pragma: no cover - exercised without the extra
 del pathlib_next  # only checking that the extra is installed
 
 from ._local import TFTPPath
+
+if TYPE_CHECKING:
+    from ._uri import TFTPURIPath
 
 __all__ = ["TFTPPath", "TFTPURIPath"]
 
