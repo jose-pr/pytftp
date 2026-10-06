@@ -294,6 +294,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **`CapturedTransfer.write_to(directory)`** writes a transfer's file under `directory`
   whatever the capture called it, replacing the example in the capture guide that opened
   the peer's file name and the command's own private copy.
+- **The implementation modules are private.** Inside `tftp.packet`, `tftp.options`,
+  `tftp.transfer`, `tftp.relay`, `tftp.backends`, `tftp.path`, `tftp.capture` (events, filters,
+  flows) and `tftp.server`, every module starts with an underscore
+  (`tftp.packet.codec` is `tftp.packet._codec`, `tftp.options.base` is
+  `tftp.options._handler`, `tftp.transfer.base` is `tftp.transfer._engine`). A name's home is its
+  package: `from tftp.server import TFTPServerLimits`. The loggers keep their names:
+  `tftp.client`, `tftp.server`, `tftp.relay` and `tftp.backends`.
 
 ### Renamed
 
