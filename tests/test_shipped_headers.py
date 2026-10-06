@@ -301,10 +301,24 @@ def _printed(args):
     return [(n, k, None if d is None else ast.unparse(d)) for n, k, d in out]
 
 
+def _callee(obj):
+    """What to read the signature of: for a class whose nearest constructor in its MRO is its
+    own ``__init__``, that method. Python 3.9.6 reports an inherited ``__new__`` in its place,
+    as ``(*args, **kwargs)``, and 3.9.10 does not (measured on both)."""
+    if inspect.isclass(obj):
+        for base in obj.__mro__[:-1]:
+            if "__new__" in vars(base):
+                break
+            if "__init__" in vars(base):
+                init = vars(base)["__init__"]
+                return init if inspect.isfunction(init) else obj
+    return obj
+
+
 def _live(obj):
     """``[(name, kind, ("=", default) or None)]`` with ``self`` and ``cls`` dropped."""
     out = []
-    for p in inspect.signature(obj).parameters.values():
+    for p in inspect.signature(_callee(obj)).parameters.values():
         if p.name in ("self", "cls"):
             continue
         out.append(
