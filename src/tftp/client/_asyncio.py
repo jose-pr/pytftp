@@ -78,6 +78,9 @@ class _Transfer:
         self.session_id = new_session_id("c") if self.trace is not None else None
         self.local: Tuple[Any, ...] = ()
         self.observer: Tuple[Any, ...] = ()  # the address a trace event names as local
+        #: Set when the transfer is being abandoned: the socket a last datagram
+        #: is sent on directly, since the transport is aborted right after.
+        self.parting: Optional[socket.socket] = None
 
     # -- I/O ---------------------------------------------------------------------
 
@@ -88,7 +91,15 @@ class _Transfer:
 
     def sendto(self, data, addr: Tuple[Any, ...]) -> None:
         assert self.transport is not None
-        self.transport.sendto(bytes(data), addr)
+        if self.parting is not None:
+            # abort() discards what the transport has queued, and on the
+            # Proactor loop a send is still pending when it is called.
+            try:
+                self.parting.sendto(bytes(data), addr)
+            except OSError:
+                pass  # the peer times out, as it would for a lost datagram
+        else:
+            self.transport.sendto(bytes(data), addr)
         if self.trace is not None:
             self.emit(data, "out", addr)
 
@@ -503,6 +514,7 @@ class AsyncTFTPClient(_ClientBase):
             if driver.timer is not None:
                 driver.timer.cancel()
             if driver.engine is not None and not driver.engine.is_done:
+                driver.parting = sock
                 driver.engine.abort("cancelled")
             transport.abort()
             await asyncio.wait({driver.closed}, timeout=5)
