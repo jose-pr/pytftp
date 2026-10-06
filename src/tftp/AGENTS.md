@@ -1086,9 +1086,14 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
   `--extract DIR` writes each transfer's file as `<session>-<name>`
   (`.partial` when incomplete). Ctrl-C ends a live capture and still prints
   the summaries.
-- Exit codes: 0 success, 1 the transfer failed or the port could not be
-  bound (error text on stderr), 2 a caller error (bad argument, missing file,
-  unreadable capture, bad filter).
+- Exit codes: 0 success, 1 the transfer failed, the port could not be bound
+  or a local file or name failed (one `error: ...` line on stderr, with the
+  characters a terminal would interpret escaped, and no traceback), 2 a caller
+  error (bad argument, missing file, unreadable capture, bad filter). A
+  `--pcap FILE` is created only once the command can run (arguments accepted,
+  port bound): a command that fails first leaves an existing file as it was. A
+  reader that closes stdout (`pytftp capture f | head -1`) ends a printing
+  command quietly with status 1.
 - `--json`: one JSON object on stdout per transfer, session or packet;
   diagnostics always go to stderr.
 - `serve` and `relay` log each transfer at INFO on stderr (`-v`/`-q` adjust)

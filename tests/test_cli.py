@@ -444,3 +444,169 @@ def test_ls_url_options_reach_the_server(root, spy_server, capsys):
 def test_a_bad_url_option_is_a_usage_error(capsys):
     assert run(["get", "tftp://127.0.0.1/f?blksize=abc", "-p", "9"]) == 2
     assert "blksize" in capsys.readouterr().err
+
+
+# -- a failure is one line and an exit status ---------------------------------------------------
+
+
+def _error_lines(err: str) -> list:
+    assert "Traceback" not in err, err
+    return [line for line in err.splitlines() if line.startswith("error:")]
+
+
+@pytest.fixture
+def target_dir(tmp_path):
+    (tmp_path / "is-a-directory").mkdir()
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "unwritable target",
+        "target is a directory",
+        "no such host",
+        "put to no such host",
+        "ls of no such host",
+    ],
+)
+def test_an_everyday_failure_is_one_error_line_and_exit_1(root, make_server, target_dir, capsys, case):
+    server = make_server(root)
+    port = _port(server)
+    argv = {
+        "unwritable target": [
+            "get",
+            "127.0.0.1",
+            "one.bin",
+            str(target_dir / "no" / "such" / "out"),
+            "-p",
+            port,
+        ],
+        "target is a directory": [
+            "get",
+            "127.0.0.1",
+            "one.bin",
+            str(target_dir / "is-a-directory"),
+            "-p",
+            port,
+        ],
+        "no such host": ["get", "no-such-host.invalid", "one.bin", str(target_dir / "out"), "-t", "0.2"],
+        "put to no such host": ["put", "no-such-host.invalid", str(root / "one.bin"), "-t", "0.2"],
+        "ls of no such host": ["ls", "no-such-host.invalid", "-t", "0.2"],
+    }[case]
+    assert run(argv) == 1
+    assert len(_error_lines(capsys.readouterr().err)) == 1
+    assert not (target_dir / "out").exists()
+
+
+def test_what_a_server_wrote_in_an_error_cannot_reach_the_terminal(target_dir, capsys):
+    from conftest import FakePeer
+    from tftp.packet import encode_error
+
+    with FakePeer(lambda data: [encode_error(1, "gone\x1b[2J\x1b]0;owned\x07")]) as peer:
+        assert run(["get", "127.0.0.1", "f", str(target_dir / "out"), "-p", str(peer.port), "-t", "0.5"]) == 1
+    (line,) = _error_lines(capsys.readouterr().err)
+    assert line.isprintable() and "\\x1b[2J" in line
+
+
+# -- a file given to --pcap is not touched before the command can run ------------------------------
+
+
+def _existing_pcap(tmp_path) -> "tuple[object, bytes]":
+    path = tmp_path / "keep.pcap"
+    path.write_bytes(b"a capture somebody wants" * 100)
+    return path, path.read_bytes()
+
+
+def _busy_port():
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("127.0.0.1", 0))
+    return sock, str(sock.getsockname()[1])
+
+
+@pytest.mark.parametrize("command", ["get", "put", "serve", "relay", "serve timeout"])
+def test_a_command_that_cannot_run_leaves_the_pcap_it_was_given(tmp_path, capsys, command):
+    path, before = _existing_pcap(tmp_path)
+    busy, port = _busy_port()
+    with busy:
+        argv = {
+            "get": ["get", "127.0.0.1", "f", "-b", "4", "--pcap", str(path)],
+            "put": ["put", "127.0.0.1", str(tmp_path / "missing"), "--pcap", str(path)],
+            "serve": ["serve", str(tmp_path), "-l", "127.0.0.1", "-p", port, "--pcap", str(path)],
+            "relay": ["relay", "127.0.0.1:9", "-l", "127.0.0.1", "-p", port, "--pcap", str(path)],
+            "serve timeout": [
+                "serve",
+                str(tmp_path),
+                "-l",
+                "127.0.0.1",
+                "-p",
+                "0",
+                "-t",
+                "0",
+                "--pcap",
+                str(path),
+            ],
+        }[command]
+        assert run(argv) in (1, 2)
+    assert "Traceback" not in capsys.readouterr().err
+    assert path.read_bytes() == before
+    path.unlink()  # nothing holds it open
+
+
+def test_a_pcap_that_cannot_be_written_is_an_error_line(root, make_server, tmp_path, capsys):
+    server = make_server(root)
+    argv = ["get", "127.0.0.1", "one.bin", str(tmp_path / "out"), "-p", _port(server)]
+    assert run(argv + ["--pcap", str(tmp_path / "no" / "such" / "dir.pcap")]) == 1
+    assert len(_error_lines(capsys.readouterr().err)) == 1
+    assert not (tmp_path / "out").exists()
+
+
+# -- a reader that closes the pipe early ----------------------------------------------------------
+
+
+def test_a_closed_stdout_ends_a_printing_command_quietly(tmp_path):
+    from tftp.capture import PcapWriter
+    from tftp.packet import encode_ack, encode_data, encode_request
+
+    path = tmp_path / "long.pcap"
+    with PcapWriter(path) as writer:
+        writer.write(1.0, ("10.0.0.5", 2000), ("10.0.0.1", 69), encode_request(1, "f"))
+        for block in range(1, 3000):
+            writer.write(
+                2.0 + block, ("10.0.0.1", 3000), ("10.0.0.5", 2000), encode_data(block % 65536, b"x" * 512)
+            )
+            writer.write(2.5 + block, ("10.0.0.5", 2000), ("10.0.0.1", 3000), encode_ack(block % 65536))
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "tftp", "capture", str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    assert b"RRQ" in proc.stdout.readline()  # the first event, then the reader goes away
+    proc.stdout.close()
+    err = proc.stderr.read()
+    assert proc.wait(30) in (0, 1)
+    proc.stderr.close()
+    assert err == b"", err
+
+
+@pytest.mark.parametrize("command", ["serve", "relay"])
+def test_serve_and_relay_record_what_they_move_when_given_a_pcap(root, make_server, tmp_path, command):
+    """The capture file is opened after the socket is bound, and every datagram reaches it."""
+    import tftp
+    from tftp.capture import analyze
+
+    pcap = tmp_path / "moved.pcap"
+    if command == "serve":
+        argv = ["serve", str(root), "-l", "127.0.0.1", "-p", "0", "--pcap", str(pcap)]
+    else:
+        upstream = make_server(root)
+        argv = ["relay", "127.0.0.1:%d" % upstream.server_address[1], "-l", "127.0.0.1", "-p", "0"]
+        argv += ["--pcap", str(pcap)]
+    proc, port = _serve_subprocess(argv)
+    try:
+        assert tftp.TFTPClient("127.0.0.1", port).get("513.bin") == (root / "513.bin").read_bytes()
+        time.sleep(0.3)  # the last datagrams are written as they are seen
+    finally:
+        _stop(proc)
+    (transfer,) = [t for t in analyze(str(pcap), ports=[port]).transfers if t.filename == "513.bin"][:1]
+    assert transfer.is_complete and transfer.size == 513

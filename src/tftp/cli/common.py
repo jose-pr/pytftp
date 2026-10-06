@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib as _contextlib
+import errno as _errno
 import json as _json
 import signal as _signal
 import socket as _socket
@@ -34,7 +35,9 @@ else:
             pass
 
 
+from .._text import escape
 from ..client import TFTPClient
+from ..exceptions import TFTPError
 from ..options import PROFILES
 from ..result import TransferResult
 from ..uri import TFTPURL, _client_keywords
@@ -46,6 +49,7 @@ __all__ = [
     "Traced",
     "ClientCmd",
     "error",
+    "write_line",
     "result_json",
     "PROFILE_NAMES",
     "bind_failure",
@@ -99,7 +103,25 @@ def shutdown_on_signal(server: _ty.Any) -> _ty.Iterator[None]:
 
 
 def error(text: str) -> None:
-    print(text, file=_sys.stderr)
+    """One diagnostic line on stderr; text a peer chose cannot carry a control character."""
+    print(escape(text), file=_sys.stderr)
+
+
+class _StdoutClosed(Exception):
+    """The reader of stdout went away: the command has nothing left to say."""
+
+
+def write_line(text: str) -> None:
+    """One result line on stdout, flushed; :class:`_StdoutClosed` if nobody reads it any more.
+
+    A closed pipe is ``BrokenPipeError`` on POSIX and ``OSError(EINVAL)`` on Windows.
+    """
+    try:
+        print(text, flush=True)
+    except OSError as exc:
+        if isinstance(exc, BrokenPipeError) or exc.errno in (_errno.EPIPE, _errno.EINVAL):
+            raise _StdoutClosed from None
+        raise
 
 
 def port_range(text: _ty.Optional[str]) -> _ty.Any:
@@ -169,6 +191,11 @@ class Traced(Base):
     ("--pcap",)
 
     def _tracer(self) -> _ty.Optional[_ty.Callable[[_ty.Any], None]]:
+        """The hook for ``--trace`` and ``--pcap``, or ``None``.
+
+        The pcap file is created here, so a command calls this last: after its
+        arguments are accepted and its sockets bound, never before.
+        """
         hooks: _ty.List[_ty.Callable[[_ty.Any], None]] = []
         if self.trace:
 
@@ -249,11 +276,7 @@ class ClientCmd(Traced):
             family = _socket.AF_INET
         elif self.ipv6:
             family = _socket.AF_INET6
-        settings: _ty.Dict[str, _ty.Any] = {
-            "retries": self.retries,
-            "family": family,
-            "trace": self._tracer(),
-        }
+        settings: _ty.Dict[str, _ty.Any] = {"retries": self.retries, "family": family}
         if url is not None:
             settings.update(_client_keywords(url.options))
         if self.timeout is not None:
@@ -272,9 +295,26 @@ class ClientCmd(Traced):
                 settings.pop("extra_options", None)
         return TFTPClient(host, self.port if port is None else port, **settings)
 
+    def _transfer(self, client: TFTPClient, work: _ty.Callable[[], _ty.Any]) -> "_ty.Tuple[_ty.Any, int]":
+        """Run ``work`` (a transfer by ``client``): ``(result, 0)``, or ``(None, 1)`` after one ``error:`` line.
+
+        The trace file is opened here, once the client exists, and closed on the
+        way out. A failure of the transfer or of the local side (a file, a name that
+        does not resolve) is the operation failing; a usage error (``ValueError``)
+        is left to :func:`tftp.cli.run`.
+        """
+        try:
+            client.trace = self._tracer()
+            return work(), 0
+        except (TFTPError, OSError) as exc:
+            error("error: %s" % exc)
+            return None, 1
+        finally:
+            self._close_trace()
+
     def _report(self, result: TransferResult) -> None:
         if self.json_out:
-            print(_json.dumps(result_json(result), indent=2))
+            write_line(_json.dumps(result_json(result), indent=2))
             return
         n = result.negotiated
         error(

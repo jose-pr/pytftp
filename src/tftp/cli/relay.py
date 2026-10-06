@@ -89,7 +89,6 @@ class RelayCmd(Traced):
                 port=self.port,
                 idle_timeout=self.idle_timeout,
                 max_sessions=self.max_sessions or None,
-                trace=self._tracer(),
                 on_session_end=on_end,
                 port_range=ports,
                 interface=self.interface,
@@ -97,6 +96,12 @@ class RelayCmd(Traced):
             relay.bind()
         except OSError as exc:
             return bind_failure(exc, self.listen or self.interface or "::", self.port)
+        try:
+            relay.trace = self._tracer()  # last: the capture file is created once the relay can run
+        except OSError as exc:
+            relay.close()
+            error("error: %s" % exc)
+            return 1
         logger = _logging.getLogger("tftp")
         address = relay.server_address
         logger.info("relaying on %s port %d", address[0], address[1])

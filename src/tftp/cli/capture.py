@@ -21,7 +21,7 @@ from ..capture import (
     read_datagrams,
     sniff,
 )
-from .common import Base, error
+from .common import Base, error, write_line
 
 __all__ = ["CaptureCmd"]
 
@@ -98,9 +98,9 @@ class CaptureCmd(Base):
                 if self.no_packets or not wanted(event):
                     continue
                 if self.json_out:
-                    print(_json.dumps(event.to_dict(payload=self.payload)), flush=True)
+                    write_line(_json.dumps(event.to_dict(payload=self.payload)))
                 else:
-                    print(str(event), flush=True)
+                    write_line(str(event))
         except CaptureFormatError as exc:
             error("error: %s" % exc)
             return 2
@@ -116,9 +116,9 @@ class CaptureCmd(Base):
         """The transfer is complete as far as this capture goes: summarise it, write its file."""
         if self.transfers:
             if self.json_out:
-                print(_json.dumps({"transfer": transfer.to_dict()}))
+                write_line(_json.dumps({"transfer": transfer.to_dict()}))
             else:
-                print(transfer)
+                write_line(repr(transfer))
         if self.extract:
             path = transfer.write_to(self.extract)
             if path is not None:

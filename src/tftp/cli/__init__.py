@@ -16,9 +16,11 @@ and :func:`run` is what reports the missing extra.
 
 from __future__ import annotations
 
+import os as _os
+import sys as _sys
 import typing as _ty
 
-from .common import AUTO, Args, error
+from .common import AUTO, Args, _StdoutClosed, error
 from .capture import CaptureCmd
 from .relay import RelayCmd
 from .serve import Serve
@@ -54,3 +56,11 @@ def run(argv: "_ty.Sequence[str] | None" = None) -> "int | None":
     except ValueError as exc:
         error("error: %s" % exc)
         return 2
+    except _StdoutClosed:
+        # Nobody reads stdout any more. Point it at the null device so that the flush at exit
+        # does not fail again, and end without a word.
+        try:
+            _os.dup2(_os.open(_os.devnull, _os.O_WRONLY), _sys.stdout.fileno())
+        except (OSError, ValueError):
+            pass
+        return 1

@@ -19,9 +19,9 @@ import sys as _sys
 import time as _time
 import typing as _ty
 
-from ..exceptions import TFTPError
+from .._text import escape
 from ..uri import TFTPURL
-from .common import ClientCmd, error
+from .common import ClientCmd, error, write_line
 
 __all__ = ["Get", "Put", "Ls"]
 
@@ -65,18 +65,24 @@ class Get(ClientCmd):
                 return 2
             client = self._client(self.host)
             remote, target = self.remote, self.local or _basename(self.remote)
-        try:
+
+        def work() -> _ty.Any:
             if target == "-":
                 result = client.download(remote, _sys.stdout.buffer, mode=mode)
                 _sys.stdout.buffer.flush()
                 self.json_out = False  # stdout holds the file
-            else:
-                result = client.download(remote, target, mode=mode)
-        except TFTPError as exc:
-            error("error: %s" % exc)
-            return 1
-        finally:
-            self._close_trace()
+                return result
+            try:
+                return client.download(remote, target, mode=mode)
+            except OSError as exc:
+                if exc.filename is None:
+                    raise
+                # The file that failed is the temporary one beside the target: name the target.
+                raise OSError(exc.errno, exc.strerror, target) from exc
+
+        result, status = self._transfer(client, work)
+        if status:
+            return status
         self._report(result)
         return None
 
@@ -101,13 +107,11 @@ class Put(ClientCmd):
 
     def __call__(self) -> "int | None":
         mode = self.mode or "octet"
-        if _is_url(self.host):
-            url = TFTPURL.parse(self.host)
-            client = self._client(url.host, url.port, url)
+        url = TFTPURL.parse(self.host) if _is_url(self.host) else None
+        if url is not None:
             remote: _ty.Optional[str] = url.filename
             mode = self.mode or url.mode
         else:
-            client = self._client(self.host)
             remote = self.remote
         if self.local == "-":
             if not remote:
@@ -120,13 +124,10 @@ class Put(ClientCmd):
                 return 2
             source = self.local
             remote = remote or _os.path.basename(self.local)
-        try:
-            result = client.upload(remote, source, mode=mode)
-        except TFTPError as exc:
-            error("error: %s" % exc)
-            return 1
-        finally:
-            self._close_trace()
+        client = self._client(url.host, url.port, url) if url is not None else self._client(self.host)
+        result, status = self._transfer(client, lambda: client.upload(remote, source, mode=mode))
+        if status:
+            return status
         self._report(result)
         return None
 
@@ -153,22 +154,24 @@ class Ls(ClientCmd):
         else:
             client = self._client(self.host)
             remote = self.remote
-        try:
-            entries = client.listdir(remote)
-        except (TFTPError, OSError) as exc:
-            error("error: %s" % exc)
-            return 1
-        finally:
-            self._close_trace()
+        entries, status = self._transfer(client, lambda: client.listdir(remote))
+        if status:
+            return status
         if self.json_out:
-            print(_json.dumps([entry._asdict() for entry in entries], indent=2))
+            write_line(_json.dumps([entry._asdict() for entry in entries], indent=2))
             return None
         for entry in entries:
             when = (
                 "-" if entry.mtime is None else _time.strftime("%Y-%m-%d %H:%M", _time.localtime(entry.mtime))
             )
-            print(
+            write_line(
                 "%s %12d %16s %s%s"
-                % ("d" if entry.is_dir else "-", entry.size, when, entry.name, "/" if entry.is_dir else "")
+                % (
+                    "d" if entry.is_dir else "-",
+                    entry.size,
+                    when,
+                    escape(entry.name),
+                    "/" if entry.is_dir else "",
+                )
             )
         return None

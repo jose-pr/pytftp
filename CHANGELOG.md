@@ -346,6 +346,19 @@ Old names are not kept as aliases.
 
 ### Fixed
 
+- **`pytftp get`, `put` and `ls` report a failure in one line.** A download to a directory
+  that does not exist or that is a directory, and a host that does not resolve, ended with a
+  Python traceback (`get` and `put` caught `TFTPError` only); the three commands now share
+  one place that runs the transfer and prints `error: ...` and exits 1 for a `TFTPError` or
+  an `OSError`, naming the target rather than the temporary file beside it.
+- **`--pcap FILE` is created once the command can run.** `get`, `put`, `serve` and `relay`
+  opened and truncated it before their arguments were checked, before `put` looked for its
+  source and before the port was bound, so a command that could not run emptied an existing
+  capture, and a running server's capture was emptied by a second `serve` that failed to
+  bind. An unwritable `--pcap` is an `error:` line with exit 1.
+- **A reader that closes the pipe ends `pytftp capture` quietly.** `pytftp capture f | head -1`
+  ended with a traceback and exit status 120 on Windows; it exits 1 and says nothing, as
+  `ls` and the JSON reports do.
 - **Text a peer chose is escaped before it reaches a terminal or a log.** `summarize()` and
   `str(event)` wrote a request's mode and every option name and value (and an OACK's)
   as received, so a client's escape sequences reached the terminal of `pytftp serve --trace`

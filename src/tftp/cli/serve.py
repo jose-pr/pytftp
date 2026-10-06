@@ -213,13 +213,18 @@ class Serve(Traced):
                 max_sessions=self.max_sessions or None,
                 limits=TFTPServerLimits(max_sessions_per_client=self.max_per_client or None),
                 on_complete=on_complete,
-                trace=self._tracer(),
                 port_range=ports,
                 interface=self.interface,
             )
             server.bind()
         except OSError as exc:
             return bind_failure(exc, self.listen or self.interface or "::", self.port)
+        try:
+            server.trace = self._tracer()  # last: the capture file is created once the server can run
+        except OSError as exc:
+            server.close()
+            error("error: %s" % exc)
+            return 1
         logger = _logging.getLogger("tftp")
         address = server.server_address
         source = self.http or (self.upstream and "upstream " + self.upstream) or _os.path.abspath(self.root)
