@@ -12,7 +12,8 @@ extension (RFC 2347) with `blksize`, `timeout`, `tsize` and `windowsize`
 (RFC 2348, 2349, 7440), tftp-hpa's extensions, block-number rollover and
 netascii. Built as infrastructure for network boot: it interoperates with
 iPXE, tftp-hpa, BusyBox, dnsmasq and curl, serves files, HTTP or another TFTP
-server, and shows you what crossed the wire.
+server, and shows you what crossed the wire. The documentation is at
+<https://jose-pr.github.io/pytftp/>.
 
 ```python
 import tftp
@@ -148,28 +149,7 @@ class Menu(tftp.FilesystemBackend):
 tftp.TFTPServer(Menu("/srv/tftp")).serve_forever()
 ```
 
-Command line:
-
-```bash
-pytftp get 192.0.2.1 pxelinux.0 -b 1428 -w 16
-pytftp put 192.0.2.1 firmware.bin
-pytftp serve /srv/tftp --port 6969 --write --json
-pytftp serve /srv/tftp --write --max-upload 1000000 --max-duration 600
-pytftp serve /srv/tftp --per-client-only
-```
-
-A command exits 0 on success, 1 when the transfer, the peer or a local file
-failed (one `error:` line on stderr) and 2 when the invocation was wrong. A
-result goes to stdout (`get` and `put` print one line, which `-q` silences; on
-stderr when `get HOST FILE -` sends the file to stdout) and `--json` prints one
-JSON object per line instead. `--per-client` serves `ROOT/<client address>/` to
-a client that has one and `ROOT` to the rest, other clients' directories
-included: it is not isolation, and `--per-client-only` refuses a client with no
-directory. `--max-upload BYTES` and `--max-duration SECONDS` bound an upload and
-a transfer. `pytftp --help` shows each option's default, and `AGENT_HELP=1
-pytftp --help` prints the command tree as JSON.
-
-Relay, capture and asyncio:
+Relay, capture and asyncio (the commands are under "Command line"):
 
 ```python
 import tftp
@@ -193,6 +173,32 @@ async def fetch():
     async for chunk in AsyncTFTPClient("192.0.2.1").stream("vmlinuz"):
         ...
 ```
+
+## Command line
+
+`pip install "tftp[cli]"` installs the `pytftp` command; `python -m tftp` is the same.
+`get`, `put` and `ls` are the client, `serve` and `relay` the servers, `capture` and
+`replay` read a capture. The commands, every option and the output formats are in
+[the command-line guide](https://jose-pr.github.io/pytftp/cli/).
+
+```bash
+pytftp get 192.0.2.1 pxelinux.0 -b 1428 -w 16
+pytftp put 192.0.2.1 firmware.bin
+pytftp serve /srv/tftp --port 6969 --write --json
+pytftp serve /srv/tftp --write --max-upload 1000000 --max-duration 600
+pytftp serve /srv/tftp --per-client-only
+```
+
+A command exits 0 on success, 1 when the transfer, the peer or a local file
+failed (one `error:` line on stderr) and 2 when the invocation was wrong. A
+result goes to stdout (`get` and `put` print one line, which `-q` silences; on
+stderr when `get HOST FILE -` sends the file to stdout) and `--json` prints one
+JSON object per line instead. `--per-client` serves `ROOT/<client address>/` to
+a client that has one and `ROOT` to the rest, other clients' directories
+included: it is not isolation, and `--per-client-only` refuses a client with no
+directory. `--max-upload BYTES` and `--max-duration SECONDS` bound an upload and
+a transfer. `pytftp --help` shows each option's default, and `AGENT_HELP=1
+pytftp --help` prints the command tree as JSON.
 
 ```bash
 pytftp serve --http https://images.example.com/pxe/ --compat pxe
@@ -224,8 +230,8 @@ their asyncio twins, `download` and `upload`, the exceptions, `TransferResult`,
 `TFTPURL`, the handler contract, the policy classes, the packet types and the
 engine's `Sender` and `Receiver`); every other name is imported from the module
 above that owns it. The complete reference, with every signature and gotcha and
-the module each name lives in, is [`src/tftp/AGENTS.md`](https://github.com/jose-pr/pytftp/blob/main/src/tftp/AGENTS.md),
-which ships inside the package.
+the module each name lives in, is [`src/tftp/AGENTS.md`](https://github.com/jose-pr/pytftp/blob/main/src/tftp/AGENTS.md)
+and the headers beside the code it lists; they ship inside the package.
 
 ## Differences from tftp-hpa
 
@@ -268,11 +274,9 @@ py -3.14 -m venv .venv/3.14-nt-arm64          # or python3.14 -m venv .venv/3.14
 python benchmarks/run.py
 ```
 
-`pytest -m "not slow"` skips the rollover tests; tests marked `interop` run
-against curl, tftp-hpa, BusyBox and dnsmasq where installed (their servers need
-passwordless `sudo`). `sudo python tests/integration/firmware_boot.py ipxe` network-boots
-iPXE in QEMU against the server (its `uefi` scenario does not pass yet). See
-[AGENTS.md](https://github.com/jose-pr/pytftp/blob/main/AGENTS.md) for the layout and conventions.
+The suite, its markers, the peers it uses when they are installed and the traps of running it are in
+[tests/AGENTS.md](https://github.com/jose-pr/pytftp/blob/main/tests/AGENTS.md); the layout and the
+conventions are in [AGENTS.md](https://github.com/jose-pr/pytftp/blob/main/AGENTS.md).
 
 ### Releasing
 
