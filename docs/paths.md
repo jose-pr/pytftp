@@ -3,6 +3,7 @@
 With the `path` extra (`pip install tftp[path]`), TFTP files work with
 [pathlib-next](https://github.com/jose-pr/pathlib-next):
 
+<!-- not run: new_menu is the reader's text and the copy goes to an S3 bucket -->
 ```python
 import tftp
 from pathlib_next.uri import UriPath

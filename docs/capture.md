@@ -30,6 +30,7 @@ records them, on `get`, `put`, `serve` and `relay`.
 
 pcap and pcapng files, from tcpdump, dumpcap or Wireshark, or a live pipe:
 
+<!-- not run: it reads a capture file the reader recorded -->
 ```python
 from tftp.capture import analyze
 

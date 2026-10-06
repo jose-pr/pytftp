@@ -2,6 +2,7 @@
 
 `AsyncTFTPClient` and `AsyncTFTPServer` run the same engine on an event loop.
 
+<!-- not run: the example streams into a sink the reader supplies -->
 ```python
 import asyncio
 from tftp import AsyncTFTPClient, AsyncTFTPServer
@@ -21,6 +22,7 @@ a source is a path, `bytes` or anything with `async read(n)` to upload from.
 
 ## Async handlers
 
+<!-- not run: db and storage are the reader's own -->
 ```python
 class Images:
     async def open_read(self, context):

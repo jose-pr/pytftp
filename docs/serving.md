@@ -80,6 +80,7 @@ request arriving with every port in use is answered "server busy".
 
 ## One network adapter
 
+<!-- not run: it needs a network interface named eth0 -->
 ```python
 tftp.TFTPServer("/srv/tftp", interface="eth0")   # eth0's IPv4 address
 ```
