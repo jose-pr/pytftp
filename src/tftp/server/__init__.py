@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ._asyncio import AsyncTFTPServer
+from typing import TYPE_CHECKING, Any, List
+
 from ._sync import TFTPServer
 from .handler import (
     AsyncTFTPHandler,
@@ -19,6 +20,9 @@ from .handler import (
 from .policy import TFTPServerLimits
 from .session import PortRange, PortRangeLike
 from .stats import TFTPStats
+
+if TYPE_CHECKING:
+    from ._asyncio import AsyncTFTPServer
 
 __all__ = [
     "AsyncTFTPServer",
@@ -38,3 +42,17 @@ __all__ = [
     "AtomicWriter",
     "TFTPRequestContext",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Bind :class:`AsyncTFTPServer` on first use, so importing the package does not import asyncio."""
+    if name == "AsyncTFTPServer":
+        from ._asyncio import AsyncTFTPServer
+
+        globals()[name] = AsyncTFTPServer
+        return AsyncTFTPServer
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
+
+def __dir__() -> List[str]:
+    return sorted(set(globals()) | set(__all__))

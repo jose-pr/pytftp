@@ -254,6 +254,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the shipped header (which now lists every module's exports) and the package
   docstring no longer say that everything is importable from `tftp`, and the
   README's Python blocks are executed by the test suite.
+- **Importing the package no longer imports `asyncio`.** `AsyncTFTPClient` and
+  `AsyncTFTPServer` are bound on first access; their names and import paths are
+  unchanged.
 - **The contracts are `typing.Protocol`s** in `tftp.server`: `TFTPHandler`,
   `TFTPReader`, `TFTPChunkReader`, `TFTPWriter`, `AsyncTFTPHandler`,
   `AsyncTFTPReader` and `AsyncTFTPWriter`, with their optional members

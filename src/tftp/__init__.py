@@ -25,6 +25,8 @@ which is that name's one home: :mod:`tftp.client`, :mod:`tftp.server`,
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, List
+
 from .packet import (
     AckPacket,
     DataPacket,
@@ -53,11 +55,10 @@ from .exceptions import (
     UnknownTransferID,
     WouldBlock,
 )
-from .client import AsyncTFTPClient, TFTPClient, download, upload
+from .client import TFTPClient, download, upload
 from .listing import ListEntry
 from .backends import FilesystemBackend
 from .server import (
-    AsyncTFTPServer,
     AtomicWriter,
     TFTPHandler,
     TFTPRequestContext,
@@ -137,3 +138,25 @@ def _installed_version() -> str:
 
 
 __version__ = _installed_version()
+
+if TYPE_CHECKING:
+    from .client import AsyncTFTPClient
+    from .server import AsyncTFTPServer
+
+#: The asyncio twins, bound on first use so that importing the package does not import asyncio.
+_ASYNCIO_TWINS = {"AsyncTFTPClient": ".client", "AsyncTFTPServer": ".server"}
+
+
+def __getattr__(name: str) -> Any:
+    home = _ASYNCIO_TWINS.get(name)
+    if home is None:
+        raise AttributeError("module %r has no attribute %r" % (__name__, name))
+    from importlib import import_module
+
+    value = getattr(import_module(home, __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> List[str]:
+    return sorted(set(globals()) | set(__all__))

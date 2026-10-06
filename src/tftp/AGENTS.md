@@ -469,6 +469,8 @@ outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
 
 ## asyncio
 
+Importing `tftp`, `tftp.client` or `tftp.server` does not import `asyncio`: `AsyncTFTPClient` and `AsyncTFTPServer` are bound on first access (`tftp.AsyncTFTPClient`, `from tftp.client import AsyncTFTPClient`), and the blocking half never loads it.
+
 **`AsyncTFTPClient(...)`** (from `tftp` and `tftp.client`) — a sibling of
 `TFTPClient`, not a subclass: the same arguments and rules (options, backoff,
 fallback, `trace`, `on_negotiated`); coroutine methods `download(filename,

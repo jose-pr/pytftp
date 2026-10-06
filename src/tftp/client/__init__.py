@@ -7,8 +7,26 @@ functions :func:`download` and :func:`upload` use the blocking client.
 
 from __future__ import annotations
 
-from ._asyncio import AsyncTFTPClient
+from typing import TYPE_CHECKING, Any, List
+
 from ._core import MODES, RemoteStat
 from ._sync import TFTPClient, download, upload
 
+if TYPE_CHECKING:
+    from ._asyncio import AsyncTFTPClient
+
 __all__ = ["AsyncTFTPClient", "MODES", "RemoteStat", "TFTPClient", "download", "upload"]
+
+
+def __getattr__(name: str) -> Any:
+    """Bind :class:`AsyncTFTPClient` on first use, so importing the package does not import asyncio."""
+    if name == "AsyncTFTPClient":
+        from ._asyncio import AsyncTFTPClient
+
+        globals()[name] = AsyncTFTPClient
+        return AsyncTFTPClient
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
+
+def __dir__() -> List[str]:
+    return sorted(set(globals()) | set(__all__))
