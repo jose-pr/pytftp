@@ -572,7 +572,7 @@ def test_an_error_text_reads_the_same_when_it_answers_a_request_and_mid_transfer
 
 def test_the_engine_does_not_import_the_netascii_writer_to_tell_it_copies():
     """as_write reads the marker every writer declares, NetasciiWriter included."""
-    import tftp.transfer.base as base
+    import tftp.transfer._engine as base  # the module that must not import netascii
     from tftp.netascii import NetasciiWriter
 
     assert NetasciiWriter.copies_writes is True
