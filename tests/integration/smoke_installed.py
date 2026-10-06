@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.resources
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -55,6 +56,20 @@ def main(argv) -> int:
     files = importlib.resources.files("tftp")
     for name in ("AGENTS.md", "README.md", "py.typed"):
         assert files.joinpath(name).is_file(), "missing shipped file %s" % name
+    # Every header the top one lists is in the package, and no other one is.
+    listed = set(
+        re.findall(
+            r"^\| `tftp/((?:\w+/)?AGENTS\.md)` \|",
+            files.joinpath("AGENTS.md").read_text(encoding="utf-8"),
+            re.M,
+        )
+    )
+    shipped = {"AGENTS.md"} | {
+        "%s/AGENTS.md" % entry.name
+        for entry in files.iterdir()
+        if entry.is_dir() and entry.joinpath("AGENTS.md").is_file()
+    }
+    assert listed == shipped, (sorted(listed), sorted(shipped))
     assert not files.joinpath("AGENTS.local.md").is_file()
     size = transfer(tftp)
 

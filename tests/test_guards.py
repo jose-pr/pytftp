@@ -34,7 +34,14 @@ def test_a_name_under_invalid_is_not_known_without_asking_anyone():
 
 @pytest.mark.parametrize(
     "guard",
-    ["test_surface.py", "test_import_structure.py", "test_exceptions.py", "test_readme.py", "test_hints.py"],
+    [
+        "test_surface.py",
+        "test_import_structure.py",
+        "test_exceptions.py",
+        "test_readme.py",
+        "test_hints.py",
+        "test_shipped_headers.py",
+    ],
 )
 def test_each_guard_module_of_the_surface_exists(guard):
     assert (TESTS / guard).is_file()

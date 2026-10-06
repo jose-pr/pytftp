@@ -1003,7 +1003,7 @@ def test_the_new_flags_are_documented_where_a_user_reads_them():
     root = pathlib.Path(__file__).resolve().parents[2]
     texts = {
         "README.md": (root / "README.md").read_text(encoding="utf-8"),
-        "the shipped header": (root / "src" / "tftp" / "AGENTS.md").read_text(encoding="utf-8"),
+        "the command-line header": (root / "src" / "tftp" / "cli" / "AGENTS.md").read_text(encoding="utf-8"),
     }
     for flag in ("--max-duration", "--max-upload", "--per-client-only"):
         assert [name for name, text in texts.items() if flag not in text] == [], flag
