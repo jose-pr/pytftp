@@ -89,8 +89,7 @@ def test_touching_an_asyncio_twin_imports_asyncio(statement):
 
 
 def test_a_twin_is_the_one_object_everywhere_and_is_bound_once():
-    out = run(
-        """
+    out = run("""
         import sys, tftp, tftp.client, tftp.server
         from tftp.client._asyncio import AsyncTFTPClient as defined
         from tftp.server._asyncio import AsyncTFTPServer as served
@@ -100,12 +99,13 @@ def test_a_twin_is_the_one_object_everywhere_and_is_bound_once():
         assert "AsyncTFTPClient" in tftp.__all__ and "AsyncTFTPClient" in dir(tftp)
         assert "AsyncTFTPServer" in dir(tftp.server) and "AsyncTFTPClient" in dir(tftp.client)
         print("ok")
-        """
-    )
+        """)
     assert out == "ok"
 
 
 def test_an_unknown_name_is_still_an_attribute_error():
     for module in ("tftp", "tftp.client", "tftp.server"):
-        out = run("import %s as m\ntry:\n    m.NoSuchThing\nexcept AttributeError as exc:\n    print(exc)" % module)
+        out = run(
+            "import %s as m\ntry:\n    m.NoSuchThing\nexcept AttributeError as exc:\n    print(exc)" % module
+        )
         assert "NoSuchThing" in out and module in out
