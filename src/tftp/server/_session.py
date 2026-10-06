@@ -217,6 +217,7 @@ class Session:
         "context",
         "stream",
         "started",
+        "timed",
         "timer_at",
         "linger_until",
         "closed",
@@ -238,6 +239,8 @@ class Session:
         self.port = peer[1]
         self.context = context
         self.started = started
+        #: ``time.perf_counter`` at the start, for the reported duration: the monotonic clock ticks every 15.6 ms on Windows before Python 3.13, and a transfer can be over in less.
+        self.timed = time.perf_counter()
         self.transfer: Optional[Transfer] = None
         self.stream: Any = None
         self.timer_at: Optional[float] = None

@@ -426,6 +426,12 @@ Old names are not kept as aliases.
 
 ### Fixed
 
+- **A transfer's reported duration is measured on the high-resolution clock.**
+  On Windows before Python 3.13 the monotonic clock ticks every 15.6 ms, so a
+  transfer that finished inside one tick reported `duration` 0.0 and a
+  `throughput` of 0, in a client's `TransferResult` and in a server's.
+  Deadlines and timeouts still run on the monotonic clock.
+
 - **`RemoteError()` with no code raised `TypeError`.** It now carries the undefined code
   (0), as `TFTPError()` does.
 - **`pytftp get`, `put` and `ls` report a failure in one line.** A download to a directory

@@ -407,7 +407,7 @@ class AsyncTFTPClient(_ClientBase):
         family, server, address = await loop.run_in_executor(None, self._endpoint)  # DNS off the loop
         options = self._options(opcode == TFTPOpcode.RRQ, size, address)
         local_host, local_port = self.src or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
-        started = time.monotonic()
+        started, timed = time.monotonic(), time.perf_counter()  # the deadline's clock, the duration's
         attempts = [options, {}] if options and self.fallback else [options]
         for attempt, attempt_options in enumerate(attempts):
             # Each attempt gets its own socket, which its transport closes.
@@ -425,6 +425,7 @@ class AsyncTFTPClient(_ClientBase):
                     read,
                     progress,
                     started,
+                    timed,
                     bridge,
                     limit,
                 )
@@ -448,6 +449,7 @@ class AsyncTFTPClient(_ClientBase):
         read: Optional[Callable[[memoryview], int]],
         progress: Optional[ProgressFunction],
         started: float,
+        timed: float,
         bridge: Union[AsyncReaderBridge, AsyncWriterBridge, None],
         limit: Optional[int],
     ) -> TransferResult:
@@ -543,7 +545,7 @@ class AsyncTFTPClient(_ClientBase):
                 engine.bytes,
                 engine.blocks,
                 engine.retransmits,
-                time.monotonic() - started,
+                time.perf_counter() - timed,
                 negotiated,
             )
         finally:

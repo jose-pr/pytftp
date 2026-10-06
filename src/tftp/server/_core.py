@@ -369,7 +369,7 @@ class ServerBase:
 
     def _report(self, session: Session, error: Optional[TFTPError], transfer: Optional[Transfer]) -> None:
         request = session.context.request
-        duration = time.monotonic() - session.started
+        duration = time.perf_counter() - session.timed
         result = TransferResult(
             request.filename,
             "read" if request.is_read else "write",

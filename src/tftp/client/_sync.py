@@ -218,17 +218,28 @@ class TFTPClient(_ClientBase):
         family, server, address = self._endpoint()
         options = self._options(opcode == TFTPOpcode.RRQ, size, address)
         with self._socket(family) as sock:
-            started = time.monotonic()
+            started, timed = time.monotonic(), time.perf_counter()  # the deadline's clock, the duration's
             try:
                 return self._exchange(
-                    sock, server, opcode, filename, mode, options, write, read, progress, started, limit
+                    sock,
+                    server,
+                    opcode,
+                    filename,
+                    mode,
+                    options,
+                    write,
+                    read,
+                    progress,
+                    started,
+                    timed,
+                    limit,
                 )
             except RemoteError as exc:
                 # Only a refusal of the request itself: nothing has been
                 # read or written yet, so asking again is safe.
                 if options and self.fallback and _repeats_without_options(exc):
                     return self._exchange(
-                        sock, server, opcode, filename, mode, {}, write, read, progress, started, limit
+                        sock, server, opcode, filename, mode, {}, write, read, progress, started, timed, limit
                     )
                 raise
 
@@ -288,6 +299,7 @@ class TFTPClient(_ClientBase):
         read: Optional[Callable[[memoryview], int]],
         progress: Optional[ProgressFunction],
         started: float,
+        timed: float,
         limit: Optional[int],
     ) -> TransferResult:
         is_read = opcode == TFTPOpcode.RRQ
@@ -453,7 +465,7 @@ class TFTPClient(_ClientBase):
             session.bytes,
             session.blocks,
             session.retransmits,
-            time.monotonic() - started,
+            time.perf_counter() - timed,
             negotiated,
         )
 
