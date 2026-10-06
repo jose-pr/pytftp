@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import http.server
 import os
 import socket
+import threading
 
 import pytest
 
@@ -356,6 +358,295 @@ def substitute(code, server, root):
     for old, new in pairs:
         code = code.replace(old, new)
     return code
+
+
+class HttpStore(http.server.BaseHTTPRequestHandler):
+    """A web server over a dictionary of ``path -> body``: GET, and PUT (plain or chunked)."""
+
+    store: dict = {}
+
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        body = self.store.get(self.path)
+        if body is None:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_PUT(self):
+        if self.headers.get("Transfer-Encoding") == "chunked":
+            data = bytearray()
+            while True:
+                size = int(self.rfile.readline().strip(), 16)
+                if not size:
+                    self.rfile.readline()
+                    break
+                data += self.rfile.read(size)
+                self.rfile.readline()
+        else:
+            data = self.rfile.read(int(self.headers["Content-Length"]))
+        self.store[self.path] = bytes(data)
+        self.send_response(201)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+@pytest.fixture
+def web():
+    HttpStore.store = {"/images/kernel": os.urandom(200_000), "/images/a%20b": b"spaced"}
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), HttpStore)
+    thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
+    thread.start()
+    yield "http://127.0.0.1:%d" % httpd.server_address[1]
+    httpd.shutdown()
+    httpd.server_close()
+
+
+# -- a path that loses, repeats, delays and reorders datagrams, by a seeded schedule -----------
+
+
+class LossyPath:
+    """A UDP forwarder between a real client and a real server on loopback.
+
+    The client talks to ``address``; every datagram is forwarded to the server
+    (and back) except where the schedule intervenes. A fault is decided by the
+    datagram's direction, opcode and block number and applies to its first
+    occurrence only, so a retransmission always gets through and a transfer's
+    time is bounded. ``seed`` fixes which of a transfer's ``blocks`` suffer
+    which fault: ``drop``, ``dup`` or ``delay`` (a delay shorter than the
+    transfer's timeout reorders the datagram behind its successors);
+    ``handshake`` loses one datagram of the start once: the ``"request"``, the
+    first ``"oack"`` or the first ``"ack0"``. ``counts`` holds the datagrams
+    seen, by direction and opcode, as they came off the wire.
+
+    ``inject`` sends from a third socket to the client; what that socket
+    receives is kept in ``stray_replies``.
+    """
+
+    FAULTS = ("drop", "dup", "delay")
+
+    def __init__(
+        self, server_address, *, seed, blocks, faults=6, delay=0.15, handshake=None, data_to="client"
+    ):
+        import heapq
+        import random
+        import threading
+
+        self.seed = seed
+        self.server_address = server_address
+        self.counts = {}
+        self.stray_replies = []
+        self.faults = {}
+        rng = random.Random(seed)
+        other = "server" if data_to == "client" else "client"
+        for _ in range(faults):
+            opcode = rng.choice((3, 4))
+            toward = data_to if opcode == 3 else other
+            kind = rng.choice(self.FAULTS)
+            self.faults[(toward, opcode, rng.randint(1, blocks))] = (kind, delay * rng.uniform(0.5, 1.5))
+        self.handshake = handshake
+        self._seen = set()
+        self._heap = []
+        self._heapq = heapq
+        self._order = 0
+        self._client = None
+        self._tid = None
+        self._injections = []
+        self._stop = threading.Event()
+        self.listen = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.listen.bind(("127.0.0.1", 0))
+        self.upstream = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.upstream.bind(("127.0.0.1", 0))
+        self.stray = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.stray.bind(("127.0.0.1", 0))
+        self.address = self.listen.getsockname()
+        self._thread = threading.Thread(target=self._run, name="lossy-path", daemon=True)
+        self._thread.start()
+
+    def describe(self) -> str:
+        """What a failure message says, so the run can be repeated."""
+        return "lossy path seed=%r faults=%r handshake=%r" % (
+            self.seed,
+            sorted(self.faults.items()),
+            self.handshake,
+        )
+
+    def inject(self, data: bytes, *, after_datagrams: int = 3) -> None:
+        """Send ``data`` to the client from the third socket once ``after_datagrams`` have gone through."""
+        self._injections.append([after_datagrams, data])
+
+    def _decide(self, toward, data):
+        opcode = data[1] if len(data) >= 2 else -1
+        self.counts[(toward, opcode)] = self.counts.get((toward, opcode), 0) + 1
+        first = {1: "request", 2: "request", 6: "oack"}.get(opcode)
+        if opcode == 4 and toward == "server" and data[2:4] == bytes(2):
+            first = "ack0"
+        if first is not None and first == self.handshake and first not in self._seen:
+            self._seen.add(first)
+            return "drop", 0.0
+        block = int.from_bytes(data[2:4], "big") if opcode in (3, 4) and len(data) >= 4 else None
+        key = (toward, opcode, block)
+        if key in self.faults and key not in self._seen:
+            self._seen.add(key)
+            return self.faults[key]
+        return "pass", 0.0
+
+    def _forward(self, sock, data, target, toward):
+        import time
+
+        action, delay = self._decide(toward, data)
+        if action == "drop":
+            return False
+        for _ in range(2 if action == "dup" else 1):
+            if action == "delay":
+                self._order += 1
+                self._heapq.heappush(self._heap, (time.monotonic() + delay, self._order, sock, data, target))
+            else:
+                sock.sendto(data, target)
+        return True
+
+    def _run(self) -> None:
+        import select
+        import time
+
+        socks = [self.listen, self.upstream, self.stray]
+        while not self._stop.is_set():
+            wait = 0.05
+            if self._heap:
+                wait = max(0.0, min(wait, self._heap[0][0] - time.monotonic()))
+            ready, _, _ = select.select(socks, [], [], wait)
+            while self._heap and self._heap[0][0] <= time.monotonic():
+                _, _, sock, data, target = self._heapq.heappop(self._heap)
+                sock.sendto(data, target)
+            for sock in ready:
+                try:
+                    data, address = sock.recvfrom(70000)
+                except OSError:
+                    continue
+                if sock is self.listen:
+                    self._client = address
+                    # a request always goes to the well-known port, as a real client sends it
+                    request = len(data) >= 2 and data[1] in (1, 2)
+                    target = self.server_address if request else self._tid or self.server_address
+                    self._forward(self.upstream, data, target, "server")
+                elif sock is self.upstream:
+                    # the client learns the server's transfer address from the first answer it receives
+                    if self._forward(self.listen, data, self._client, "client"):
+                        self._tid = address
+                else:
+                    self.stray_replies.append(data)
+                for injection in list(self._injections):
+                    injection[0] -= 1
+                    if injection[0] <= 0 and self._client is not None:
+                        self._injections.remove(injection)
+                        self.stray.sendto(injection[1], self._client)
+
+    def close(self) -> None:
+        self._stop.set()
+        self._thread.join(5)
+        for sock in (self.listen, self.upstream, self.stray):
+            sock.close()
+
+
+@pytest.fixture
+def lossy_path():
+    """``lossy_path(server, **schedule)``: a :class:`LossyPath` to ``server``, closed after the test."""
+    made = []
+
+    def make(server, **kwargs) -> LossyPath:
+        address = server.server_address
+        host = address[0] if address[0] not in ("0.0.0.0", "::") else "127.0.0.1"
+        made.append(LossyPath((host, address[1]), **kwargs))
+        return made[-1]
+
+    yield make
+    for path in made:
+        path.close()
+
+
+def _windows_loop_factories():
+    import asyncio
+
+    if os.name == "nt":
+        return [asyncio.SelectorEventLoop, asyncio.ProactorEventLoop]
+    return [None]
+
+
+@pytest.fixture(params=_windows_loop_factories(), ids=lambda f: getattr(f, "__name__", "default"))
+def loop_factory(request):
+    """The event loop class an asyncio test runs on: both of Windows' loops there, the default elsewhere."""
+    return request.param
+
+
+def run_async(coro, loop_factory=None, timeout=60):
+    """Run ``coro`` to completion on ``loop_factory``'s loop, bounded by ``timeout`` seconds."""
+    import asyncio
+    import sys
+
+    if loop_factory is None:
+        return asyncio.run(asyncio.wait_for(coro, timeout))
+    if sys.version_info >= (3, 12):
+        return asyncio.run(asyncio.wait_for(coro, timeout), loop_factory=loop_factory)
+    loop = loop_factory()
+    try:
+        return loop.run_until_complete(asyncio.wait_for(coro, timeout))
+    finally:
+        loop.close()
+
+
+# -- no test resolves a name off the host ----------------------------------------------------
+
+
+def _is_local_name(host) -> bool:
+    import ipaddress
+
+    if host is None or host in ("", b""):
+        return True
+    if isinstance(host, (bytes, bytearray)):
+        host = bytes(host).decode("ascii", "replace")
+    if host.lower().rstrip(".") in ("localhost", "localhost.localdomain", "ip6-localhost"):
+        return True
+    try:
+        ipaddress.ip_address(host.split("%", 1)[0])
+    except ValueError:
+        return False
+    return True
+
+
+@pytest.fixture(autouse=True)
+def no_name_leaves_the_host(monkeypatch, request):
+    """Fail a test that asks the system resolver for a name that is not an address or ``localhost``.
+
+    A name under ``.invalid`` is answered "not known" without asking anyone.
+
+    The violation is recorded as well as raised, so a library that swallows
+    the error still fails the test.
+    """
+    violations = []
+
+    def guard(real):
+        def guarded(host, *args, **kwargs):
+            if isinstance(host, str) and host.lower().rstrip(".").endswith(".invalid"):
+                # RFC 6761: a name under .invalid never resolves, so it is answered here, not asked off the host.
+                raise socket.gaierror(socket.EAI_NONAME, "name not known (RFC 6761 .invalid)")
+            if not _is_local_name(host):
+                violations.append(host)
+                raise AssertionError("a test resolved %r through the system resolver" % (host,))
+            return real(host, *args, **kwargs)
+
+        return guarded
+
+    for name in ("getaddrinfo", "gethostbyname", "gethostbyname_ex"):
+        monkeypatch.setattr(socket, name, guard(getattr(socket, name)))
+    yield
+    if request.node.get_closest_marker("resolves_off_host"):  # the test of this guard
+        return
+    assert violations == [], "names resolved off the host: %r" % violations
 
 
 def wait_until(predicate, timeout: float = 5.0) -> bool:

@@ -86,6 +86,7 @@ testpaths = ["tests"]
 markers = [
     "slow: long transfers (block-number rollover); deselect with -m 'not slow'",
     "interop: talks to another TFTP implementation found on PATH",
+    "resolves_off_host: the test of the conftest guard that refuses a name that would leave the host",
 ]
 
 [tool.mypy]
