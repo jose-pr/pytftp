@@ -1,10 +1,12 @@
 """``pytftp get``, ``pytftp put`` and ``pytftp ls``.
 
 ``HOST`` may also be a ``tftp://host[:port]/file[;mode=netascii]`` URL, which
-then names the remote file too::
+then names the remote file too and may carry transfer options, which a flag
+overrides::
 
     pytftp get 192.0.2.1 boot/pxelinux.0 pxelinux.0
     pytftp get tftp://192.0.2.1/boot/pxelinux.0 pxelinux.0
+    pytftp get "tftp://192.0.2.1/boot/pxelinux.0?blksize=1024&windowsize=8" pxelinux.0
     pytftp put tftp://192.0.2.1/incoming/log.txt log.txt
     pytftp ls 192.0.2.1 boot        # needs a server speaking x-list
 """
@@ -51,13 +53,12 @@ class Get(ClientCmd):
     ("local",)
 
     def __call__(self) -> "int | None":
-        mode = self.mode
+        mode = self.mode or "octet"
         if _is_url(self.host):
             url = TFTPURL.parse(self.host)
-            client = self._client(url.host, url.port)
+            client = self._client(url.host, url.port, url)
             remote, target = url.filename, self.remote or _basename(url.filename)
-            if mode == "octet":
-                mode = url.mode
+            mode = self.mode or url.mode
         else:
             if not self.remote:
                 error("error: name the file to download (or give a tftp:// URL)")
@@ -99,13 +100,12 @@ class Put(ClientCmd):
     ("remote",)
 
     def __call__(self) -> "int | None":
-        mode = self.mode
+        mode = self.mode or "octet"
         if _is_url(self.host):
             url = TFTPURL.parse(self.host)
-            client = self._client(url.host, url.port)
+            client = self._client(url.host, url.port, url)
             remote: _ty.Optional[str] = url.filename
-            if mode == "octet":
-                mode = url.mode
+            mode = self.mode or url.mode
         else:
             client = self._client(self.host)
             remote = self.remote
@@ -148,7 +148,7 @@ class Ls(ClientCmd):
     def __call__(self) -> "int | None":
         if _is_url(self.host):
             url = TFTPURL.parse(self.host)
-            client = self._client(url.host, url.port)
+            client = self._client(url.host, url.port, url)
             remote = url.filename
         else:
             client = self._client(self.host)

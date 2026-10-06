@@ -369,3 +369,76 @@ def test_an_idle_command_stops_on_a_console_event_and_reports_its_counters(tmp_p
     assert marks["exited_after"] is not None and marks["exited_after"] < 3, marks
     assert marks["returncode"] == 0, marks
     assert ("served:" if command == "serve" else "relayed:") in marks["stderr"], marks
+
+
+# -- A tftp:// URL's options reach the transfer; a flag wins over them ----------------
+
+
+def test_get_url_options_move_the_transfer(root, spy_server, tmp_path_factory, capsys):
+    spy, base = spy_server()
+    out = tmp_path_factory.mktemp("out") / "copy.bin"
+    assert not run(["get", base + "big.bin?blksize=512&windowsize=4&cookie=abc", str(out), "--json"])
+    report = json.loads(capsys.readouterr().out)
+    assert out.read_bytes() == (root / "big.bin").read_bytes()
+    assert report["blksize"] == 512 and report["windowsize"] == 4
+    wire = spy.requests[-1].options
+    assert (wire["blksize"], wire["windowsize"], wire["cookie"]) == ("512", "4", "abc")
+    assert not run(["get", base + "big.bin;blksize=1024;windowsize=2", str(out), "--json"])
+    assert json.loads(capsys.readouterr().out)["blksize"] == 1024
+
+
+def test_get_flags_win_over_the_url(root, spy_server, tmp_path_factory, capsys):
+    spy, base = spy_server()
+    out = tmp_path_factory.mktemp("out") / "copy.bin"
+    url = base + "big.bin?blksize=512&windowsize=4"
+    assert not run(["get", url, str(out), "--json", "-b", "1024", "-w", "2"])
+    report = json.loads(capsys.readouterr().out)
+    assert report["blksize"] == 1024 and report["windowsize"] == 2
+    assert spy.requests[-1].options["blksize"] == "1024"
+    # --no-options asks for nothing at all, whatever the URL says.
+    assert not run(["get", url + "&cookie=abc", str(out), "--json", "--no-options"])
+    capsys.readouterr()
+    assert dict(spy.requests[-1].options) == {}
+    # -b 0 requests no blksize.
+    assert not run(["get", url, str(out), "--json", "-b", "0"])
+    capsys.readouterr()
+    assert "blksize" not in spy.requests[-1].options and spy.requests[-1].options["windowsize"] == "4"
+
+
+def test_get_mode_from_the_url_unless_a_flag_says_otherwise(root, spy_server, tmp_path_factory):
+    spy, base = spy_server()
+    out = tmp_path_factory.mktemp("out") / "t.txt"
+    assert not run(["get", base + "text.txt?mode=netascii", str(out)])
+    assert spy.requests[-1].mode == "netascii"
+    assert not run(["get", base + "text.txt;mode=netascii", str(out), "-m", "octet"])
+    assert spy.requests[-1].mode == "octet"
+    assert not run(["get", base + "text.txt", str(out)])
+    assert spy.requests[-1].mode == "octet"
+
+
+def test_put_url_options_move_the_transfer(root, spy_server, tmp_path_factory, capsys):
+    spy, base = spy_server()
+    src = tmp_path_factory.mktemp("src") / "up.bin"
+    src.write_bytes(os.urandom(3000))
+    assert not run(["put", base + "put-opts.bin?blksize=512&windowsize=2&cookie=up", str(src), "--json"])
+    report = json.loads(capsys.readouterr().out)
+    assert (root / "put-opts.bin").read_bytes() == src.read_bytes()
+    assert report["blksize"] == 512 and report["windowsize"] == 2
+    assert spy.requests[-1].options["cookie"] == "up"
+    assert not run(["put", base + "put-opts.bin;blksize=512", str(src), "--json", "-b", "1024"])
+    assert json.loads(capsys.readouterr().out)["blksize"] == 1024
+
+
+def test_ls_url_options_reach_the_server(root, spy_server, capsys):
+    from tftp import LISTING_OPTIONS, STANDARD_OPTIONS, TFTPServerOptions
+
+    spy, base = spy_server(options=TFTPServerOptions(allowed=STANDARD_OPTIONS | LISTING_OPTIONS))
+    assert not run(["ls", base + "sub?cookie=abc&blksize=512", "--json"])
+    assert json.loads(capsys.readouterr().out)[0]["name"] == "nested.bin"
+    wire = spy.requests[-1].options
+    assert (wire["cookie"], wire["blksize"]) == ("abc", "512")
+
+
+def test_a_bad_url_option_is_a_usage_error(capsys):
+    assert run(["get", "tftp://127.0.0.1/f?blksize=abc", "-p", "9"]) == 2
+    assert "blksize" in capsys.readouterr().err

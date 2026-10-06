@@ -506,7 +506,7 @@ def test_the_known_names_are_readable_values():
             "x-other": "7",
         },
     )
-    assert _client_keywords(url) == {
+    assert _client_keywords(url.options) == {
         "blksize": "mtu",
         "windowsize": 16,
         "timeout": 2.5,
@@ -514,8 +514,83 @@ def test_the_known_names_are_readable_values():
         "rollover": 1,
         "extra_options": {"cookie": "x", "x-other": "7"},
     }
-    assert _client_keywords(TFTPURL("h", 69, "f")) == {}
-    assert _client_keywords(TFTPURL("h", 69, "f", options={"blksize": "512", "tsize": "1"})) == {
+    assert _client_keywords(TFTPURL("h", 69, "f").options) == {}
+    assert _client_keywords(TFTPURL("h", 69, "f", options={"blksize": "512", "tsize": "1"}).options) == {
         "blksize": 512,
         "tsize": True,
     }
+
+
+# -- The one-shot functions apply a URL's options ------------------------------------
+
+
+def test_download_url_applies_the_urls_options(root, spy_server):
+    spy, base = spy_server()
+    sink = io.BytesIO()
+    result = download_url(base + "big.bin?blksize=512&windowsize=4&timeout=3&cookie=abc", sink)
+    assert sink.getvalue() == (root / "big.bin").read_bytes()
+    # What the server granted, and what it received.
+    assert result.negotiated.blksize == 512 and result.negotiated.windowsize == 4
+    assert result.negotiated.timeout == 3
+    wire = spy.requests[-1].options
+    assert (wire["blksize"], wire["windowsize"], wire["timeout"], wire["cookie"]) == ("512", "4", "3", "abc")
+    # The ; spelling is the same URL.
+    download_url(base + "big.bin;blksize=1024;windowsize=2;tsize=false", io.BytesIO(), timeout=0.5)
+    wire = spy.requests[-1].options
+    assert (wire["blksize"], wire["windowsize"]) == ("1024", "2") and "tsize" not in wire
+
+
+def test_download_url_takes_the_mode_from_the_url(root, spy_server):
+    spy, base = spy_server()
+    download_url(base + "text.txt?mode=netascii", io.BytesIO(), timeout=0.5)
+    assert spy.requests[-1].mode == "netascii"
+    download_url(base + "text.txt;mode=octet;blksize=512", io.BytesIO(), timeout=0.5)
+    assert spy.requests[-1].mode == "octet" and spy.requests[-1].options["blksize"] == "512"
+
+
+def test_an_explicit_keyword_wins_over_the_urls_option(root, spy_server):
+    spy, base = spy_server()
+    result = download_url(base + "big.bin?blksize=512&windowsize=4", io.BytesIO(), blksize=1024, timeout=0.5)
+    assert result.negotiated.blksize == 1024 and result.negotiated.windowsize == 4
+    assert spy.requests[-1].options["blksize"] == "1024"
+    result = download_url(base + "big.bin;blksize=512", io.BytesIO(), blksize=None, timeout=0.5)
+    assert "blksize" not in spy.requests[-1].options  # None asks for nothing, and it is explicit
+
+
+def test_extra_options_merge_by_name_with_the_keyword_winning(root, spy_server):
+    spy, base = spy_server()
+    download_url(
+        base + "one.bin?cookie=url&only-url=1&Mixed=url",
+        io.BytesIO(),
+        extra_options={"COOKIE": "keyword", "only-keyword": "2"},
+        timeout=0.5,
+    )
+    wire = spy.requests[-1].options
+    assert (wire["cookie"], wire["only-url"], wire["only-keyword"], wire["mixed"]) == (
+        "keyword",
+        "1",
+        "2",
+        "url",
+    )
+
+
+def test_upload_url_applies_the_urls_options(root, spy_server):
+    spy, base = spy_server()
+    payload = bytes(range(256)) * 12
+    result = upload_url(base + "by-url-opts.bin?blksize=512&windowsize=2&cookie=up", payload)
+    assert (root / "by-url-opts.bin").read_bytes() == payload
+    assert result.negotiated.blksize == 512 and result.negotiated.windowsize == 2
+    wire = spy.requests[-1].options
+    assert (wire["blksize"], wire["windowsize"], wire["cookie"]) == ("512", "2", "up")
+    assert wire["tsize"] == str(len(payload))
+    result = upload_url(base + "by-url-opts.bin;blksize=512", payload, blksize=1024, timeout=0.5)
+    assert result.negotiated.blksize == 1024
+
+
+def test_a_bad_option_is_refused_before_any_transfer(root, spy_server):
+    spy, base = spy_server()
+    with pytest.raises(TFTPValueError):
+        download_url(base + "big.bin?blksize=abc", io.BytesIO())
+    with pytest.raises(TFTPValueError):
+        upload_url(base + "big.bin;windowsize=0", b"x")
+    assert spy.requests == []

@@ -37,6 +37,7 @@ else:
 from ..client import TFTPClient
 from ..options import PROFILES
 from ..result import TransferResult
+from ..uri import TFTPURL, _client_keywords
 
 __all__ = [
     "AUTO",
@@ -199,20 +200,20 @@ class ClientCmd(Traced):
     "Server port"
     ("--port", "-p")
 
-    mode: _ty.Annotated[str, Choice("octet", "netascii")] = "octet"
-    "Transfer mode"
+    mode: _ty.Annotated[_ty.Optional[str], Choice("octet", "netascii")] = None
+    "Transfer mode (default: the URL's, else octet)"
     ("--mode", "-m")
 
-    blksize: int = 1428
-    "Block size to request, 8-65464; 0 requests none (512)"
+    blksize: _ty.Optional[int] = None
+    "Block size to request, 8-65464; 0 requests none (512). Default: the URL's, else 1428"
     ("--blksize", "-b")
 
-    windowsize: int = 0
-    "RFC 7440 window to request; 0 requests none (1)"
+    windowsize: _ty.Optional[int] = None
+    "RFC 7440 window to request; 0 requests none (1). Default: the URL's, else none"
     ("--windowsize", "-w")
 
-    timeout: float = 1.0
-    "Seconds before retransmitting"
+    timeout: _ty.Optional[float] = None
+    "Seconds before retransmitting. Default: the URL's, else 1.0"
     ("--timeout", "-t")
 
     retries: int = 5
@@ -239,28 +240,36 @@ class ClientCmd(Traced):
     "Use IPv6"
     ("-6",)
 
-    def _client(self, host: str, port: _ty.Optional[int] = None) -> TFTPClient:
+    def _client(
+        self, host: str, port: _ty.Optional[int] = None, url: _ty.Optional[TFTPURL] = None
+    ) -> TFTPClient:
+        """A client for ``host``; ``url``'s options apply under any flag given."""
         family = 0
         if self.ipv4:
             family = _socket.AF_INET
         elif self.ipv6:
             family = _socket.AF_INET6
         settings: _ty.Dict[str, _ty.Any] = {
-            "timeout": self.timeout,
             "retries": self.retries,
             "family": family,
             "trace": self._tracer(),
         }
+        if url is not None:
+            settings.update(_client_keywords(url.options))
+        if self.timeout is not None:
+            settings["timeout"] = self.timeout
         if self.compat:
             settings.update(PROFILES[self.compat].client)
         else:
-            plain = self.no_options
-            settings.update(
-                blksize=None if plain or not self.blksize else self.blksize,
-                windowsize=None if plain or not self.windowsize else self.windowsize,
-                tsize=not (plain or self.no_tsize),
-                timeout_option=not plain,
-            )
+            if self.blksize is not None:
+                settings["blksize"] = self.blksize or None
+            if self.windowsize is not None:
+                settings["windowsize"] = self.windowsize or None
+            if self.no_tsize:
+                settings["tsize"] = False
+            if self.no_options:
+                settings.update(blksize=None, windowsize=None, tsize=False, timeout_option=False)
+                settings.pop("extra_options", None)
         return TFTPClient(host, self.port if port is None else port, **settings)
 
     def _report(self, result: TransferResult) -> None:

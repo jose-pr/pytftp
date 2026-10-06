@@ -92,3 +92,36 @@ def link_local():
     if found is None:
         pytest.skip("no link-local IPv6 address on this host")
     return "%s%%%d" % found
+
+
+class RequestSpy(tftp.FilesystemBackend):
+    """A filesystem handler that keeps every request it is asked to open.
+
+    ``requests`` holds the ``RequestPacket`` as the server decoded it from the
+    wire, so a test judges what a client sent, not what it was told to send.
+    """
+
+    def __init__(self, root, **kwargs) -> None:
+        super().__init__(root, **kwargs)
+        self.requests: list = []
+
+    def open_read(self, context):
+        self.requests.append(context.request)
+        return super().open_read(context)
+
+    def open_write(self, context, size):
+        self.requests.append(context.request)
+        return super().open_write(context, size)
+
+
+@pytest.fixture
+def spy_server(root, make_server):
+    """``(spy, base)``: a server over ``root`` through a ``RequestSpy``, and its ``tftp://`` base URL."""
+
+    def make(**kwargs):
+        writable = kwargs.pop("writable", True)
+        spy = RequestSpy(root, writable=writable, overwrite=True)
+        server = make_server(spy, **kwargs)
+        return spy, "tftp://127.0.0.1:%d/" % server.server_address[1]
+
+    return make

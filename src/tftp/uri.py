@@ -249,15 +249,22 @@ def _normal_options(options: Any) -> "Mapping[str, str]":
     return MappingProxyType(checked)
 
 
-def _client_keywords(url: "TFTPURL") -> Dict[str, Any]:
-    """The ``TFTPClient`` keywords ``url``'s options stand for.
+def _normal_mode(mode: str) -> str:
+    """``mode`` lower-cased, if it is ``octet`` or ``netascii``."""
+    if mode.lower() not in _MODES:
+        raise TFTPValueError("unsupported mode %r: use octet or netascii" % mode)
+    return mode.lower()
+
+
+def _client_keywords(options: Mapping[str, str]) -> Dict[str, Any]:
+    """The ``TFTPClient`` keywords a URL's ``options`` stand for.
 
     The known names become the keyword of the same name, with its type; every
     other option goes into ``extra_options``, verbatim.
     """
     keywords: Dict[str, Any] = {}
     extra: Dict[str, str] = {}
-    for name, text in url.options.items():
+    for name, text in options.items():
         reader = _READERS.get(name)
         if reader is None:
             extra[name] = text
@@ -268,12 +275,12 @@ def _client_keywords(url: "TFTPURL") -> Dict[str, Any]:
     return keywords
 
 
-def _client_keywords_over(url: "TFTPURL", explicit: Mapping[str, Any]) -> Dict[str, Any]:
-    """``url``'s keywords, each replaced by ``explicit``'s keyword of the same name.
+def _client_keywords_over(options: Mapping[str, str], explicit: Mapping[str, Any]) -> Dict[str, Any]:
+    """The keywords of a URL's ``options``, each replaced by ``explicit``'s keyword of the same name.
 
     ``extra_options`` merge name by name, ``explicit`` winning.
     """
-    merged = _client_keywords(url)
+    merged = _client_keywords(options)
     extra = dict(merged.pop("extra_options", {}))
     given = explicit.get("extra_options") or {}
     for name in given:
@@ -326,9 +333,7 @@ class TFTPURL:
             raise TFTPValueError("a tftp:// URL needs a file name")
         if "\0" in self.filename:
             raise TFTPValueError("a file name cannot hold a NUL: %r" % self.filename)
-        mode = self.mode.lower()
-        if mode not in _MODES:
-            raise TFTPValueError("unsupported mode %r: use octet or netascii" % self.mode)
+        mode = _normal_mode(self.mode)
         object.__setattr__(self, "host", _normal_host(self.host))
         object.__setattr__(self, "port", self.port or 69)
         object.__setattr__(self, "mode", mode)
@@ -442,9 +447,9 @@ def download_url(url: str, dst: Any, /, *, progress: Optional[Any] = None, **cli
     from .client import TFTPClient
 
     target = TFTPURL.parse(url)
-    return TFTPClient(target.host, target.port, **_client_keywords_over(target, client_options)).download(
-        target.filename, dst, mode=target.mode, progress=progress
-    )
+    return TFTPClient(
+        target.host, target.port, **_client_keywords_over(target.options, client_options)
+    ).download(target.filename, dst, mode=target.mode, progress=progress)
 
 
 def upload_url(url: str, src: Any, /, *, progress: Optional[Any] = None, **client_options: Any):
@@ -455,6 +460,6 @@ def upload_url(url: str, src: Any, /, *, progress: Optional[Any] = None, **clien
     from .client import TFTPClient
 
     target = TFTPURL.parse(url)
-    return TFTPClient(target.host, target.port, **_client_keywords_over(target, client_options)).upload(
-        target.filename, src, mode=target.mode, progress=progress
-    )
+    return TFTPClient(
+        target.host, target.port, **_client_keywords_over(target.options, client_options)
+    ).upload(target.filename, src, mode=target.mode, progress=progress)
