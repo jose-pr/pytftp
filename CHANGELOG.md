@@ -243,6 +243,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   a `write` plus `async drain()` pair, and `AsyncTFTPClient.download` and
   `upload` take a path, bytes (to upload) or an object with `async write(data)`
   or `async read(n)`, not a synchronous file object.
+- **`tftp` exports what the common task needs; every other name has one home,
+  its role module.** No longer importable from `tftp`: `MODES` and `RemoteStat`
+  (`tftp.client`), `PortRange` (`tftp.server`), `Negotiated`, `OptionHandler`,
+  `OptionRegistry`, `DEFAULT_REGISTRY`, `register_option`, `PROFILES`,
+  `DEFAULT_BLKSIZE`, `MIN_BLKSIZE`, `MAX_BLKSIZE`, `MAX_WINDOWSIZE`,
+  `STANDARD_OPTIONS`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS` and
+  `SUPPORTED_OPTIONS` (`tftp.options`), and `encode_request`, `encode_data`,
+  `encode_ack`, `encode_error` and `encode_oack` (`tftp.packet`). The README,
+  the shipped header (which now lists every module's exports) and the package
+  docstring no longer say that everything is importable from `tftp`, and the
+  README's Python blocks are executed by the test suite.
 - **The contracts are `typing.Protocol`s** in `tftp.server`: `TFTPHandler`,
   `TFTPReader`, `TFTPChunkReader`, `TFTPWriter`, `AsyncTFTPHandler`,
   `AsyncTFTPReader` and `AsyncTFTPWriter`, with their optional members

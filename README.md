@@ -106,6 +106,8 @@ spelling: `?name=value&name=value`, or `;name=value;name=value` (RFC 3617's own
 another tool reads the text after `?` as part of the file name.
 
 ```python
+import tftp
+
 tftp.download_url("tftp://boot.example.net/images/vmlinuz?blksize=1428&windowsize=16", "vmlinuz")
 tftp.download_url("tftp://boot.example.net/images/vmlinuz;blksize=1428;windowsize=16", "vmlinuz")
 tftp.download_url("tftp://boot.example.net/images/vmlinuz;blksize=1428", "vmlinuz", blksize=512)  # 512 wins
@@ -167,8 +169,10 @@ for transfer in analyze("boot.pcapng").transfers:
     print(transfer, transfer.missing_blocks)
 
 # asyncio
+from tftp.client import AsyncTFTPClient
+
 async def fetch():
-    async for chunk in tftp.AsyncTFTPClient("192.0.2.1").stream("vmlinuz"):
+    async for chunk in AsyncTFTPClient("192.0.2.1").stream("vmlinuz"):
         ...
 ```
 
@@ -196,8 +200,12 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.exceptions` | every exception: `TFTPError`, the typed `RemoteError` subclasses, `TFTPValueError` and its decode, filter and capture-format subclasses |
 | `tftp.cli` | the `pytftp` command (`cli` extra) |
 
-Everything is also importable from `tftp` directly. The complete reference,
-with every signature and gotcha, is [`src/tftp/AGENTS.md`](https://github.com/jose-pr/pytftp/blob/main/src/tftp/AGENTS.md),
+`tftp` itself exports what the common task needs (the clients and servers and
+their asyncio twins, `download` and `upload`, the exceptions, `TransferResult`,
+`TFTPURL`, the handler contract, the policy classes, the packet types and the
+engine's `Sender` and `Receiver`); every other name is imported from the module
+above that owns it. The complete reference, with every signature and gotcha and
+the module each name lives in, is [`src/tftp/AGENTS.md`](https://github.com/jose-pr/pytftp/blob/main/src/tftp/AGENTS.md),
 which ships inside the package.
 
 ## Development

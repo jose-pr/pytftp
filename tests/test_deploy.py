@@ -31,45 +31,45 @@ def _free_ports(count: int) -> range:
 
 
 def test_port_range_values():
-    ports = tftp.PortRange(5, 7)
+    ports = tftp.server.PortRange(5, 7)
     assert list(ports) == [5, 6, 7] and len(ports) == 3
     assert 5 in ports and 7 in ports and 8 not in ports and "5" not in ports and True not in ports
     assert list(ports) == [5, 6, 7]  # iterating moves nothing
     assert str(ports) == "5:7" and repr(ports) == "PortRange(5, 7)"
     for bad in ((0, 5), (9, 8), (1, 70000), (-1, 3)):
         with pytest.raises(tftp.TFTPValueError):
-            tftp.PortRange(*bad)
+            tftp.server.PortRange(*bad)
     for bad in (("1", 5), (1.0, 5), (True, 5), (None, 5)):
         with pytest.raises(TypeError):
-            tftp.PortRange(*bad)
+            tftp.server.PortRange(*bad)
 
 
 def test_port_range_is_a_value():
     import copy
     import pickle
 
-    ports = tftp.PortRange(4000, 4010)
-    same = tftp.PortRange(4000, 4010)
+    ports = tftp.server.PortRange(4000, 4010)
+    same = tftp.server.PortRange(4000, 4010)
     assert ports == same and hash(ports) == hash(same) and len({ports, same}) == 1
-    assert ports != tftp.PortRange(4000, 4011) and ports != tftp.PortRange(4001, 4010)
+    assert ports != tftp.server.PortRange(4000, 4011) and ports != tftp.server.PortRange(4001, 4010)
     assert ports.__eq__((4000, 4010)) is NotImplemented
     assert ports != (4000, 4010) and ports != range(4000, 4011) and ports != "4000:4010"
     with pytest.raises(AttributeError):
         ports.low = 1  # type: ignore[misc]
     with pytest.raises(AttributeError):
         ports.nothing = 1  # type: ignore[attr-defined]
-    assert eval(repr(ports), {"PortRange": tftp.PortRange}) == ports
+    assert eval(repr(ports), {"PortRange": tftp.server.PortRange}) == ports
     for clone in (copy.copy(ports), copy.deepcopy(ports), pickle.loads(pickle.dumps(ports))):
-        assert clone == ports and type(clone) is tftp.PortRange
+        assert clone == ports and type(clone) is tftp.server.PortRange
 
 
 @pytest.mark.parametrize(
     "text,expected", [("4000:4010", (4000, 4010)), ("4000-4010", (4000, 4010)), ("5:5", (5, 5))]
 )
 def test_port_range_parse(text, expected):
-    ports = tftp.PortRange.parse(text)
+    ports = tftp.server.PortRange.parse(text)
     assert (ports.low, ports.high) == expected
-    assert tftp.PortRange.parse(str(ports)) == ports and tftp.PortRange.try_parse(text) == ports
+    assert tftp.server.PortRange.parse(str(ports)) == ports and tftp.server.PortRange.try_parse(text) == ports
 
 
 @pytest.mark.parametrize(
@@ -78,23 +78,23 @@ def test_port_range_parse(text, expected):
 )
 def test_port_range_parse_refuses(text):
     with pytest.raises(tftp.TFTPValueError):
-        tftp.PortRange.parse(text)
-    assert tftp.PortRange.try_parse(text) is None
-    assert tftp.PortRange.try_parse(text, default="x") == "x"
+        tftp.server.PortRange.parse(text)
+    assert tftp.server.PortRange.try_parse(text) is None
+    assert tftp.server.PortRange.try_parse(text, default="x") == "x"
 
 
 def test_port_range_parse_wants_text():
     for bad in (None, 5, b"1:2", (1, 2)):
         with pytest.raises(TypeError):
-            tftp.PortRange.parse(bad)
+            tftp.server.PortRange.parse(bad)
         with pytest.raises(TypeError):
-            tftp.PortRange.try_parse(bad)
+            tftp.server.PortRange.try_parse(bad)
 
 
 def test_port_range_like_forms():
     from tftp.server.session import as_port_range
 
-    want = tftp.PortRange(10, 12)
+    want = tftp.server.PortRange(10, 12)
     assert as_port_range(None) is None and as_port_range(want) is want
     for like in ((10, 12), [10, 12], range(10, 13), "10:12"):
         assert as_port_range(like) == want
@@ -112,7 +112,7 @@ def test_port_range_like_forms():
 def test_the_allocator_walks_round_robin_and_belongs_to_whoever_holds_it():
     from tftp.server.session import PortAllocator
 
-    ports = tftp.PortRange(5, 7)
+    ports = tftp.server.PortRange(5, 7)
     first, second = PortAllocator(ports), PortAllocator(ports)
     assert first.ordered() == [5, 6, 7]
     first.taken(5)
@@ -120,7 +120,7 @@ def test_the_allocator_walks_round_robin_and_belongs_to_whoever_holds_it():
     first.taken(7)
     assert first.ordered() == [5, 6, 7]  # wraps after the last port
     assert second.ordered() == [5, 6, 7]  # the other one did not move
-    assert ports == tftp.PortRange(5, 7)
+    assert ports == tftp.server.PortRange(5, 7)
 
 
 def _results_after(results, count, seconds=5.0):
@@ -132,7 +132,7 @@ def _results_after(results, count, seconds=5.0):
 
 def test_two_servers_given_one_range_do_not_share_a_cursor(root, make_server):
     ports = _free_ports(3)
-    shared = tftp.PortRange(ports[0], ports[-1])
+    shared = tftp.server.PortRange(ports[0], ports[-1])
     one_results, other_results = [], []
     one = make_server(root, port_range=shared, on_complete=one_results.append)
     other = make_server(root, port_range=shared, on_complete=other_results.append)

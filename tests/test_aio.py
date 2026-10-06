@@ -142,7 +142,7 @@ def test_async_client_timeout_and_cancel(root, make_server):
 def test_async_client_trace_and_fallback(root, make_server):
     from test_protocol import FakeServer
 
-    from tftp import encode_data, encode_error
+    from tftp.packet import encode_data, encode_error
 
     def script(packet):
         if isinstance(packet, tftp.RequestPacket):
@@ -292,7 +292,7 @@ def test_async_server_shutdown_aborts_transfers(root):
         raw.settimeout(2)
         raw.bind(("127.0.0.1", 0))
         try:
-            request = tftp.encode_request(tftp.TFTPOpcode.RRQ, "big.bin")
+            request = tftp.packet.encode_request(tftp.TFTPOpcode.RRQ, "big.bin")
             raw.sendto(request, server.server_address)
             await loop.run_in_executor(None, raw.recvfrom, 2048)  # DATA 1 / OACK
             server.shutdown()

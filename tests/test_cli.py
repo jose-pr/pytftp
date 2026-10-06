@@ -431,7 +431,8 @@ def test_put_url_options_move_the_transfer(root, spy_server, tmp_path_factory, c
 
 
 def test_ls_url_options_reach_the_server(root, spy_server, capsys):
-    from tftp import LISTING_OPTIONS, STANDARD_OPTIONS, TFTPServerOptions
+    from tftp import TFTPServerOptions
+    from tftp.options import LISTING_OPTIONS, STANDARD_OPTIONS
 
     spy, base = spy_server(options=TFTPServerOptions(allowed=STANDARD_OPTIONS | LISTING_OPTIONS))
     assert not run(["ls", base + "sub?cookie=abc&blksize=512", "--json"])

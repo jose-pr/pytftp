@@ -205,7 +205,7 @@ def test_an_exception_pickles(error, protocol):
 @pytest.mark.parametrize("error", _INSTANCES, ids=repr)
 def test_a_transfer_result_holding_an_exception_copies_and_pickles(error):
     result = tftp.TransferResult(
-        "f", "read", "octet", ("h", 1), ("l", 2), 0, 0, 0, 0.0, tftp.Negotiated(), error
+        "f", "read", "octet", ("h", 1), ("l", 2), 0, 0, 0, 0.0, tftp.options.Negotiated(), error
     )
     for twin in (copy.copy(result), copy.deepcopy(result), pickle.loads(pickle.dumps(result))):
         assert _state(twin.error) == _state(error)

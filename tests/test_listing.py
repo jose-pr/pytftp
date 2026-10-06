@@ -11,7 +11,7 @@ import tftp
 from conftest import client_for
 from tftp.listing import DirectoryListing, ListEntry, dumps, loads
 
-LISTING = tftp.TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | tftp.LISTING_OPTIONS)
+LISTING = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS)
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_client_listdir(root, server):
 
 def test_client_stat(root, server):
     client = client_for(server)
-    assert client.stat("one.bin") == tftp.RemoteStat(1, 1_700_000_000, False)
+    assert client.stat("one.bin") == tftp.client.RemoteStat(1, 1_700_000_000, False)
     info = client.stat("sub")
     assert info.is_dir and info.size is None and info.mtime
     with pytest.raises(tftp.FileNotFound):
@@ -69,7 +69,7 @@ def test_client_stat(root, server):
 
 def test_server_without_listing(root, make_server):
     plain = client_for(make_server(root))
-    assert plain.stat("one.bin") == tftp.RemoteStat(1)
+    assert plain.stat("one.bin") == tftp.client.RemoteStat(1)
     with pytest.raises(tftp.FileNotFound):
         plain.stat("sub")
     with pytest.raises(tftp.FileNotFound):
@@ -80,7 +80,7 @@ def test_server_without_listing(root, make_server):
 
 def test_listing_not_offered_when_not_allowed(root, make_server):
     only_mtime = make_server(
-        root, options=tftp.TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | {"x-mtime"})
+        root, options=tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | {"x-mtime"})
     )
     info = client_for(only_mtime).stat("one.bin")
     assert info.size == 1 and info.mtime and not info.is_dir

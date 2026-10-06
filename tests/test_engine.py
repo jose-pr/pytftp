@@ -15,7 +15,9 @@ from typing import Callable, List, Optional
 
 import pytest
 
-from tftp import Negotiated, Receiver, Sender, encode_ack, encode_oack
+from tftp import Receiver, Sender
+from tftp.options import Negotiated
+from tftp.packet import encode_ack, encode_oack
 from tftp.transfer import as_readinto, as_write
 
 DATA, ACK, ERROR, OACK = 3, 4, 5, 6

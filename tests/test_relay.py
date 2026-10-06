@@ -12,7 +12,8 @@ import pytest
 
 import tftp
 from conftest import client_for, needs_ipv6
-from tftp import TFTPErrorCode, TFTPOpcode, decode, encode_ack, encode_data, encode_error
+from tftp import TFTPErrorCode, TFTPOpcode, decode
+from tftp.packet import encode_ack, encode_data, encode_error
 from tftp.relay import TFTPRelay, RouteTable, by_prefix, by_subnet
 
 
@@ -147,7 +148,7 @@ def test_wrong_tids_get_error_5_on_both_legs(root, make_server, make_relay):
         for s in (client, stranger):
             s.bind(("127.0.0.1", 0))
             s.settimeout(3)
-        client.sendto(tftp.encode_request(TFTPOpcode.RRQ, "1428x3.bin"), relay.server_address)
+        client.sendto(tftp.packet.encode_request(TFTPOpcode.RRQ, "1428x3.bin"), relay.server_address)
         _, tid = client.recvfrom(2048)
         stranger.sendto(encode_ack(1), tid)  # client-facing leg, wrong source
         error, _ = stranger.recvfrom(100)
@@ -173,7 +174,7 @@ def test_idle_sessions_are_cleaned_up(root, make_server, make_relay):
     relay = make_relay(upstream_of(server), idle_timeout=0.3, on_session_end=ends.append)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.settimeout(3)
-        client.sendto(tftp.encode_request(TFTPOpcode.RRQ, "big.bin"), relay.server_address)
+        client.sendto(tftp.packet.encode_request(TFTPOpcode.RRQ, "big.bin"), relay.server_address)
         client.recvfrom(2048)  # then vanish
     assert wait_for(lambda: ends)
     assert ends[0].reason == "idle" and relay.active_sessions == 0
@@ -281,7 +282,7 @@ def test_a_transfer_longer_than_max_duration_is_ended(root, make_server, make_re
     relay = make_relay(upstream_of(server), idle_timeout=60, max_duration=0.3, on_session_end=ends.append)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.settimeout(3)
-        client.sendto(tftp.encode_request(TFTPOpcode.RRQ, "big.bin"), relay.server_address)
+        client.sendto(tftp.packet.encode_request(TFTPOpcode.RRQ, "big.bin"), relay.server_address)
         client.recvfrom(2048)  # then vanish
         assert wait_for(lambda: ends, timeout=10)
     assert ends[0].reason == "lifetime" and relay.active_sessions == 0

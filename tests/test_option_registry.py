@@ -10,13 +10,13 @@ import tftp
 from conftest import client_for
 from tftp.options import Blksize2Option, CookieOption, accept_oack, negotiate, request_options
 
-ALL = tftp.TFTPServerOptions(allowed=tftp.SUPPORTED_OPTIONS)
+ALL = tftp.TFTPServerOptions(allowed=tftp.options.SUPPORTED_OPTIONS)
 
 
 def test_standard_options_are_the_default_policy():
     assert tftp.TFTPServerOptions().allowed == {"blksize", "timeout", "tsize", "windowsize"}
-    assert tftp.STANDARD_OPTIONS == {"blksize", "timeout", "tsize", "windowsize"}
-    assert tftp.EXTENSION_OPTIONS == {
+    assert tftp.options.STANDARD_OPTIONS == {"blksize", "timeout", "tsize", "windowsize"}
+    assert tftp.options.EXTENSION_OPTIONS == {
         "blksize2",
         "utimeout",
         "rollover",
@@ -61,7 +61,9 @@ def test_mstfwindow_client_side():
 
 
 def test_mstfwindow_end_to_end(root, make_server):
-    server = make_server(root, options=tftp.TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | {"mstfwindow"}))
+    server = make_server(
+        root, options=tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | {"mstfwindow"})
+    )
     seen = []
     client = client_for(
         server, extra_options={"mstfwindow": 31416}, on_negotiated=lambda n, peer: seen.append(n)
@@ -123,7 +125,7 @@ def test_fit_mtu_lowers_blksize(ipv6, expected):
 
 
 def test_custom_option_through_a_registry(root, make_server):
-    class Flavor(tftp.OptionHandler):
+    class Flavor(tftp.options.OptionHandler):
         """A vendor option: the server answers with what it will serve."""
 
         name = "flavor"
@@ -133,11 +135,11 @@ def test_custom_option_through_a_registry(root, make_server):
             ctx.result.extra[self.name] = choice
             return choice
 
-    registry = tftp.OptionRegistry()
+    registry = tftp.options.OptionRegistry()
     registry.register(Flavor())
     with pytest.raises(ValueError):
         registry.register(Flavor())
-    policy = tftp.TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | {"flavor"}, registry=registry)
+    policy = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | {"flavor"}, registry=registry)
     with pytest.raises(ValueError):
         tftp.TFTPServerOptions(allowed={"flavor"})  # not in the default registry
     server = make_server(root, options=policy)
@@ -152,20 +154,20 @@ def test_extra_options_cannot_duplicate_builtins():
 
 
 def test_registry_basics():
-    registry = tftp.OptionRegistry()
+    registry = tftp.options.OptionRegistry()
     assert "blksize" in registry and "BLKSIZE" in registry and 3 not in registry
     assert [h.name for h in registry][:2] == ["blksize", "blksize2"]
     registry.unregister("cookie")
-    assert "cookie" not in registry and "cookie" in tftp.DEFAULT_REGISTRY
+    assert "cookie" not in registry and "cookie" in tftp.options.DEFAULT_REGISTRY
     registry.register(CookieOption())
     with pytest.raises(ValueError):
-        registry.register(tftp.OptionHandler())
+        registry.register(tftp.options.OptionHandler())
     assert isinstance(registry.copy().get("blksize2"), Blksize2Option)
 
 
 @pytest.mark.parametrize("name", ["strict", "default", "pxe", "hpa", "legacy"])
 def test_profiles_work_end_to_end(root, make_server, name):
-    profile = tftp.PROFILES[name]
+    profile = tftp.options.PROFILES[name]
     server = make_server(root, options=profile.server)
     client = client_for(server, **profile.client)
     assert client.get("big.bin") == (root / "big.bin").read_bytes()

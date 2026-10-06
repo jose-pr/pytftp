@@ -11,16 +11,8 @@ import pytest
 
 import tftp
 from conftest import client_for
-from tftp import (
-    TFTPErrorCode,
-    TFTPOpcode,
-    decode,
-    encode_ack,
-    encode_data,
-    encode_error,
-    encode_oack,
-    encode_request,
-)
+from tftp import TFTPErrorCode, TFTPOpcode, decode
+from tftp.packet import encode_ack, encode_data, encode_error, encode_oack, encode_request
 
 
 def raw_socket(timeout: float = 2.0) -> socket.socket:

@@ -10,7 +10,8 @@ import pytest
 
 import tftp
 from conftest import client_for, needs_ipv6
-from tftp import TFTPOpcode, encode_ack, encode_data, encode_error, encode_oack, encode_request
+from tftp import TFTPOpcode
+from tftp.packet import encode_ack, encode_data, encode_error, encode_oack, encode_request
 from tftp.capture import (
     CaptureFilterError,
     FlowTracker,

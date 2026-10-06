@@ -9,7 +9,7 @@ does not ship.
 
 ```
 src/tftp/
-├── __init__.py        # flat public surface (re-exports)
+├── __init__.py        # the names the common task needs; every other name's home is its role module
 ├── AGENTS.md          # shipped API header -- update it with any API change
 ├── packet/            # wire format: enums.py (TFTPOpcode, TFTPErrorCode), codec.py (types, encode/decode)
 ├── options/           # negotiation: base, builtin handlers, registry, policy, negotiate, profiles

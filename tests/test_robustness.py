@@ -13,16 +13,8 @@ import pytest
 import tftp
 from conftest import client_for
 from test_engine import Link, neg
-from tftp import (
-    TFTPErrorCode,
-    TFTPOpcode,
-    decode,
-    encode_ack,
-    encode_data,
-    encode_error,
-    encode_oack,
-    encode_request,
-)
+from tftp import TFTPErrorCode, TFTPOpcode, decode
+from tftp.packet import encode_ack, encode_data, encode_error, encode_oack, encode_request
 from tftp.exceptions import WouldBlock
 from tftp.transfer import as_readinto, as_write
 
@@ -396,7 +388,7 @@ def _random_packets(seed: int, count: int):
         encode_request(TFTPOpcode.WRQ, "file"),
         encode_data(1, b"abc"),
         encode_ack(3),
-        tftp.encode_error(1, "x"),
+        tftp.packet.encode_error(1, "x"),
         encode_oack({"blksize": 9}),
     ]
     for _ in range(count):

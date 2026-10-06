@@ -18,39 +18,23 @@ EXPECTED = {
         "AsyncTFTPClient",
         "AsyncTFTPServer",
         "AtomicWriter",
-        "DEFAULT_BLKSIZE",
-        "DEFAULT_REGISTRY",
         "DataPacket",
         "DiskFull",
-        "EXTENSION_OPTIONS",
         "ErrorPacket",
         "FileAlreadyExists",
         "FileNotFound",
         "FilesystemBackend",
         "IllegalOperation",
-        "LISTING_OPTIONS",
         "ListEntry",
-        "MAX_BLKSIZE",
-        "MAX_WINDOWSIZE",
-        "MIN_BLKSIZE",
-        "MODES",
-        "Negotiated",
         "NetasciiReader",
         "NetasciiWriter",
         "NoSuchUser",
         "OptionAckPacket",
-        "OptionHandler",
         "OptionNegotiationError",
-        "OptionRegistry",
-        "PROFILES",
-        "PortRange",
         "Profile",
         "Receiver",
         "RemoteError",
-        "RemoteStat",
         "RequestPacket",
-        "STANDARD_OPTIONS",
-        "SUPPORTED_OPTIONS",
         "Sender",
         "TFTPClient",
         "TFTPDecodeError",
@@ -74,12 +58,6 @@ EXPECTED = {
         "decode",
         "download",
         "download_url",
-        "encode_ack",
-        "encode_data",
-        "encode_error",
-        "encode_oack",
-        "encode_request",
-        "register_option",
         "upload",
         "upload_url",
     ],
@@ -314,7 +292,7 @@ def test_the_presets_are_attributes_of_profile():
     import tftp
 
     for name in ("DEFAULT", "STRICT", "PXE", "HPA", "LEGACY"):
-        assert tftp.PROFILES[name.lower()] is getattr(tftp.Profile, name)
+        assert tftp.options.PROFILES[name.lower()] is getattr(tftp.Profile, name)
 
 
 #: How many positional parameters each callable accepts: its operands. Every
@@ -322,18 +300,18 @@ def test_the_presets_are_attributes_of_profile():
 POSITIONAL = {
     "tftp.TFTPServerOptions": 0,
     "tftp.TFTPServerLimits": 0,
-    "tftp.Negotiated": 0,
-    "tftp.encode_request": 2,
+    "tftp.options.Negotiated": 0,
+    "tftp.packet.encode_request": 2,
     "tftp.AtomicWriter": 1,
     "tftp.listing.DirectoryListing": 1,
-    "tftp.OptionRegistry.register": 1,
+    "tftp.options.OptionRegistry.register": 1,
     "tftp.TFTPRequestContext": 2,
     "tftp.TFTPServer": 1,
     "tftp.AsyncTFTPServer": 1,
     "tftp.relay.TFTPRelay": 1,
     "tftp.TFTPClient": 2,
     "tftp.AsyncTFTPClient": 2,
-    "tftp.PortRange": 2,
+    "tftp.server.PortRange": 2,
     "tftp.relay.Upstream": 2,
 }
 
@@ -373,9 +351,9 @@ def test_an_option_given_by_position_is_refused():
     with pytest.raises(TypeError):
         tftp.TFTPServerLimits(1024)
     with pytest.raises(TypeError):
-        tftp.Negotiated(512)
+        tftp.options.Negotiated(512)
     with pytest.raises(TypeError):
-        tftp.encode_request(tftp.TFTPOpcode.RRQ, "f", "octet")
+        tftp.packet.encode_request(tftp.TFTPOpcode.RRQ, "f", "octet")
     with pytest.raises(TypeError):
         tftp.TFTPServer(".", "127.0.0.1")
 
@@ -412,3 +390,50 @@ def test_no_client_method_silences_a_signature_mismatch():
     package = pathlib.Path(tftp.client.__file__).parent
     for path in package.glob("*.py"):
         assert "type: ignore[override]" not in path.read_text(encoding="utf-8"), path.name
+
+
+# -- the three texts that say where a name lives ----------------------------------------------------
+
+import pathlib
+import re
+
+_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_README = (_ROOT / "README.md").read_text(encoding="utf-8")
+_HEADER = (_ROOT / "src" / "tftp" / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_no_text_says_everything_is_importable_from_the_root():
+    import tftp
+
+    for text in (_README, _HEADER, tftp.__doc__):
+        assert not re.search(r"(?i)everything[^.]{0,40}importable from `*tftp", text)
+
+
+def test_the_readme_overview_names_exist_in_the_module_of_their_row():
+    rows = re.findall(r"^\| `(tftp\.\w+)` \| (.*?) \|$", _README.split("## API overview")[1], re.M)
+    assert len(rows) >= 10
+    missing = []
+    for module, cell in rows:
+        mod = importlib.import_module(module)
+        for name in re.findall(r"`([A-Za-z_][A-Za-z_0-9]*)`", cell):
+            if name not in {"path", "cli", "pytftp"} and not hasattr(mod, name):
+                missing.append("%s.%s" % (module, name))
+    assert missing == []
+
+
+def test_the_package_docstring_names_importable_modules():
+    import tftp
+
+    for module in re.findall(r":mod:`(tftp\.\w+)`", tftp.__doc__):
+        importlib.import_module(module)
+
+
+def test_the_header_lists_what_each_module_exports():
+    section = _HEADER.split("## Where names live")[1].split("\n## ")[0]
+    rows = {
+        m: re.findall(r"`([^`]+)`", cell)
+        for m, cell in re.findall(r"^\| `(tftp[\w.]*)` \| (.*?) \|$", section, re.M)
+    }
+    assert set(rows) == set(EXPECTED)
+    for module, names in rows.items():
+        assert sorted(names) == [n for n in EXPECTED[module] if n != "__version__"], module

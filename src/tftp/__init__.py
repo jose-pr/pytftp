@@ -13,11 +13,13 @@ rollover::
     with tftp.TFTPServer("/srv/tftp", port=6969) as server:
         server.serve_forever()
 
-Everything public is importable from ``tftp`` directly. The subpackages
-group it for reading: :mod:`tftp.packet` (wire format), :mod:`tftp.options`
-(negotiation), :mod:`tftp.transfer` (the I/O-free engine),
-:mod:`tftp.client`, :mod:`tftp.server`, :mod:`tftp.netascii`,
-:mod:`tftp.uri` (``tftp://`` URLs), and
+``tftp`` exports what the common task needs: the clients and servers with their
+asyncio twins, the one-shot transfer functions, the exceptions, the result and
+URL types, the handler contract, the policy classes, the packet types and the
+engine's ``Sender`` and ``Receiver``. Everything else lives in its role module,
+which is that name's one home: :mod:`tftp.client`, :mod:`tftp.server`,
+:mod:`tftp.relay`, :mod:`tftp.capture`, :mod:`tftp.options`, :mod:`tftp.packet`,
+:mod:`tftp.backends`, :mod:`tftp.path`, :mod:`tftp.exceptions` and
 :mod:`tftp.cli` (needs the ``cli`` extra).
 """
 
@@ -32,11 +34,6 @@ from .packet import (
     OptionAckPacket,
     RequestPacket,
     decode,
-    encode_ack,
-    encode_data,
-    encode_error,
-    encode_oack,
-    encode_request,
 )
 from .exceptions import (
     AccessViolation,
@@ -56,37 +53,19 @@ from .exceptions import (
     UnknownTransferID,
     WouldBlock,
 )
-from .client import MODES, AsyncTFTPClient, RemoteStat, TFTPClient, download, upload
+from .client import AsyncTFTPClient, TFTPClient, download, upload
 from .listing import ListEntry
 from .backends import FilesystemBackend
 from .server import (
     AsyncTFTPServer,
     AtomicWriter,
     TFTPHandler,
-    PortRange,
     TFTPRequestContext,
     TFTPServer,
     TFTPServerLimits,
 )
 from .netascii import NetasciiReader, NetasciiWriter
-from .options import (
-    DEFAULT_BLKSIZE,
-    DEFAULT_REGISTRY,
-    EXTENSION_OPTIONS,
-    LISTING_OPTIONS,
-    MAX_BLKSIZE,
-    MAX_WINDOWSIZE,
-    MIN_BLKSIZE,
-    PROFILES,
-    STANDARD_OPTIONS,
-    SUPPORTED_OPTIONS,
-    Negotiated,
-    OptionHandler,
-    OptionRegistry,
-    Profile,
-    TFTPServerOptions,
-    register_option,
-)
+from .options import Profile, TFTPServerOptions
 from .result import TransferResult
 from .transfer import Receiver, Sender
 from .uri import TFTPURL, download_url, upload_url
@@ -96,11 +75,9 @@ __all__ = [
     # Client
     "TFTPClient",
     "AsyncTFTPClient",
-    "RemoteStat",
     "ListEntry",
     "download",
     "upload",
-    "MODES",
     "TFTPURL",
     "download_url",
     "upload_url",
@@ -109,14 +86,12 @@ __all__ = [
     "AsyncTFTPServer",
     "TFTPServerOptions",
     "TFTPServerLimits",
-    "PortRange",
     "TFTPHandler",
     "FilesystemBackend",
     "AtomicWriter",
     "TFTPRequestContext",
     # Results and errors
     "TransferResult",
-    "Negotiated",
     "TFTPError",
     "TFTPValueError",
     "TFTPDecodeError",
@@ -142,26 +117,8 @@ __all__ = [
     "ErrorPacket",
     "OptionAckPacket",
     "decode",
-    "encode_request",
-    "encode_data",
-    "encode_ack",
-    "encode_error",
-    "encode_oack",
-    "DEFAULT_BLKSIZE",
-    "MIN_BLKSIZE",
-    "MAX_BLKSIZE",
-    "MAX_WINDOWSIZE",
-    "SUPPORTED_OPTIONS",
-    "STANDARD_OPTIONS",
-    "EXTENSION_OPTIONS",
-    "LISTING_OPTIONS",
     # Options and profiles
-    "OptionHandler",
-    "OptionRegistry",
-    "DEFAULT_REGISTRY",
-    "register_option",
     "Profile",
-    "PROFILES",
     # Building blocks
     "Sender",
     "Receiver",

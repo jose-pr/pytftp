@@ -99,7 +99,7 @@ not received.
 
 ## Directory listings
 
-`TFTPServerOptions(allowed=tftp.STANDARD_OPTIONS | tftp.LISTING_OPTIONS)` (or
+`TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS)` (or
 `pytftp serve --listing`) lets pytftp clients list directories and see
 modification times; see [Paths](paths.md).
 

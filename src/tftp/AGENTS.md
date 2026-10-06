@@ -7,11 +7,14 @@ reading its source. It ships inside the package and is self-contained; read it
 Development documentation lives with the source at
 <https://github.com/jose-pr/pytftp>.
 
-Everything below is importable from `tftp` directly. The subpackages only
-group it: `tftp.packet` (wire format), `tftp.options` (negotiation),
-`tftp.transfer` (the I/O-free engine), `tftp.client`, `tftp.server`,
-`tftp.netascii`, `tftp.exceptions` (every exception), `tftp.result`, and
-`tftp.cli` (needs the `cli` extra). Modules starting with `_` are internal.
+`tftp` exports what the common task needs: the clients and servers with their
+asyncio twins, `download` and `upload` and the URL one-shots, the exceptions,
+`TransferResult` and `TFTPURL`, the handler contract with `FilesystemBackend`,
+the policy classes and `Profile`, the packet types and `decode`, and the
+engine's `Sender` and `Receiver`. Every other name has one home, its role
+module, and is imported from it (`from tftp.options import OptionRegistry`):
+"Where names live" below lists every public module's exports. Modules starting
+with `_` are internal.
 
 Options are keyword-only: a callable takes its operands (the file name, the
 host, the handler) by position and every option after them by keyword, and a
@@ -19,6 +22,27 @@ policy or record class (`TFTPServerOptions`, `TFTPServerLimits`, `Negotiated`)
 takes every field by keyword.
 
 `tftp.__version__` — the installed distribution's version.
+
+## Where names live
+
+| Module | Exports |
+| --- | --- |
+| `tftp` | `AccessViolation`, `AckPacket`, `AsyncTFTPClient`, `AsyncTFTPServer`, `AtomicWriter`, `DataPacket`, `DiskFull`, `ErrorPacket`, `FileAlreadyExists`, `FileNotFound`, `FilesystemBackend`, `IllegalOperation`, `ListEntry`, `NetasciiReader`, `NetasciiWriter`, `NoSuchUser`, `OptionAckPacket`, `OptionNegotiationError`, `Profile`, `Receiver`, `RemoteError`, `RequestPacket`, `Sender`, `TFTPClient`, `TFTPDecodeError`, `TFTPError`, `TFTPErrorCode`, `TFTPHandler`, `TFTPOpcode`, `TFTPProtocolError`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPServerOptions`, `TFTPURL`, `TFTPValueError`, `TransferAbortedError`, `TransferResult`, `TransferTimeoutError`, `UnknownTransferID`, `WouldBlock`, `decode`, `download`, `download_url`, `upload`, `upload_url` |
+| `tftp.client` | `AsyncTFTPClient`, `MODES`, `RemoteStat`, `TFTPClient`, `download`, `upload` |
+| `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
+| `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `by_interface`, `by_prefix`, `by_subnet` |
+| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CaptureFormatError`, `CapturedTransfer`, `FILTER_KEYS`, `FlowTracker`, `FrameDecoder`, `LINKTYPES`, `PacketEvent`, `PcapWriter`, `UDPDatagram`, `analyze`, `compile_filter`, `live_capture_supported`, `new_session_id`, `read_datagrams`, `read_frames`, `sniff`, `summarize` |
+| `tftp.options` | `BUILTIN_OPTIONS`, `Blksize2Option`, `BlksizeOption`, `ClientOptionContext`, `CookieOption`, `DEFAULT_BLKSIZE`, `DEFAULT_REGISTRY`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS`, `MAX_BLKSIZE`, `MAX_UTIMEOUT`, `MAX_WINDOWSIZE`, `MIN_BLKSIZE`, `MIN_UTIMEOUT`, `MstfwindowOption`, `Negotiated`, `OptionHandler`, `OptionRegistry`, `PROFILES`, `Profile`, `RolloverOption`, `STANDARD_OPTIONS`, `SUPPORTED_OPTIONS`, `ServerOptionContext`, `TFTPServerOptions`, `TimeoutOption`, `TsizeOption`, `UtimeoutOption`, `WindowsizeOption`, `XListOption`, `XMtimeOption`, `accept_oack`, `negotiate`, `refuse`, `register_option`, `request_options` |
+| `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
+| `tftp.backends` | `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `Pipe`, `UpstreamBackend`, `normalize_name` |
+| `tftp.path` | `TFTPPath`, `TFTPURIPath` |
+| `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `CaptureFormatError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `UnknownTransferID`, `WouldBlock` |
+| `tftp.cli` | `CaptureCmd`, `Get`, `Ls`, `Put`, `Pytftp`, `RelayCmd`, `Serve`, `run` |
+| `tftp.transfer` | `Receiver`, `Sender`, `Transfer`, `as_readinto`, `as_write` |
+| `tftp.uri` | `TFTPURL`, `download_url`, `upload_url` |
+| `tftp.listing` | `DirectoryListing`, `LIST_OPTION`, `ListEntry`, `MTIME_OPTION`, `dumps`, `loads` |
+| `tftp.netascii` | `NetasciiReader`, `NetasciiWriter`, `decode`, `encode`, `encoded_size` |
+| `tftp.result` | `TransferResult` |
 
 ## Protocol coverage
 

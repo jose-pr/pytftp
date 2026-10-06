@@ -5,7 +5,7 @@ from tftp import TFTPErrorCode, TFTPOpcode
 
 
 def test_request_roundtrip_with_options():
-    raw = tftp.encode_request(
+    raw = tftp.packet.encode_request(
         TFTPOpcode.RRQ, "boot/pxelinux.0", mode="octet", options={"blksize": 1428, "tsize": 0}
     )
     assert raw == b"\x00\x01boot/pxelinux.0\x00octet\x00blksize\x001428\x00tsize\x000\x00"
@@ -43,7 +43,7 @@ def test_request_tolerates_missing_final_nul_and_dangling_option():
 
 def test_request_filename_bytes_roundtrip():
     name = b"caf\xe9-\xff".decode("utf-8", "surrogateescape")
-    raw = tftp.encode_request(TFTPOpcode.WRQ, name)
+    raw = tftp.packet.encode_request(TFTPOpcode.WRQ, name)
     assert tftp.decode(raw).filename == name
     assert raw[2:8] == b"caf\xe9-\xff"
 
@@ -66,19 +66,19 @@ def test_malformed(raw):
 
 
 def test_data_ack_error_oack():
-    assert tftp.decode(tftp.encode_data(7, b"abc")) == tftp.DataPacket(7, b"abc")
-    assert tftp.decode(tftp.encode_ack(65535)) == tftp.AckPacket(65535)
-    err = tftp.decode(tftp.encode_error(TFTPErrorCode.FILE_NOT_FOUND, "nope"))
+    assert tftp.decode(tftp.packet.encode_data(7, b"abc")) == tftp.DataPacket(7, b"abc")
+    assert tftp.decode(tftp.packet.encode_ack(65535)) == tftp.AckPacket(65535)
+    err = tftp.decode(tftp.packet.encode_error(TFTPErrorCode.FILE_NOT_FOUND, "nope"))
     assert err == tftp.ErrorPacket(1, "nope")
     assert tftp.decode(b"\x00\x05\x00\x02") == tftp.ErrorPacket(2, "")
-    assert tftp.decode(tftp.encode_oack({"blksize": 9})) == tftp.OptionAckPacket({"blksize": "9"})
+    assert tftp.decode(tftp.packet.encode_oack({"blksize": 9})) == tftp.OptionAckPacket({"blksize": "9"})
 
 
 def test_nul_in_strings_is_refused():
     with pytest.raises(ValueError):
-        tftp.encode_request(TFTPOpcode.RRQ, "a\0b")
+        tftp.packet.encode_request(TFTPOpcode.RRQ, "a\0b")
     with pytest.raises(ValueError):
-        tftp.encode_request(TFTPOpcode.DATA, "a")
+        tftp.packet.encode_request(TFTPOpcode.DATA, "a")
 
 
 # -- wire vectors: RFC 1350 section 5 and RFC 2347 section 3 -----------------------
@@ -251,18 +251,18 @@ def test_encode_request_refuses_what_decode_refuses_and_what_rfc_2347_bounds():
     long_name = "n" * 600
     _every_encoder_refuses(
         [
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, ""),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="bogus-mode"),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode=""),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="oct\0et"),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, long_name),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"": "1"}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a\0": "1"}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": "1\0"}),
-            lambda: tftp.encode_request(
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, ""),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode="bogus-mode"),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode=""),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode="oct\0et"),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, long_name),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"": "1"}),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a\0": "1"}),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": "1\0"}),
+            lambda: tftp.packet.encode_request(
                 TFTPOpcode.RRQ, "f", mode="octet", options={"x%d" % i: "y" * 40 for i in range(20)}
             ),
-            lambda: tftp.encode_request(TFTPOpcode.DATA, "f"),
+            lambda: tftp.packet.encode_request(TFTPOpcode.DATA, "f"),
             lambda: tftp.RequestPacket(TFTPOpcode.RRQ, long_name, "octet").encode(),
             lambda: tftp.RequestPacket(TFTPOpcode.RRQ, "f", "bogus").encode(),
         ],
@@ -270,12 +270,12 @@ def test_encode_request_refuses_what_decode_refuses_and_what_rfc_2347_bounds():
     )
     _every_encoder_refuses(
         [
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, b"f"),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode=None),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": None}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": True}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": 1.5}),
-            lambda: tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={1: "a"}),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, b"f"),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode=None),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": None}),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": True}),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"a": 1.5}),
+            lambda: tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={1: "a"}),
         ],
         TypeError,
     )
@@ -283,31 +283,31 @@ def test_encode_request_refuses_what_decode_refuses_and_what_rfc_2347_bounds():
 
 def test_encode_request_accepts_the_largest_request_and_the_rfc_1350_modes():
     name = "n" * (512 - 2 - len("octet") - 2)
-    assert len(tftp.encode_request(TFTPOpcode.RRQ, name)) == 512
+    assert len(tftp.packet.encode_request(TFTPOpcode.RRQ, name)) == 512
     with pytest.raises(ValueError):
-        tftp.encode_request(TFTPOpcode.RRQ, name + "n")
+        tftp.packet.encode_request(TFTPOpcode.RRQ, name + "n")
     for mode in ("netascii", "OCTET", "Mail"):
-        assert tftp.decode(tftp.encode_request(TFTPOpcode.RRQ, "f", mode=mode)).mode == mode.lower()
-    assert tftp.encode_request(TFTPOpcode.RRQ, "f", mode="octet", options={"blksize": 8, "x": "y"}) == (
-        b"\x00\x01f\x00octet\x00blksize\x008\x00x\x00y\x00"
-    )
+        assert tftp.decode(tftp.packet.encode_request(TFTPOpcode.RRQ, "f", mode=mode)).mode == mode.lower()
+    assert tftp.packet.encode_request(
+        TFTPOpcode.RRQ, "f", mode="octet", options={"blksize": 8, "x": "y"}
+    ) == (b"\x00\x01f\x00octet\x00blksize\x008\x00x\x00y\x00")
 
 
 def test_encode_oack_refuses_what_is_not_an_option_list():
     _every_encoder_refuses(
         [
-            lambda: tftp.encode_oack({}),
-            lambda: tftp.encode_oack({"": "x"}),
-            lambda: tftp.encode_oack({"a\0": "x"}),
+            lambda: tftp.packet.encode_oack({}),
+            lambda: tftp.packet.encode_oack({"": "x"}),
+            lambda: tftp.packet.encode_oack({"a\0": "x"}),
             lambda: tftp.OptionAckPacket({}).encode(),
         ],
         ValueError,
     )
     _every_encoder_refuses(
         [
-            lambda: tftp.encode_oack({"tsize": None}),
-            lambda: tftp.encode_oack({"ok": True}),
-            lambda: tftp.encode_oack({"ok": 1.0}),
+            lambda: tftp.packet.encode_oack({"tsize": None}),
+            lambda: tftp.packet.encode_oack({"ok": True}),
+            lambda: tftp.packet.encode_oack({"ok": 1.0}),
         ],
         TypeError,
     )
@@ -316,56 +316,59 @@ def test_encode_oack_refuses_what_is_not_an_option_list():
 @pytest.mark.parametrize("block", [-1, 65536, 70000, 2**64])
 def test_encode_data_and_ack_refuse_a_block_the_wire_cannot_carry(block):
     with pytest.raises(ValueError):
-        tftp.encode_data(block, b"")
+        tftp.packet.encode_data(block, b"")
     with pytest.raises(ValueError):
-        tftp.encode_ack(block)
+        tftp.packet.encode_ack(block)
 
 
 @pytest.mark.parametrize("block", ["1", None, 1.0, True, b"\x00"])
 def test_encode_data_and_ack_refuse_a_block_that_is_not_an_int(block):
     with pytest.raises(TypeError):
-        tftp.encode_data(block, b"")
+        tftp.packet.encode_data(block, b"")
     with pytest.raises(TypeError):
-        tftp.encode_ack(block)
+        tftp.packet.encode_ack(block)
 
 
 def test_encode_data_and_ack_take_the_block_limits():
-    assert tftp.encode_ack(0) == b"\x00\x04\x00\x00" and tftp.encode_ack(65535) == b"\x00\x04\xff\xff"
-    assert tftp.encode_data(65535, bytearray(b"x")) == b"\x00\x03\xff\xffx"
+    assert (
+        tftp.packet.encode_ack(0) == b"\x00\x04\x00\x00"
+        and tftp.packet.encode_ack(65535) == b"\x00\x04\xff\xff"
+    )
+    assert tftp.packet.encode_data(65535, bytearray(b"x")) == b"\x00\x03\xff\xffx"
 
 
 def test_encode_error_is_strict():
     _every_encoder_refuses(
         [
-            lambda: tftp.encode_error(70000, "x"),
-            lambda: tftp.encode_error(-1, "x"),
-            lambda: tftp.encode_error(1, "a\0b"),
-            lambda: tftp.encode_error(1, "x" * 513),
+            lambda: tftp.packet.encode_error(70000, "x"),
+            lambda: tftp.packet.encode_error(-1, "x"),
+            lambda: tftp.packet.encode_error(1, "a\0b"),
+            lambda: tftp.packet.encode_error(1, "x" * 513),
         ],
         ValueError,
     )
     _every_encoder_refuses(
         [
-            lambda: tftp.encode_error(None, "x"),
-            lambda: tftp.encode_error(True, "x"),
-            lambda: tftp.encode_error("1", "x"),
-            lambda: tftp.encode_error(1, b"x"),
-            lambda: tftp.encode_error(1, None),
+            lambda: tftp.packet.encode_error(None, "x"),
+            lambda: tftp.packet.encode_error(True, "x"),
+            lambda: tftp.packet.encode_error("1", "x"),
+            lambda: tftp.packet.encode_error(1, b"x"),
+            lambda: tftp.packet.encode_error(1, None),
         ],
         TypeError,
     )
-    assert tftp.encode_error(65535, "x" * 512) == b"\x00\x05\xff\xff" + b"x" * 512 + b"\x00"
-    assert tftp.encode_error(TFTPErrorCode.FILE_NOT_FOUND) == b"\x00\x05\x00\x01\x00"
+    assert tftp.packet.encode_error(65535, "x" * 512) == b"\x00\x05\xff\xff" + b"x" * 512 + b"\x00"
+    assert tftp.packet.encode_error(TFTPErrorCode.FILE_NOT_FOUND) == b"\x00\x05\x00\x01\x00"
 
 
 def test_no_encoder_leaks_a_struct_error():
     import struct
 
     for call in (
-        lambda: tftp.encode_data(70000, b""),
-        lambda: tftp.encode_ack(-1),
-        lambda: tftp.encode_error(70000, "x"),
-        lambda: tftp.encode_data("a", b""),
+        lambda: tftp.packet.encode_data(70000, b""),
+        lambda: tftp.packet.encode_ack(-1),
+        lambda: tftp.packet.encode_error(70000, "x"),
+        lambda: tftp.packet.encode_data("a", b""),
     ):
         try:
             call()

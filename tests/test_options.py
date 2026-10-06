@@ -3,7 +3,7 @@ import pytest
 import tftp
 from tftp.options import accept_oack, negotiate, request_options
 
-POLICY = tftp.TFTPServerOptions(max_blksize=8192, max_windowsize=16, allowed=tftp.SUPPORTED_OPTIONS)
+POLICY = tftp.TFTPServerOptions(max_blksize=8192, max_windowsize=16, allowed=tftp.options.SUPPORTED_OPTIONS)
 
 
 def test_negotiate_accepts_and_clamps():
