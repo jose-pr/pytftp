@@ -11,7 +11,7 @@ import time
 import pytest
 
 import tftp
-from conftest import BAD_FIRST_ANSWERS, FakePeer, client_for, needs_ipv6
+from conftest import BAD_FIRST_ANSWERS, FakePeer, client_for, needs_ipv6, wait_until
 from tftp.netascii import encode
 
 NAMES = ["empty.bin", "one.bin", "511.bin", "512.bin", "513.bin", "1428x3.bin", "big.bin"]
@@ -379,13 +379,6 @@ def test_a_one_shot_upload_passes_src_to_the_client_as_the_source_address(root, 
     assert (root / "oneshot.bin").read_bytes() == b"data"
     assert wait_until(lambda: len(seen) == 2)
     assert {peer[0] for peer in seen} == {"127.0.0.1"}
-
-
-def wait_until(predicate, timeout=5.0):
-    end = time.monotonic() + timeout
-    while not predicate() and time.monotonic() < end:
-        time.sleep(0.01)
-    return predicate()
 
 
 _BAD_TYPE = [
@@ -892,3 +885,30 @@ def test_a_failed_result_names_its_error():
     record = result.to_dict()
     assert record["ok"] is False and record["error"] == str(failure) and "no such file" in record["error"]
     assert record["peer"] == ["10.0.0.2", 7000] and record["retransmits"] == 2 and record["duration"] == 0.25
+
+
+# -- strict_source and the result's throughput ---------------------------------------------------
+
+
+@pytest.mark.parametrize("strict, taken", [(True, b"real"), (False, b"rival")])
+def test_strict_source_decides_whether_an_answer_from_another_address_is_taken(rivals, strict, taken):
+    pair = rivals()
+    client = tftp.TFTPClient("127.0.0.1", pair.port, timeout=1, retries=2, strict_source=strict)
+    assert client.get("x") == taken
+
+
+def test_a_result_reports_payload_bytes_per_second(root, make_server):
+    result = client_for(make_server(root)).download("big.bin", io.BytesIO())
+    assert result.bytes == 300_001 and result.duration > 0
+    assert result.throughput == pytest.approx(300_001 / result.duration)
+
+
+def test_the_throughput_of_a_transfer_that_took_no_time_is_zero():
+    result = tftp.TransferResult(
+        "f", "read", "octet", ("h", 1), ("l", 2), 1000, 2, 0, 0.0, tftp.options.Negotiated()
+    )
+    assert result.throughput == 0.0
+    timed = tftp.TransferResult(
+        "f", "read", "octet", ("h", 1), ("l", 2), 1000, 2, 0, 4.0, tftp.options.Negotiated()
+    )
+    assert timed.throughput == 250.0

@@ -228,3 +228,85 @@ def refusing(sock: socket.socket, *, limit: int = 100, allowed: int = 0) -> sock
     fake.settimeout(timeout)
     fake.limit, fake.allowed, fake.sent = limit, allowed, []
     return fake
+
+
+@pytest.fixture
+def symlink():
+    """``symlink(link, target)``: create one, or skip where the host does not let a test."""
+
+    def make(link, target) -> None:
+        try:
+            os.symlink(target, link, target_is_directory=os.path.isdir(target))
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip("this host does not let a test create a symbolic link: %s" % exc)
+
+    return make
+
+
+class RivalPair:
+    """A server socket and a second one on another host address that answers first.
+
+    The first request the server socket receives is answered with DATA block 1
+    from the rival (``127.0.0.2``) and then from the real server
+    (``127.0.0.1``), each with its own payload, which is shorter than a block:
+    the transfer is over for whoever the client takes the answer from.
+    """
+
+    def __init__(self, rival: bytes = b"rival", real: bytes = b"real") -> None:
+        import threading
+
+        self.real = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.rival = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            self.real.bind(("127.0.0.1", 0))
+            self.rival.bind(("127.0.0.2", 0))
+        except OSError as exc:
+            self.close()
+            pytest.skip("no second loopback address to answer from: %s" % exc)
+        self.real.settimeout(10)
+        self.port = self.real.getsockname()[1]
+        self._payloads = (rival, real)
+        self._thread = threading.Thread(target=self._run, name="rival-pair", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            _, client = self.real.recvfrom(2048)
+            self.rival.sendto(b"\x00\x03\x00\x01" + self._payloads[0], client)
+            self.real.sendto(b"\x00\x03\x00\x01" + self._payloads[1], client)
+        except OSError:
+            pass
+
+    def close(self) -> None:
+        self.real.close()
+        self.rival.close()
+        if hasattr(self, "_thread"):
+            self._thread.join(5)
+
+
+@pytest.fixture
+def rivals():
+    """``rivals()`` makes a :class:`RivalPair`; each one is closed after the test."""
+    made = []
+
+    def make(**kwargs) -> RivalPair:
+        made.append(RivalPair(**kwargs))
+        return made[-1]
+
+    yield make
+    for pair in made:
+        pair.close()
+
+
+def wait_until(predicate, timeout: float = 5.0) -> bool:
+    """Poll ``predicate`` until it is true or ``timeout`` seconds pass; its last answer.
+
+    A state a server reaches after it has answered (a counter, a released
+    transfer) is waited for here, with the assertion on that same state.
+    """
+    import time
+
+    end = time.monotonic() + timeout
+    while not predicate() and time.monotonic() < end:
+        time.sleep(0.01)
+    return predicate()

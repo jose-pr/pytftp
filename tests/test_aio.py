@@ -1056,3 +1056,17 @@ def test_the_largest_block_size_arrives_in_full_between_the_asyncio_peers(root, 
     serve(str(root), scenario, loop_factory, writable=True, overwrite=True, timeout=2)
     assert (tmp_path / "down.bin").read_bytes() == payload
     assert (root / "largest-up.bin").read_bytes() == payload
+
+
+@pytest.mark.parametrize("loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default"))
+@pytest.mark.parametrize("strict, taken", [(True, b"real"), (False, b"rival")])
+def test_strict_source_decides_whether_an_answer_from_another_address_is_taken(
+    rivals, loop_factory, strict, taken
+):
+    pair = rivals()
+
+    async def main():
+        client = AsyncTFTPClient("127.0.0.1", pair.port, timeout=1, retries=2, strict_source=strict)
+        assert await client.get("x") == taken
+
+    run(main(), loop_factory)
