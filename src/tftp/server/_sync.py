@@ -35,9 +35,9 @@ from ..packet._codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Transfer
 from ._core import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
-from .handler import has_coroutine_hooks
-from .policy import TFTPServerLimits
-from .session import Session
+from ._handler import has_coroutine_hooks
+from ._policy import TFTPServerLimits
+from ._session import Session
 
 __all__ = ["SelectorService", "TFTPServer"]
 

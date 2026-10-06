@@ -4,6 +4,6 @@
 
 ::: tftp.server.AsyncTFTPServer
 
-::: tftp.server.policy
+::: tftp.server._policy
 
-::: tftp.server.handler
+::: tftp.server._handler

@@ -349,14 +349,14 @@ def _arrival(local, interface=None):
     import ipaddress
     from types import SimpleNamespace
 
-    from tftp.server.listener import Arrival
+    from tftp.server._listener import Arrival  # internal: no public name
 
     datagram = SimpleNamespace(destination=None if local is None else ipaddress.ip_address(local))
     return Arrival(b"", ("", 0), local, 0, datagram, interface)
 
 
 def test_broadcast_detection():
-    from tftp.server.listener import Listener
+    from tftp.server._listener import Listener  # internal: no public name
 
     for address in ("255.255.255.255", "224.0.0.1", "ff02::1", "::ffff:255.255.255.255", "::ffff:224.0.0.1"):
         assert Listener.is_broadcast(_arrival(address)), address
@@ -367,7 +367,7 @@ def test_broadcast_detection():
 def test_subnet_broadcast_is_detected_from_the_arrival_interface():
     import netimps
 
-    from tftp.server.listener import Listener
+    from tftp.server._listener import Listener  # internal: no public name
 
     for iface in netimps.get_interfaces():
         for address in iface.ipv4:
@@ -451,8 +451,8 @@ def test_unconnected_udp_survives_port_unreachable():
     a datagram to a closed port; with it, the receive simply times out, as on
     every other platform.
     """
-    from tftp.server.listener import Listener
-    from tftp.server.session import bind_transfer
+    from tftp.server._listener import Listener  # internal: no public name
+    from tftp.server._session import bind_transfer  # internal: no public name
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as closed:
         closed.bind(("127.0.0.1", 0))
@@ -501,7 +501,7 @@ def test_interface_lookups_reuse_netimps_cache():
     import netimps
 
     from tftp.client._core import _mtu_blksize
-    from tftp.server.listener import Listener
+    from tftp.server._listener import Listener  # internal: no public name
 
     netimps.clear_interface_cache()
     before = netimps.interface_enumerations()

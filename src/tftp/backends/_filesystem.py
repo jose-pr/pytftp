@@ -9,7 +9,7 @@ from typing import Any, BinaryIO, Optional
 
 from ..exceptions import TFTPError
 from ..packet import TFTPErrorCode
-from ..server.handler import AtomicWriter, TFTPRequestContext
+from ..server._handler import AtomicWriter, TFTPRequestContext
 
 __all__ = ["FilesystemBackend"]
 

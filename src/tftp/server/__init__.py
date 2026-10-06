@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, List
 
 from ._sync import TFTPServer
-from .handler import (
+from ._handler import (
     AsyncTFTPHandler,
     AsyncTFTPReader,
     AsyncTFTPWriter,
@@ -17,9 +17,9 @@ from .handler import (
     TFTPWriter,
     ThreadedHandler,
 )
-from .policy import TFTPServerLimits
-from .session import PortRange, PortRangeLike
-from .stats import TFTPStats
+from ._policy import TFTPServerLimits
+from ._session import PortRange, PortRangeLike
+from ._stats import TFTPStats
 
 if TYPE_CHECKING:
     from ._asyncio import AsyncTFTPServer

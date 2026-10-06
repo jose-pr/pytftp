@@ -53,7 +53,7 @@ from ..options import (
 from ..options._handler import read_decimal
 from ..packet import TFTPErrorCode, TFTPOpcode, decode, encode_ack, encode_request
 from ..packet._codec import _encode_error
-from ..server.handler import AtomicWriter
+from ..server._handler import AtomicWriter
 
 if TYPE_CHECKING:  # netimps is imported lazily at run time
     from netimps import HostLike

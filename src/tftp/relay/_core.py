@@ -34,12 +34,12 @@ from ..exceptions import TFTPDecodeError, TFTPError
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
 from ..packet._codec import _encode_error
 from ..server._sync import SelectorService
-from ..server.handler import TFTPRequestContext
-from ..server.listener import Arrival, Listener
-from ..server.policy import TFTPServerLimits
-from ..server.session import PortAllocator, as_port_range, bind_transfer
+from ..server._handler import TFTPRequestContext
+from ..server._listener import Arrival, Listener
+from ..server._policy import TFTPServerLimits
+from ..server._session import PortAllocator, as_port_range, bind_transfer
 from ._routing import RouteFunction, Upstream
-from ..server.stats import RELAY_COUNTERS, TFTPStats
+from ..server._stats import RELAY_COUNTERS, TFTPStats
 from ._session import RelaySession, RelaySummary
 
 __all__ = ["TFTPRelay"]

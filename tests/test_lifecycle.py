@@ -349,7 +349,7 @@ def test_a_failure_part_way_through_start_leaves_nothing_open(monkeypatch, kind)
 def test_a_listener_that_cannot_finish_closes_its_socket(monkeypatch):
     import netimps
 
-    from tftp.server.listener import Listener
+    from tftp.server._listener import Listener  # internal: no public name
 
     def refuse(*args, **kwargs):
         raise OSError("endpoint refused")

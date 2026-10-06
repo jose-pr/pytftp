@@ -92,7 +92,7 @@ def test_port_range_parse_wants_text():
 
 
 def test_port_range_like_forms():
-    from tftp.server.session import as_port_range
+    from tftp.server._session import as_port_range  # internal: no public name
 
     want = tftp.server.PortRange(10, 12)
     assert as_port_range(None) is None and as_port_range(want) is want
@@ -110,7 +110,7 @@ def test_port_range_like_forms():
 
 
 def test_the_allocator_walks_round_robin_and_belongs_to_whoever_holds_it():
-    from tftp.server.session import PortAllocator
+    from tftp.server._session import PortAllocator  # internal: no public name
 
     ports = tftp.server.PortRange(5, 7)
     first, second = PortAllocator(ports), PortAllocator(ports)
