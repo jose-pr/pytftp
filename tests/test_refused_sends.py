@@ -64,6 +64,11 @@ def _raw() -> socket.socket:
     return raw
 
 
+def _settled(stats):
+    """The served transfer is counted and released: the two counters move one after the other."""
+    return stats["completed"] >= 1 and stats["active"] == 0
+
+
 @pytest.mark.parametrize("allowed", [0, 1], ids=["first_data", "later_data"])
 def test_a_send_the_host_refuses_ends_that_transfer_and_not_the_server(root, make_server, caplog, allowed):
     results = []
@@ -79,8 +84,8 @@ def test_a_send_the_host_refuses_ends_that_transfer_and_not_the_server(root, mak
     failed = results[0]
     assert not failed.is_ok and failed.bytes <= 512 * (allowed + 1)
     assert any(REASON in message for message in caplog.messages), caplog.messages
-    deadline = time.monotonic() + 2
-    while server.stats_snapshot()["completed"] < 1 and time.monotonic() < deadline:
+    deadline = time.monotonic() + 5
+    while not _settled(server.stats_snapshot()) and time.monotonic() < deadline:
         time.sleep(0.01)
     stats = server.stats_snapshot()
     assert stats["completed"] == 1 and stats["active"] == 0
@@ -104,8 +109,8 @@ def test_the_async_server_ends_a_transfer_whose_send_the_host_refuses(root, capl
             assert sum(isinstance(p, tftp.DataPacket) for p in seen) == 1
             client = AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5)
             assert await client.get("one.bin") == b"x"
-            deadline = time.monotonic() + 2
-            while server.stats_snapshot()["completed"] < 1 and time.monotonic() < deadline:
+            deadline = time.monotonic() + 5
+            while not _settled(server.stats_snapshot()) and time.monotonic() < deadline:
                 await asyncio.sleep(0.01)
             return server.stats_snapshot()
 
