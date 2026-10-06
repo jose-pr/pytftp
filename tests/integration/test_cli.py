@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import threading
@@ -213,6 +214,32 @@ def test_capture_errors(tmp_path):
     (tmp_path / "junk.pcap").write_bytes(b"not a capture at all")
     assert main(["capture", str(tmp_path / "junk.pcap")]) == 2
     assert main(["capture", str(tmp_path / "junk.pcap"), "--filter", "colour=red"]) == 2
+
+
+def _block(block_type: int, body: bytes) -> bytes:
+    return struct.pack("<II", block_type, 12 + len(body)) + body + struct.pack("<I", 12 + len(body))
+
+
+_SECTION = _block(0x0A0D0D0A, struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1))
+_PCAP_HEADER = struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 101)
+
+
+@pytest.mark.parametrize(
+    "blob",
+    [
+        _SECTION + _block(1, struct.pack("<HHI", 101, 0, 65535)) + _block(6, b""),
+        _SECTION + struct.pack("<II", 6, 1 << 30) + b"x" * 8,
+        _PCAP_HEADER + struct.pack("<IIII", 0, 0, 1 << 30, 1 << 30) + b"x" * 8,
+    ],
+    ids=["a packet block with a 4-octet body", "a block claiming 1 GiB", "a record claiming 1 GiB"],
+)
+def test_a_damaged_capture_is_one_error_line_and_status_two(tmp_path, capsys, blob):
+    path = tmp_path / "damaged.cap"
+    path.write_bytes(blob)
+    assert main(["capture", str(path)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err.startswith("error: ") and "Traceback" not in captured.err
+    assert len(captured.err.splitlines()) == 1
 
 
 def test_serve_deployment_flags(root):

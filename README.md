@@ -53,8 +53,9 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 - **Transparent relay** — forwards requests byte for byte to upstream servers
   (routed by subnet, filename or interface), so unknown extensions still work.
 - **Capture and debugging** — trace every datagram from the client, server or
-  relay; write Wireshark-readable pcaps; read pcap/pcapng files or a live
-  `tcpdump` pipe, reconstruct each transfer and extract its file.
+  relay; write Wireshark-readable pcaps; read pcap/pcapng files (through
+  [pktcap](https://github.com/jose-pr/pktcap)) or a live `tcpdump` pipe,
+  reconstruct each transfer and extract its file.
 - **Directory listings** — an opt-in extension between pytftp peers: `pytftp ls`,
   `TFTPClient.listdir()`, and `iterdir`/`walk`/`glob` on paths; other servers
   simply ignore it.
@@ -83,8 +84,9 @@ pip install "tftp[cli]"     # plus the pytftp command
 | `cli` | `duho` | the `pytftp` command and `python -m tftp` |
 | `path` | `pathlib-next[uri]` | `TFTPPath`, and `tftp://` URLs in `pathlib_next.uri.UriPath` |
 
-Requires Python 3.9+. The one required dependency, `netimps`, has no
-dependencies of its own.
+Requires Python 3.9+. The required dependencies are
+[`netimps`](https://github.com/jose-pr/netimps), which has none of its own,
+and [`pktcap`](https://github.com/jose-pr/pktcap), which needs only `netimps`.
 
 ## Quick start
 
@@ -204,14 +206,14 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.server` | `TFTPServer`, `AsyncTFTPServer`, `TFTPServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
 | `tftp.backends` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` (proxy), `Pipe` |
 | `tftp.relay` | `TFTPRelay` and routing helpers |
-| `tftp.capture` | trace events, `PcapWriter`, pcap/pcapng reading, `analyze`, filters |
+| `tftp.capture` | trace events, `PcapWriter`, `FlowTracker`, `analyze`, filters (reading a capture is pktcap's) |
 | `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |
 | `tftp.listing` | the `x-list` directory listing format: `loads`, `dumps`, `DirectoryListing` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` (`path` extra) |
 | `tftp.netascii` | streaming netascii translation |
-| `tftp.exceptions` | every exception: `TFTPError`, the typed `RemoteError` subclasses, `TFTPValueError` and its decode, filter and capture-format subclasses |
+| `tftp.exceptions` | every exception: `TFTPError`, the typed `RemoteError` subclasses, `TFTPValueError` and its decode and filter subclasses |
 | `tftp.cli` | the `pytftp` command (`cli` extra) |
 
 `tftp` itself exports what the common task needs (the clients and servers and

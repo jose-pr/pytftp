@@ -13,7 +13,7 @@ import ipaddress
 import os
 import re
 import struct
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Protocol, Tuple, Union
 
 from ..netascii import decode as netascii_decode
 from ..options._handler import DEFAULT_BLKSIZE
@@ -22,11 +22,28 @@ from ..exceptions import TFTPDecodeError
 from ..packet._enums import TFTPOpcode
 from ..packet._codec import ErrorPacket, OptionAckPacket, RequestPacket
 from ._events import PacketEvent, new_session_id
-from .frames import UDPDatagram
 
-__all__ = ["CapturedTransfer", "Endpoint", "FlowTracker"]
+__all__ = ["CapturedTransfer", "DatagramLike", "Endpoint", "FlowTracker"]
 
 Endpoint = Tuple[str, int]
+
+
+class DatagramLike(Protocol):
+    """What :meth:`FlowTracker.feed` reads of a datagram; ``pktcap.CapturedDatagram`` has all four."""
+
+    @property
+    def time(self) -> float: ...
+
+    @property
+    def source(self) -> Endpoint: ...
+
+    @property
+    def destination(self) -> Endpoint: ...
+
+    @property
+    def payload(self) -> bytes: ...
+
+
 _ANSWER_WINDOW = 10.0  # seconds within which a reply from another address counts
 #: How far ahead of the highest block seen a DATA may be placed when the transfer's window is not
 #: known (and the least it may be otherwise): a capture that lost packets still follows the transfer.
@@ -278,12 +295,10 @@ class FlowTracker:
         self.transfers: List[CapturedTransfer] = []
         self._by_client: Dict[Endpoint, CapturedTransfer] = {}
 
-    def feed(self, datagram: UDPDatagram) -> Optional[PacketEvent]:
+    def feed(self, datagram: DatagramLike) -> Optional[PacketEvent]:
         """Account for one datagram; its event if it is TFTP, else ``None``."""
+        time, payload = datagram.time, datagram.payload
         source, destination = _plain(datagram.source), _plain(datagram.destination)
-        if source is not datagram.source or destination is not datagram.destination:
-            datagram = datagram._replace(source=source, destination=destination)
-        payload = datagram.payload
         transfer = None
         if destination[1] in self.ports and len(payload) >= 2 and payload[0] == 0 and payload[1] in (1, 2):
             try:
@@ -300,26 +315,24 @@ class FlowTracker:
                     current.request_retransmissions += 1  # the same request again
                     transfer = current
                 else:
-                    transfer = CapturedTransfer(
-                        new_session_id("c"), datagram.time, source, destination, request
-                    )
+                    transfer = CapturedTransfer(new_session_id("c"), time, source, destination, request)
                     self._make_room()
                     self.transfers.append(transfer)
                     self._by_client[source] = transfer
         else:
-            transfer = self._match(datagram)
+            transfer = self._match(time, source, destination)
         if transfer is None:
             if destination[1] in self.ports or source[1] in self.ports:
-                return PacketEvent(datagram.time, "seen", destination, source, payload, "capture")
+                return PacketEvent(time, "seen", destination, source, payload, "capture")
             return None
         transfer.packets += 1
-        transfer.ended = datagram.time
+        transfer.ended = time
         try:
-            self._observe(transfer, datagram)
+            self._observe(transfer, source, payload)
         except Exception as exc:  # a packet this reading cannot take fails its transfer, not the capture
             if transfer.error is None:
                 transfer.error = (0, "unreadable packet: %s" % type(exc).__name__, "capture")
-        return PacketEvent(datagram.time, "seen", destination, source, payload, "capture", transfer.session)
+        return PacketEvent(time, "seen", destination, source, payload, "capture", transfer.session)
 
     def _make_room(self) -> None:
         """Drop the transfer to forget (finished first, then the quietest) when one more would pass the bound."""
@@ -333,13 +346,12 @@ class FlowTracker:
             if self.on_complete is not None:
                 self.on_complete(victim)
 
-    def _match(self, datagram: UDPDatagram) -> Optional[CapturedTransfer]:
-        source, destination = datagram.source, datagram.destination
+    def _match(self, time: float, source: Endpoint, destination: Endpoint) -> Optional[CapturedTransfer]:
         to_client = self._by_client.get(destination)
         if to_client is not None:
             tid = to_client.server_tid
             if tid is None:
-                if source[0] == to_client.server[0] or datagram.time - to_client.started < _ANSWER_WINDOW:
+                if source[0] == to_client.server[0] or time - to_client.started < _ANSWER_WINDOW:
                     to_client.server_tid = source  # the server's TID (RFC 1350 section 4)
                     return to_client
             elif tid == source:
@@ -349,12 +361,11 @@ class FlowTracker:
             return from_client
         return None
 
-    def _observe(self, transfer: CapturedTransfer, datagram: UDPDatagram) -> None:
-        payload = datagram.payload
+    def _observe(self, transfer: CapturedTransfer, source: Endpoint, payload: bytes) -> None:
         if len(payload) < 4 or payload[0]:
             return
         op = payload[1]
-        from_client = datagram.source == transfer.client
+        from_client = source == transfer.client
         if op == TFTPOpcode.DATA:
             wire = struct.unpack_from("!H", payload, 2)[0]
             if self.keep_payloads:
@@ -389,7 +400,7 @@ class FlowTracker:
             except TFTPDecodeError:
                 transfer.error = (0, "", "client" if from_client else "server")
 
-    def feed_all(self, datagrams: Iterable[UDPDatagram]) -> Iterator[PacketEvent]:
+    def feed_all(self, datagrams: Iterable[DatagramLike]) -> Iterator[PacketEvent]:
         for datagram in datagrams:
             event = self.feed(datagram)
             if event is not None:

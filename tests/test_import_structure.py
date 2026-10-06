@@ -113,13 +113,9 @@ _PUBLIC = {
     "tftp.transfer",
 }
 
-_LEAVING = "leaves for another package with the rest of the capture decoding"
-
 #: Modules public by name that are not in the role-based surface, each with why.
 _PUBLIC_FOR_NOW = {
-    "tftp.capture.frames": _LEAVING,
-    "tftp.capture.live": _LEAVING,
-    "tftp.capture.pcap": _LEAVING,
+    "tftp.capture.pcap": "leaves for the library that writes captures",
 }
 
 #: The command line's subcommand modules, each named for the subcommand it holds. They are

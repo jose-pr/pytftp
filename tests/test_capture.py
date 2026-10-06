@@ -1,14 +1,19 @@
-"""Packet events, trace hooks, pcap/pcapng decoding, flow reconstruction, filters."""
+"""Packet events, trace hooks, reading a capture through pktcap, flow reconstruction, filters."""
 
 from __future__ import annotations
 
 import io
 import os
+import random
 import struct
+import time
 
+import pktcap
 import pytest
 
 import tftp
+import tftp.capture
+import tftp.exceptions
 from conftest import client_for, needs_ipv6
 from tftp import TFTPOpcode
 from tftp.packet import encode_ack, encode_data, encode_error, encode_oack, encode_request
@@ -17,12 +22,11 @@ from tftp.capture import (
     FlowTracker,
     PacketEvent,
     PcapWriter,
-    UDPDatagram,
     analyze,
     compile_filter,
-    read_datagrams,
     summarize,
 )
+from pktcap import CapturedDatagram, read_datagrams
 
 # -- events ------------------------------------------------------------------------
 
@@ -121,97 +125,142 @@ def test_pcap_roundtrip_reconstructs_transfers(root, make_server, tmp_path_facto
     assert all(e.session for e in analysis.events)
 
 
-def _ipv4(src, dst, payload, ident=1, offset=0, more=False):
-    flags = (0x2000 if more else 0) | (offset // 8)
+# -- reading a capture: what a caller of analyze() sees from pktcap's reader -------------------------
+
+_PCAP_HEADER = struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 101)
+
+
+def _block(block_type, body):
+    return struct.pack("<II", block_type, 12 + len(body)) + body + struct.pack("<I", 12 + len(body))
+
+
+_SECTION = _block(0x0A0D0D0A, struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1))
+_INTERFACE = _block(1, struct.pack("<HHI", 101, 0, 65535))
+
+
+def _ipv4_udp(src, dst, payload, ident=1, flags_offset=0):
     header = struct.pack(
-        "!BBHHHBBH4s4s",
-        0x45,
-        0,
-        20 + len(payload),
-        ident,
-        flags,
-        64,
-        17,
-        0,
-        bytes(map(int, src.split("."))),
-        bytes(map(int, dst.split("."))),
+        "!BBHHHBBH4s4s", 0x45, 0, 20 + len(payload), ident, flags_offset, 64, 17, 0, src, dst
     )
     return header + payload
 
 
-def _udp(sport, dport, payload):
-    return struct.pack("!HHHH", sport, dport, 8 + len(payload), 0) + payload
+def _pcap_record(packet):
+    return struct.pack("<IIII", 1_700_000_000, 0, len(packet), len(packet)) + packet
 
 
-def _ether(ip, vlan=False, v6=False):
-    ethertype = struct.pack("!H", 0x86DD if v6 else 0x0800)
-    tag = b"\x81\x00\x00\x05" if vlan else b""
-    return b"\x02" * 6 + b"\x04" * 6 + tag + ethertype + ip
+#: Damaged captures and what each claims; every one is a ``pktcap.CaptureFormatError``.
+_DAMAGED = {
+    "not a capture": b"hello world",
+    "a pcap record claiming 1 GiB": _PCAP_HEADER + struct.pack("<IIII", 0, 0, 1 << 30, 1 << 30) + b"x" * 8,
+    "a pcap record over the frame ceiling": _PCAP_HEADER
+    + struct.pack("<IIII", 0, 0, 300_000, 300_000)
+    + b"x" * 300_000,
+    "a pcapng block claiming 1 GiB": _SECTION + _INTERFACE + struct.pack("<II", 6, 1 << 30) + b"x" * 8,
+    "a packet block with a 4-octet body": _SECTION + _INTERFACE + _block(6, b""),
+    "an interface block cut after its header": _SECTION + struct.pack("<II", 1, 20),
+    "a packet block cut after its header": _SECTION + _INTERFACE + struct.pack("<II", 6, 64),
+    "a simple packet block cut after its header": _SECTION + _INTERFACE + struct.pack("<II", 3, 64),
+    "a section header of length 8": struct.pack("<II", 0x0A0D0D0A, 8) + b"\x4d\x3c\x2b\x1a",
+    "a section header with no byte-order magic": struct.pack("<II", 0x0A0D0D0A, 28) + b"\xff" * 20,
+    "a pcap header cut short": _PCAP_HEADER[:10],
+    "a pcap record cut inside its header": _PCAP_HEADER + b"\0" * 7,
+}
 
 
-def _pcapng(frames, linktype=1, nanoseconds=False):
-    out = io.BytesIO()
-    shb_body = struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1)
-    out.write(
-        struct.pack("<II", 0x0A0D0D0A, 12 + len(shb_body)) + shb_body + struct.pack("<I", 12 + len(shb_body))
+@pytest.mark.parametrize("blob", _DAMAGED.values(), ids=list(_DAMAGED))
+def test_a_damaged_capture_is_a_format_error_and_costs_no_memory_of_its_claim(blob):
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        with pytest.raises(pktcap.CaptureFormatError):
+            analyze(io.BytesIO(blob))
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 2 * 2**20, "a %d-octet capture took %d octets to refuse" % (len(blob), peak)
+
+
+def test_the_capture_format_error_is_pktcaps_and_not_a_tftp_error():
+    with pytest.raises(pktcap.CaptureFormatError) as caught:
+        analyze(io.BytesIO(b"hello world"))
+    assert isinstance(caught.value, ValueError) and not isinstance(caught.value, tftp.TFTPError)
+    assert not hasattr(tftp.exceptions, "CaptureFormatError") and not hasattr(
+        tftp.capture, "CaptureFormatError"
     )
-    options = struct.pack("<HHB3x", 9, 1, 9) + struct.pack("<HH", 0, 0) if nanoseconds else b""
-    idb_body = struct.pack("<HHI", linktype, 0, 65535) + options
-    out.write(struct.pack("<II", 1, 12 + len(idb_body)) + idb_body + struct.pack("<I", 12 + len(idb_body)))
-    for i, frame in enumerate(frames):
-        stamp = (1_000_000 + i) * (1_000_000_000 if nanoseconds else 1_000_000)
-        padded = frame + b"\0" * (-len(frame) % 4)
-        body = struct.pack("<IIIII", 0, stamp >> 32, stamp & 0xFFFFFFFF, len(frame), len(frame)) + padded
-        out.write(struct.pack("<II", 6, 12 + len(body)) + body + struct.pack("<I", 12 + len(body)))
-    out.seek(0)
-    return out
 
 
-def test_pcapng_ethernet_vlan_and_fragments():
-    big = _udp(50000, 50001, encode_data(1, os.urandom(3000)))  # 3012 bytes of UDP: 3 fragments
-    frames = [
-        _ether(_ipv4("10.0.0.5", "10.0.0.1", _udp(50000, 69, encode_request(TFTPOpcode.RRQ, "f")))),
-        _ether(_ipv4("10.0.0.1", "10.0.0.5", big[:1480], ident=9, offset=0, more=True), vlan=True),
-        _ether(_ipv4("10.0.0.1", "10.0.0.5", big[2960:], ident=9, offset=2960)),  # out of order
-        _ether(_ipv4("10.0.0.1", "10.0.0.5", big[1480:2960], ident=9, offset=1480, more=True)),
-        b"\x02" * 12 + b"\x08\x06" + b"\0" * 28,  # ARP: ignored
-    ]
-    datagrams = list(read_datagrams(_pcapng(frames)))
-    assert [d.source for d in datagrams] == [("10.0.0.5", 50000), ("10.0.0.1", 50000)]
-    assert datagrams[1].payload == big[8:]
-    assert datagrams[0].time == pytest.approx(1_000_000)
+@pytest.mark.parametrize("container", ["pcap", "pcapng"])
+def test_random_bytes_after_a_valid_header_are_a_format_error_or_a_capture(container):
+    rng = random.Random(3247023)
+    head = _PCAP_HEADER if container == "pcap" else _SECTION + _INTERFACE
+    for _ in range(1500):
+        body = bytes(rng.getrandbits(8) for _ in range(rng.randint(0, 120)))
+        if container == "pcap":
+            body = struct.pack("<IIII", 0, 0, rng.randint(0, 80), 0) + body
+        else:
+            body = struct.pack("<II", rng.choice((1, 3, 6, 6, 6)), rng.randint(12, 64)) + body
+        try:
+            analyze(io.BytesIO(head + body))
+        except pktcap.CaptureFormatError:
+            pass
 
 
-def test_pcapng_nanoseconds_linux_sll_and_ipv6_fragments():
-    payload = _udp(1000, 69, encode_request(TFTPOpcode.WRQ, "v6"))
-    src = bytes(15) + b"\x01"
-    first, second = payload[:16], payload[16:]
-
-    def v6_fragment(chunk, offset, more):
-        frag = struct.pack("!BBHI", 17, 0, (offset // 8) << 3 | (1 if more else 0), 77)
-        return struct.pack("!IHBB", 0x60000000, 8 + len(chunk), 44, 64) + src + src + frag + chunk
-
-    sll = lambda ip: struct.pack("!HHH8sH", 0, 772, 0, b"", 0x86DD) + ip  # noqa: E731
-    frames = [sll(v6_fragment(first, 0, True)), sll(v6_fragment(second, 16, False))]
-    datagrams = list(read_datagrams(_pcapng(frames, linktype=113, nanoseconds=True)))
-    assert len(datagrams) == 1 and datagrams[0].source == ("::1", 1000)
-    assert tftp.decode(datagrams[0].payload).filename == "v6"
-    assert datagrams[0].time == pytest.approx(1_000_001)  # the last fragment's
+def test_an_empty_input_and_a_header_alone_are_captures_with_nothing_in_them():
+    for blob in (b"", _PCAP_HEADER, _SECTION + _INTERFACE):
+        analysis = analyze(io.BytesIO(blob))
+        assert (analysis.events, analysis.transfers) == ([], [])
 
 
-def test_not_a_capture():
-    from tftp.capture import CaptureFormatError
+def test_a_capture_of_a_link_type_nothing_dissects_holds_no_transfer():
+    wifi = struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 105) + _pcap_record(b"\0" * 60)
+    assert analyze(io.BytesIO(wifi)).transfers == []
 
-    with pytest.raises(CaptureFormatError):
-        list(read_datagrams(io.BytesIO(b"hello world")))
-    assert list(read_datagrams(io.BytesIO(b""))) == []
+
+def test_a_text_stream_is_a_type_error_and_a_missing_path_an_os_error(tmp_path):
+    with pytest.raises(TypeError):
+        analyze(io.StringIO("not bytes"))
+    with pytest.raises(FileNotFoundError):
+        analyze(tmp_path / "missing.pcap")
+
+
+def test_analyze_follows_datagrams_it_is_given_without_reading_a_file():
+    analysis = analyze(_flow((C, S, encode_request(TFTPOpcode.RRQ, "f")), (T, C, encode_data(1, b"x"))))
+    assert [t.filename for t in analysis.transfers] == ["f"] and analysis.transfers[0].data() == b"x"
+
+
+def _fragments_of_one_datagram(count):
+    """IPv4 fragments of one datagram: the last first, then every piece from offset 0 but one hole."""
+    src, dst = bytes([10, 0, 0, 5]), bytes([10, 0, 0, 1])
+    frames = [_ipv4_udp(src, dst, b"y" * 8, ident=7, flags_offset=count + 1)]
+    for index in range(count):
+        frames.append(_ipv4_udp(src, dst, b"y" * 8, ident=7, flags_offset=0x2000 | index))
+    return _PCAP_HEADER + b"".join(_pcap_record(frame) for frame in frames)
+
+
+def _best_of(runs, blob):
+    best = None
+    for _ in range(runs):
+        started = time.perf_counter()
+        analyze(io.BytesIO(blob))
+        best = min(best or 1e9, time.perf_counter() - started)
+    return best
+
+
+def test_fragments_that_never_complete_cost_time_in_proportion_to_their_number():
+    """Linear work is a ratio of 4 for four times the fragments; re-sorting every piece is 16."""
+    small, large = _best_of(3, _fragments_of_one_datagram(2000)), _best_of(
+        3, _fragments_of_one_datagram(8000)
+    )
+    assert large < 9 * small, "%d fragments %.3f s, %d fragments %.3f s" % (2000, small, 8000, large)
 
 
 # -- flow tracking ------------------------------------------------------------------------------
 
 
 def _flow(*packets, start=0.0):
-    return [UDPDatagram(start + i * 0.01, src, dst, data) for i, (src, dst, data) in enumerate(packets)]
+    return [CapturedDatagram(start + i * 0.01, src, dst, data) for i, (src, dst, data) in enumerate(packets)]
 
 
 C, S, T = ("10.0.0.5", 2000), ("10.0.0.1", 69), ("10.0.0.1", 40000)
@@ -648,7 +697,7 @@ def test_nothing_a_capture_holds_raises_or_prints_a_control_character():
             del data[rng.randrange(len(data)) :]
         clock += 0.001
         source, destination = rng.choice([(C, S), (T, C), (C, T), (S, C)])
-        event = tracker.feed(UDPDatagram(clock, source, destination, bytes(data)))
+        event = tracker.feed(CapturedDatagram(clock, source, destination, bytes(data)))
         assert summarize(bytes(data)).isprintable()
         if event is not None:
             assert str(event).isprintable()
@@ -659,10 +708,10 @@ def test_nothing_a_capture_holds_raises_or_prints_a_control_character():
 def test_one_packet_that_cannot_be_read_fails_its_transfer_and_not_the_capture(monkeypatch):
     real = FlowTracker._observe
 
-    def observe(self, transfer, datagram):
-        if datagram.payload[:4] == b"\x00\x04\x00\x09":
+    def observe(self, transfer, source, payload):
+        if payload[:4] == b"\x00\x04\x00\x09":
             raise ValueError("a reading nobody expected")
-        return real(self, transfer, datagram)
+        return real(self, transfer, source, payload)
 
     monkeypatch.setattr(FlowTracker, "_observe", observe)
     tracker = _tracked(

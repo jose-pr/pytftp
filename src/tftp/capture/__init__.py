@@ -4,9 +4,10 @@ Three sources of :class:`PacketEvent`:
 
 - ``trace=`` hooks on ``TFTPClient``, ``TFTPServer`` and ``TFTPRelay`` -- what this
   library sent and received, with session ids;
-- pcap/pcapng captures (:func:`read_datagrams` + :class:`FlowTracker`, or
-  :func:`analyze`), from a file or a live ``tcpdump -w -`` pipe;
-- live capture on Linux (:func:`sniff`).
+- pcap/pcapng captures, from a file or a live ``tcpdump -w -`` pipe, read by
+  pktcap (``pktcap.read_datagrams``) and followed by :class:`FlowTracker`, or by
+  :func:`analyze` in one call;
+- live capture on Linux (``pktcap.sniff``).
 
 :class:`PcapWriter` turns trace events back into a capture for Wireshark, and
 :func:`combine_hooks` joins several trace hooks into the one ``trace=`` takes.
@@ -15,15 +16,13 @@ Three sources of :class:`PacketEvent`:
 from __future__ import annotations
 
 import os
-from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union
+from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union, cast
 
 from ._events import PacketEvent, new_session_id, summarize
 from ._filters import FILTER_KEYS, CaptureFilterError, EventPredicate, compile_filter
-from ._flows import CapturedTransfer, Endpoint, FlowTracker
+from ._flows import CapturedTransfer, DatagramLike, Endpoint, FlowTracker
 from ._hook import combine_hooks
-from .frames import LINKTYPES, FrameDecoder, UDPDatagram
-from .live import live_capture_supported, sniff
-from .pcap import CaptureFormatError, PcapWriter, read_datagrams, read_frames
+from .pcap import PcapWriter
 
 __all__ = [
     "PacketEvent",
@@ -35,17 +34,10 @@ __all__ = [
     "CaptureFilterError",
     "FILTER_KEYS",
     "CapturedTransfer",
+    "DatagramLike",
     "FlowTracker",
-    "UDPDatagram",
-    "FrameDecoder",
-    "LINKTYPES",
-    "read_frames",
-    "read_datagrams",
-    "CaptureFormatError",
     "PcapWriter",
     "combine_hooks",
-    "sniff",
-    "live_capture_supported",
     "Analysis",
     "analyze",
 ]
@@ -59,7 +51,7 @@ class Analysis(NamedTuple):
 
 
 def analyze(
-    source: Union[str, "os.PathLike[str]", BinaryIO, Iterable[UDPDatagram]],
+    source: Union[str, "os.PathLike[str]", BinaryIO, Iterable[DatagramLike]],
     *,
     ports: Iterable[int] = (69,),
     filter: Optional[str] = None,
@@ -67,13 +59,20 @@ def analyze(
 ) -> Analysis:
     """Read a whole capture (path, stream, or datagrams) and reconstruct its transfers.
 
-    ``filter`` (see :func:`compile_filter`) selects events; transfers are
-    always reconstructed from everything, and every one is kept: the result
-    holds what the capture holds.
+    A path or a stream is read by ``pktcap.read_datagrams``, which raises
+    ``pktcap.CaptureFormatError`` for a file that is not a capture. ``filter``
+    (see :func:`compile_filter`) selects events; transfers are always
+    reconstructed from everything, and every one is kept: the result holds what
+    the capture holds.
     """
-    datagrams = source if not isinstance(source, (str, os.PathLike)) and not hasattr(source, "read") else None
-    if datagrams is None:
-        datagrams = read_datagrams(source)  # type: ignore[arg-type]  # a stream with read() is a BinaryIO
+    if isinstance(source, (str, os.PathLike)) or hasattr(source, "read"):
+        from pktcap import read_datagrams
+
+        datagrams: Iterable[DatagramLike] = read_datagrams(
+            cast("Union[str, os.PathLike[str], BinaryIO]", source)
+        )
+    else:
+        datagrams = source
     tracker = FlowTracker(ports, keep_payloads=keep_payloads, max_tracked=None)
     wanted = compile_filter(filter)
     events = [e for e in tracker.feed_all(datagrams) if wanted(e)]

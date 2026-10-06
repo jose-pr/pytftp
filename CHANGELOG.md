@@ -146,14 +146,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   adapter's addresses, so `TFTPServer(interface=...)` does not consider it.
 - Every exception the library raises on its own account is defined in
   `tftp.exceptions` and is a `TFTPError`: `TFTPDecodeError` (bytes that are not
-  a packet), `CaptureFormatError` and `CaptureFilterError` were plain
-  `ValueError` subclasses and are now `TFTPError` as well, and the new
+  a packet) and `CaptureFilterError` were plain `ValueError` subclasses and are
+  now `TFTPError` as well, and the new
   `TFTPValueError(TFTPError, ValueError)` is what `TFTPURL.parse` raises for a
   URL it cannot read (it used to raise a bare `ValueError`; `except ValueError`
   still catches it). `WouldBlock` moves there too and stays a
   `BlockingIOError`, outside `TFTPError`, since it is a signal and not a
-  failure. `str()` of the decode, filter, capture-format and value errors is
-  the message alone.
+  failure. `str()` of the decode, filter and value errors is the message alone.
 - `TransferTimeoutError().errno` is `None`; it was `TFTPErrorCode.NOT_DEFINED`
   (0), which is not an operating-system error number.
 
@@ -375,6 +374,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   what omitting a value means, and the `--port-range`, `--remap`, `--route-subnet` and
   `--route-prefix` errors name their flag.
 
+- **Reading a capture is pktcap's.** `pktcap>=0.1.0,<0.2` is a required dependency,
+  imported inside the functions that use it, so importing `tftp` or `tftp.capture` loads
+  none of it. The reader, the frame decoder and live capture leave `tftp.capture`; where
+  each lives now (every one is imported from `pktcap`, and `tftp.capture` re-exports none):
+
+  | Left | Now |
+  | --- | --- |
+  | `read_datagrams(source)` | `pktcap.read_datagrams(source, *, dissector=None, max_frame_size=262144)` |
+  | `read_frames(source)`, which yielded `(time, linktype, frame)` | `pktcap.read_frames(source)`, which yields `pktcap.CapturedFrame(time, linktype, data, interface)` |
+  | `FrameDecoder(linktype).decode(time, frame)` | `pktcap.FrameDissector().dissect(frame)`, which reads any link type |
+  | `UDPDatagram` (`UdpDatagram` in 0.0.0) | `pktcap.CapturedDatagram`, which adds `fragmented` and `truncated` |
+  | `LINKTYPES` | `pktcap.LINKTYPES` |
+  | `sniff(interface, *, stop)` | `pktcap.sniff(interface, *, stop, dissector)` |
+  | `live_capture_supported()` | `pktcap.has_live_capture()` |
+  | the modules `tftp.capture.frames` and `tftp.capture.live` | gone |
+  | `CaptureFormatError` (`tftp.capture`, `tftp.exceptions`) | `pktcap.CaptureFormatError` |
+
+  `CaptureFormatError` is no longer a `TFTPError`: `analyze()` and `pytftp capture` let
+  pktcap's through, a `ValueError`, so `except TFTPError` does not catch an unreadable
+  capture and `except ValueError` does. `FlowTracker.feed(datagram)` and `feed_all` take
+  anything with `time`, `source`, `destination` and `payload` (`tftp.capture.DatagramLike`,
+  new), and `analyze(source)` a path, a stream or an iterable of those.
+  What a caller sees for an input the old reader took: a frame of more than 262,144
+  octets, a pcapng section with more than 4,096 interfaces and a block too short for its
+  kind are a `pktcap.CaptureFormatError` (the old reader returned the first, accepted the
+  second and raised `struct.error` for the third); a text stream is a `TypeError` at the call; an
+  empty input is a capture with nothing in it, as before.
+
 ### Renamed
 
 Old names are not kept as aliases.
@@ -398,7 +425,7 @@ Old names are not kept as aliases.
 | `Request`, `Data`, `Ack`, `OptionAck`, `Packet` | `RequestPacket`, `DataPacket`, `AckPacket`, `OptionAckPacket`, `TFTPPacket` |
 | `Error` (the ERROR packet, not an exception) | `ErrorPacket` |
 | `TftpURL`, `TftpPath`, `TftpUriPath` | `TFTPURL`, `TFTPPath`, `TFTPURIPath` |
-| `UdpDatagram` | `UDPDatagram` |
+| `UdpDatagram` | `pktcap.CapturedDatagram` |
 | `FileSystemHandler` (`tftp.server`) | `FilesystemBackend` (`tftp.backends`; the root still exports it) |
 | `MemoryHandler`, `HttpHandler`, `UpstreamHandler` | `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` |
 | `TftpBackend` (`tftp.path`) | private |
@@ -426,6 +453,20 @@ Old names are not kept as aliases.
 
 ### Fixed
 
+- **A capture can no longer make `analyze()` or `pytftp capture` allocate what it claims.**
+  A pcap record or pcapng block that stated 1 GiB made a 48-octet file take 1 GiB; the
+  ceilings are checked before the octets are read and a longer one is a
+  `pktcap.CaptureFormatError`.
+- **A pcapng block shorter than its fixed fields is a format error.** An enhanced packet
+  block with a 4-octet body, or an interface or packet block cut after its header, raised
+  `struct.error` and `pytftp capture` printed a traceback and exited 1; it prints one
+  `error:` line and exits 2.
+- **IP fragments cost time in proportion to their number.** Once the last fragment of a
+  datagram was seen, each later one re-sorted and re-copied every piece (8,000 fragments of
+  one datagram took 3.7 s); a reassembly is also bounded in octets, in fragments and in
+  capture time.
+- **`pytftp capture -i NAME` for an interface that does not exist is one `error:` line and
+  status 2**, where it was a traceback.
 - **On Windows a finished download or upload no longer fails when a virus scanner holds the
   new file.** The rename of the temporary file into place was refused with "access denied"
   in about one transfer in six with the machine busy; `AtomicWriter.close()` now tries it

@@ -28,7 +28,8 @@ records them, on `get`, `put`, `serve` and `relay`.
 
 ## Reading captures
 
-pcap and pcapng files, from tcpdump, dumpcap or Wireshark, or a live pipe:
+pcap and pcapng files, from tcpdump, dumpcap or Wireshark, or a live pipe, are read by
+[pktcap](https://github.com/jose-pr/pktcap), a dependency of this library, and followed here:
 
 <!-- not run: it reads a capture file the reader recorded -->
 ```python
@@ -56,9 +57,16 @@ convert is printed as the number.
 A transfer is followed from its RRQ/WRQ to the request port, through the
 server's new port, to the end: negotiated options, retransmissions, errors,
 whether the last block was acknowledged, and the file itself (across
-block-number rollover; netascii decoded). Ethernet with VLAN tags, Linux
-cooked captures, raw IP and loopback captures are understood, and IP fragments
--- which large blocks produce -- are reassembled.
+block-number rollover; netascii decoded). pktcap reads every frame of a capture
+and dissects Ethernet with VLAN tags, Linux cooked captures, raw IP and loopback
+captures; IP fragments -- which large blocks produce -- are reassembled.
+
+A capture is untrusted input, so pktcap refuses what it cannot bound: `analyze` and
+`pytftp capture` raise or report `pktcap.CaptureFormatError` (a `ValueError`) for a
+file that is not a capture, a damaged one, a frame of more than 262,144 octets or
+a block too short for its kind. `pktcap.read_datagrams(source)` gives the datagrams
+of a capture, and `FlowTracker.feed` takes anything with a `time`, a `source`, a
+`destination` and a `payload`.
 
 ```bash
 pytftp capture boot.pcapng --transfers

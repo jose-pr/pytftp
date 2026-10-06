@@ -32,12 +32,12 @@ takes every field by keyword.
 | `tftp.client` | `AsyncSink`, `AsyncSource`, `AsyncTFTPClient`, `MODES`, `ProgressFunction`, `RemoteStat`, `SinkLike`, `SourceLike`, `TFTPClient`, `download`, `upload` |
 | `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
 | `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `UpstreamLike`, `by_interface`, `by_prefix`, `by_subnet` |
-| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CaptureFormatError`, `CapturedTransfer`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `FrameDecoder`, `LINKTYPES`, `PacketEvent`, `PcapWriter`, `UDPDatagram`, `analyze`, `combine_hooks`, `compile_filter`, `live_capture_supported`, `new_session_id`, `read_datagrams`, `read_frames`, `sniff`, `summarize` |
+| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CapturedTransfer`, `DatagramLike`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `PcapWriter`, `analyze`, `combine_hooks`, `compile_filter`, `new_session_id`, `summarize` |
 | `tftp.options` | `BUILTIN_OPTIONS`, `Blksize2Option`, `BlksizeOption`, `ClientOptionContext`, `CookieOption`, `DEFAULT_BLKSIZE`, `DEFAULT_REGISTRY`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS`, `MAX_BLKSIZE`, `MAX_UTIMEOUT`, `MAX_WINDOWSIZE`, `MIN_BLKSIZE`, `MIN_UTIMEOUT`, `MstfwindowOption`, `Negotiated`, `OptionHandler`, `OptionRegistry`, `PROFILES`, `Profile`, `RolloverOption`, `STANDARD_OPTIONS`, `SUPPORTED_OPTIONS`, `ServerOptionContext`, `TFTPServerOptions`, `TimeoutOption`, `TsizeOption`, `UtimeoutOption`, `WindowsizeOption`, `XListOption`, `XMtimeOption`, `accept_oack`, `negotiate`, `refuse`, `register_option`, `request_options` |
 | `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
 | `tftp.backends` | `CaseInsensitive`, `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `PerClient`, `Pipe`, `Remap`, `UpstreamBackend`, `normalize_name` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` |
-| `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `CaptureFormatError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
+| `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
 | `tftp.cli` | `main` |
 | `tftp.transfer` | `Receiver`, `SendFunction`, `Sender`, `SupportsRead`, `SupportsReadinto`, `SupportsWrite`, `Transfer`, `as_readinto`, `as_write` |
 | `tftp.listing` | `DirectoryListing`, `LIST_OPTION`, `ListEntry`, `MTIME_OPTION`, `dumps`, `loads` |
@@ -59,6 +59,7 @@ Windows. Public aliases, each exported from the module named:
 | `UpstreamLike` | `tftp.relay` | what a route may return: an `Upstream`, a host, or `(host, port)` |
 | `EventPredicate` | `tftp.capture` | what `compile_filter` returns: `predicate(event) -> bool` |
 | `Endpoint` | `tftp.capture` | `(host, port)` |
+| `DatagramLike` | `tftp.capture` | what `FlowTracker.feed` takes: anything with `time`, `source`, `destination` and `payload`, as `pktcap.CapturedDatagram` has |
 | `PortRangeLike` | `tftp.server` | what `port_range=` takes |
 
 `host=` of the servers and the relay is a netimps `HostLike`: text, an
@@ -836,16 +837,28 @@ destination, payload)` as pcap, link type RAW, with synthesized IPv4/IPv6 and
 UDP headers and valid checksums, so Wireshark/tshark decode it as TFTP
 (v4-mapped addresses are written as IPv4). Context manager; `close()`.
 
-**Reading captures** — pcap and pcapng (both byte orders, µs/ns and
-`if_tsresol`, several interfaces), from a path or a stream (a live
-`tcpdump -i eth0 -U -w - udp` pipe). Link types: Ethernet (VLAN/QinQ),
-RAW, IPv4, IPv6, Linux SLL/SLL2, BSD NULL/LOOP. IPv4 and IPv6 fragments are
-reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
+**Reading captures** is pktcap's (a dependency, imported inside the functions
+that use it; <https://github.com/jose-pr/pktcap>): pcap and pcapng of any
+byte order and time resolution, from a path or a stream (a live
+`tcpdump -i eth0 -U -w - udp` pipe), every link type read, IPv4 and IPv6
+fragments reassembled, non-UDP skipped.
+`pktcap.read_datagrams(source)` yields `pktcap.CapturedDatagram(time, source,
+destination, payload, fragmented, truncated)`, which `FlowTracker` and
+`analyze` take as they take anything with a `time`, a `source`, a
+`destination` and a `payload` (**`DatagramLike`**, a `Protocol`).
+`tftp.capture` has no reader, frame decoder or live capture of its own.
 
-- **`read_frames(source) -> Iterator[(time, linktype, frame)]`**,
-  **`read_datagrams(source) -> Iterator[UDPDatagram(time, source, destination, payload)]`**
-  — `CaptureFormatError` (a `TFTPValueError`) for anything that is not a capture.
-- **`FlowTracker(ports=(69,), *, keep_payloads=True, on_complete=None, max_tracked=1024)`** — `feed(datagram) ->
+- **A capture is untrusted input**, and pktcap refuses what it cannot bound:
+  `analyze` and the command raise `pktcap.CaptureFormatError` (a `ValueError`
+  of that library, not a `TFTPError`) for a file that is not a capture or is
+  damaged, for a record or block over its ceilings (a frame of more than
+  262,144 octets, more than 4,096 interfaces in a section) and for a block
+  too short for its kind; none of these is `struct.error` and none claims
+  memory before the octets are read. An empty input is a capture with
+  nothing in it. A text stream is a `TypeError`; a path that cannot be opened
+  is the `OSError`. `pktcap.read_datagrams(source)` itself checks its
+  arguments at the call and reads only as it is iterated.
+- **`FlowTracker(ports=(69,), *, keep_payloads=True, on_complete=None, max_tracked=1024)`** — `feed(datagram: DatagramLike) ->
   PacketEvent | None` (role `"capture"`, direction `"seen"`; `None` for UDP
   that is neither TFTP traffic of a known transfer nor to/from a request
   port), `feed_all(datagrams)`, `.transfers`. A transfer starts at an
@@ -880,10 +893,12 @@ reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
   or `None` when there is nothing to write; `to_dict()` (`"missing_blocks"` is
   a list of `[first, last]` pairs, `"missing_count"` their total).
 - **`analyze(source, *, ports=(69,), filter=None, keep_payloads=True) -> Analysis(events, transfers)`**
-  — a whole capture (path, stream, or datagrams) at once.
-- **`sniff(interface=None, *, stop=None) -> Iterator[UDPDatagram]`** — live,
-  Linux only (`AF_PACKET`, needs `CAP_NET_RAW`); `live_capture_supported()`.
-  Elsewhere pipe `tcpdump`/`dumpcap -w -` into `read_datagrams`.
+  — a whole capture (a path or a stream, read by pktcap, or any iterable of
+  `DatagramLike`) at once.
+- **Live capture** is `pktcap.sniff(interface=None, *, stop=None,
+  dissector=None)`, Linux only (`AF_PACKET`, needs `CAP_NET_RAW`;
+  `pktcap.has_live_capture()` asks the platform). Elsewhere pipe
+  `tcpdump`/`dumpcap -w -` into `pytftp capture -` or `pktcap.read_datagrams`.
 
 **Filters** — **`compile_filter(text) -> predicate(event)`**: `key=value`
 clauses joined by `and`, `,` for "any of", `!=` to negate; empty matches all.
@@ -908,8 +923,8 @@ object): `ok`, `operation`, `filename`, `mode`, `peer` (`[host, port]`), `bytes`
 `timeout` (seconds), `tsize` (or `None`), `rollover`, and `options` (the OACK
 as sent/received; empty when RFC 1350 defaults applied).
 
-Exceptions, all defined in `tftp.exceptions` (every one but the two capture
-errors is also importable from `tftp`): every one is a **`TFTPError`** except
+Exceptions, all defined in `tftp.exceptions` (every one but
+`CaptureFilterError` is also importable from `tftp`): every one is a **`TFTPError`** except
 `WouldBlock`, so `except TFTPError` catches what the library reports on its
 own account. A caller's own mistake (a wrong
 argument type, an option out of range) is plain `TypeError` or `ValueError`,
@@ -941,8 +956,7 @@ not one of these. `TFTPError` plays three roles, told apart by the subclass:
 
 Malformed text raises **`TFTPValueError`**, also a `ValueError`:
 **`TFTPDecodeError`** (bytes that are not a packet; `.code` is 4),
-`CaptureFormatError` and `CaptureFilterError` (both in `tftp.capture` too) and
-`TFTPURL.parse`'s refusals. `str()` of these is the message alone. **`WouldBlock`**
+`CaptureFilterError` (in `tftp.capture` too) and `TFTPURL.parse`'s refusals. `str()` of these is the message alone. **`WouldBlock`**
 is a `BlockingIOError`, a signal that a source or sink has nothing ready.
 
 Every exception copies and pickles (`copy.copy`, `multiprocessing`), a

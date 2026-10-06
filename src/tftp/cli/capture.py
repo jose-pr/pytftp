@@ -14,9 +14,10 @@ import typing as _ty
 
 from ..capture._filters import CaptureFilterError, compile_filter
 from ..capture._flows import FlowTracker
-from ..capture.live import live_capture_supported, sniff
-from ..capture.pcap import CaptureFormatError, read_datagrams
 from ._common import Base, error, write_line
+
+if _ty.TYPE_CHECKING:
+    from pktcap import FrameDissector
 
 __all__ = ["CaptureCmd"]
 
@@ -58,25 +59,29 @@ class CaptureCmd(Base):
     "Include DATA payloads (hex) in --json output. Default: left out"
     ("--payload",)
 
-    def _datagrams(self) -> _ty.Iterable[_ty.Any]:
+    def _datagrams(self, dissector: "FrameDissector") -> _ty.Iterable[_ty.Any]:
+        import pktcap
+
         if self.interface:
-            if not live_capture_supported():
+            if not pktcap.has_live_capture():
                 raise ValueError(
                     "live capture needs Linux; pipe a capture instead: tcpdump -U -w - udp | pytftp capture -"
                 )
-            return sniff(self.interface)
+            return pktcap.sniff(self.interface, dissector=dissector)
         if not self.source:
             raise ValueError("give a capture file, '-' for stdin, or --interface")
         if self.source == "-":
-            return read_datagrams(_sys.stdin.buffer)
+            return pktcap.read_datagrams(_sys.stdin.buffer, dissector=dissector)
         if not _os.path.isfile(self.source):
             raise ValueError("no such file: %s" % self.source)
-        return read_datagrams(self.source)
+        return pktcap.read_datagrams(self.source, dissector=dissector)
 
     def __call__(self) -> _ty.Optional[int]:
+        import pktcap
+
         try:
             wanted = compile_filter(self.filter)
-            datagrams = self._datagrams()
+            datagrams = self._datagrams(pktcap.FrameDissector())
         except (ValueError, CaptureFilterError) as exc:
             error("error: %s" % exc)
             return 2
@@ -96,7 +101,7 @@ class CaptureCmd(Base):
                     write_line(_json.dumps(event.to_dict(payload=self.payload)))
                 else:
                     write_line(str(event))
-        except CaptureFormatError as exc:
+        except pktcap.CaptureFormatError as exc:
             error("error: %s" % exc)
             return 2
         except KeyboardInterrupt:

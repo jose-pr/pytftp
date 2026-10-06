@@ -19,7 +19,6 @@ from tftp import exceptions
 from tftp.exceptions import (
     AccessViolation,
     CaptureFilterError,
-    CaptureFormatError,
     DiskFull,
     FileAlreadyExists,
     FileNotFound,
@@ -56,7 +55,6 @@ _BUILTINS = [
     (TransferTooLargeError, ()),
     (TFTPValueError, (ValueError,)),
     (TFTPDecodeError, (ValueError,)),
-    (CaptureFormatError, (ValueError,)),
     (CaptureFilterError, (ValueError,)),
 ]
 _IDS = [cls.__name__ for cls, _ in _BUILTINS]
@@ -144,9 +142,7 @@ def test_every_exception_is_exported_from_its_module(cls, builtins):
     assert getattr(exceptions, cls.__name__) is cls
 
 
-@pytest.mark.parametrize(
-    "cls", [cls for cls, _ in _BUILTINS if cls not in (CaptureFormatError, CaptureFilterError)] + [WouldBlock]
-)
+@pytest.mark.parametrize("cls", [cls for cls, _ in _BUILTINS if cls is not CaptureFilterError] + [WouldBlock])
 def test_the_root_exports_every_exception_but_the_capture_ones(cls):
     assert getattr(tftp, cls.__name__) is cls
     assert cls.__name__ in tftp.__all__
@@ -178,7 +174,6 @@ _INSTANCES = [
     TransferAbortedError(),
     TFTPValueError("not a URL"),
     TFTPDecodeError("short"),
-    CaptureFormatError("truncated"),
     CaptureFilterError("bad key"),
 ]
 
