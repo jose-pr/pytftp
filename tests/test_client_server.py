@@ -821,3 +821,18 @@ def test_progress_is_reported_for_a_file_that_arrives_in_its_first_packet(root, 
     plain = {"blksize": None, "tsize": False, "timeout_option": False}  # no OACK: the answer is DATA 1
     client_for(server, **plain).download("one.bin", io.BytesIO(), progress=lambda d, t: calls.append((d, t)))
     assert calls == [(1, None)]
+
+
+def test_the_largest_block_size_arrives_in_full_between_this_library_s_own_peers(root, make_server):
+    """Judged by what arrived: every octet, from full-size datagrams, with nothing resent."""
+    payload = os.urandom(3 * 65464 + 17)
+    (root / "largest.bin").write_bytes(payload)
+    server = make_server(root, writable=True, overwrite=True, timeout=2)
+    client = client_for(server, blksize=65464, timeout=2)
+    sink = io.BytesIO()
+    down = client.download("largest.bin", sink)
+    assert down.negotiated.blksize == 65464 and sink.getvalue() == payload
+    assert down.retransmits == 0
+    up = client.upload("largest-up.bin", payload)
+    assert up.negotiated.blksize == 65464 and up.retransmits == 0
+    assert (root / "largest-up.bin").read_bytes() == payload

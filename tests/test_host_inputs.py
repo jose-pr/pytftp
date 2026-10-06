@@ -143,3 +143,11 @@ def test_a_zone_is_dropped_before_an_address_is_compared():
     route = by_interface({"fe80::1": "10.9.9.9:70"})
     context = SimpleNamespace(interface_index=0, local_address="fe80::1%eth0")
     assert route(None, context) == Upstream.parse("10.9.9.9:70")
+
+
+def test_fit_window_makes_room_for_one_datagram_of_the_largest_block_size():
+    """The platform's own answer: a datagram of 65464 octets and its header fits both buffers."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        fit_window(sock, 65464, 1)
+        assert sock.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF) >= 65464 + 4
+        assert sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF) >= 65464 + 4

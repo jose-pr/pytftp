@@ -25,6 +25,20 @@ pytestmark = [
 ]
 
 
+def _udp_receive_buffer():
+    """The default UDP receive buffer in octets (``net.inet.udp.recvspace``), or ``None`` where sysctl lacks it."""
+    sysctl = shutil.which("sysctl")
+    if sysctl is None:
+        return None
+    try:
+        out = subprocess.run(
+            [sysctl, "-n", "net.inet.udp.recvspace"], capture_output=True, text=True, timeout=10
+        )
+        return int(out.stdout.strip()) if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
 def curl(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["curl", "-sS", "--max-time", "20", *args], capture_output=True, timeout=30)
 
@@ -32,6 +46,14 @@ def curl(*args: str) -> subprocess.CompletedProcess:
 @pytest.mark.parametrize("blksize", [None, "8", "1428", "65464"])
 @pytest.mark.parametrize("name", ["empty.bin", "512.bin", "513.bin", "big.bin"])
 def test_curl_downloads_from_server(root, make_server, tmp_path, name, blksize):
+    if blksize:
+        # curl does not enlarge its receive buffer: where the default is smaller than the datagram
+        # (FreeBSD, 42080), the kernel drops it unreported and no server can make it arrive.
+        space = _udp_receive_buffer()
+        if space is not None and space < int(blksize) + 4:
+            pytest.skip(
+                "this host's default UDP receive buffer (%d) cannot hold a %s-octet block" % (space, blksize)
+            )
     server = make_server(root)
     out = tmp_path / "out.bin"
     extra = ["--tftp-blksize", blksize] if blksize else []
