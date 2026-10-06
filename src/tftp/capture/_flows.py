@@ -9,7 +9,6 @@ options, retransmissions, errors, completion -- and the file itself.
 
 from __future__ import annotations
 
-import ipaddress
 import os
 import re
 import struct
@@ -55,15 +54,18 @@ _NAME_LENGTH = 100
 
 def _plain(endpoint: Endpoint) -> Endpoint:
     """``("::ffff:a.b.c.d", p)`` -> ``("a.b.c.d", p)``: one host, one key."""
+    from ipaddress import IPv4Address
+
+    from netimps import unmap
+
     host = endpoint[0]
-    if host[:7].lower() == "::ffff:":
-        try:
-            mapped = ipaddress.IPv6Address(host).ipv4_mapped
-        except ValueError:
-            return endpoint
-        if mapped is not None:
-            return (str(mapped), endpoint[1])
-    return endpoint
+    if ":" not in host:
+        return endpoint  # IPv4 text
+    try:
+        mapped = unmap(host)
+    except ValueError:
+        return endpoint
+    return (str(mapped), endpoint[1]) if isinstance(mapped, IPv4Address) else endpoint
 
 
 class CapturedTransfer:
@@ -212,8 +214,10 @@ class CapturedTransfer:
         return self.ended - self.started
 
     def to_dict(self) -> Dict[str, Any]:
+        from netimps import join_host
+
         def endpoint(e: Optional[Endpoint]) -> Optional[str]:
-            return None if e is None else "%s:%s" % e if ":" not in e[0] else "[%s]:%s" % e
+            return None if e is None else join_host(e[0], e[1])
 
         return {
             "session": self.session,

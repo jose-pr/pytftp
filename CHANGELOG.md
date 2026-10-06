@@ -150,13 +150,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   adapter's addresses, so `TFTPServer(interface=...)` does not consider it.
 - Every exception the library raises on its own account is defined in
   `tftp.exceptions` and is a `TFTPError`: `TFTPDecodeError` (bytes that are not
-  a packet) and `CaptureFilterError` were plain `ValueError` subclasses and are
-  now `TFTPError` as well, and the new
+  a packet) was a plain `ValueError` subclass and is now a `TFTPError` as well,
+  and the new
   `TFTPValueError(TFTPError, ValueError)` is what `TFTPURL.parse` raises for a
   URL it cannot read (it used to raise a bare `ValueError`; `except ValueError`
   still catches it). `WouldBlock` moves there too and stays a
   `BlockingIOError`, outside `TFTPError`, since it is a signal and not a
-  failure. `str()` of the decode, filter and value errors is the message alone.
+  failure. `str()` of the decode and value errors is the message alone.
 - `TransferTimeoutError().errno` is `None`; it was `TFTPErrorCode.NOT_DEFINED`
   (0), which is not an operating-system error number.
 
@@ -394,6 +394,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   | `live_capture_supported()` | `pktcap.has_live_capture()` |
   | the modules `tftp.capture.frames` and `tftp.capture.live` | gone |
   | `CaptureFormatError` (`tftp.capture`, `tftp.exceptions`) | `pktcap.CaptureFormatError` |
+  | `CaptureFilterError` (`tftp.capture`, `tftp.exceptions`) | `pktcap.CaptureFilterError` |
   | `PcapWriter`, itself a trace hook; the module `tftp.capture.pcap` | `pktcap.PcapWriter(target)` (or `pktcap.PcapngWriter`) in `trace=trace_to(writer)`; the module is gone |
 
   `CaptureFormatError` is no longer a `TFTPError`: `analyze()` and `pytftp capture` let
@@ -401,6 +402,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   capture and `except ValueError` does. `FlowTracker.feed(datagram)` and `feed_all` take
   anything with `time`, `source`, `destination` and `payload` (`tftp.capture.DatagramLike`,
   new), and `analyze(source)` a path, a stream or an iterable of those.
+  The filter grammar is pktcap's (`pktcap.parse_capture_filter`, `compile_capture_filter`);
+  `compile_filter(text)` keeps the eleven keys and what each means, and raises
+  `pktcap.CaptureFilterError` (a `ValueError`, not a `TFTPError`, naming the clause) where it
+  raised `CaptureFilterError`. Six expressions mean something else: `file=a!=b` is the
+  pattern `a!=b` (it was an error: the first `=` ends the key); `op=RRQ and` and
+  `file=*.efi and` are refused (a trailing `and` was accepted and became part of the
+  value); `file=a or b` and `op=RRQ or op=WRQ` are refused by name (there is no `or`; they
+  compiled and matched nothing or a pattern containing the word); and an address value
+  that is an IPv6 address on its own, such as `host=::1`, is accepted (it was refused as a
+  port). `host=10.0.0.5:` and `host=:` are refused (an empty port was ignored), and a CIDR
+  that `ipaddress` reads with an IPv4 tail after `::ffff:` (`::ffff:10.0.0.0/104`) is
+  refused.
   The writer: a pcap file written through pktcap promises the datagrams it holds, each
   with its time to the microsecond, both addresses and its payload, and not its octets.
   Against the old writer's file three things differ and nothing else: the header's snap
@@ -435,7 +448,7 @@ Old names are not kept as aliases.
 | `TransferAborted` | `TransferAbortedError` |
 | `UnknownTransferId` | `UnknownTransferID` |
 | `MalformedPacket` (`tftp.packet`) | `TFTPDecodeError` |
-| `FilterError` (`tftp.capture`) | `CaptureFilterError` |
+| `FilterError` (`tftp.capture`) | `pktcap.CaptureFilterError` |
 | `Client`, `AsyncClient` | `TFTPClient`, `AsyncTFTPClient` |
 | `Server`, `AsyncServer` | `TFTPServer`, `AsyncTFTPServer` |
 | `Relay` | `TFTPRelay` |

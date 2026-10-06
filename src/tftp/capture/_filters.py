@@ -1,7 +1,8 @@
-"""A small filter language for packet events, in the spirit of pydhcp's.
+"""A small filter language for packet events.
 
-Clauses ``key=value`` joined by ``and``; a comma inside a value means "any
-of"; ``key!=value`` negates::
+The grammar is pktcap's (``pktcap.parse_capture_filter``): clauses ``key=value``
+joined by ``and``, a comma inside a value meaning "any of", ``key!=value``
+negating; there is no ``or``. What each key means is this module's::
 
     op=RRQ,WRQ and host=10.0.0.0/8
     file=*.efi and session!=c3
@@ -28,42 +29,42 @@ Keys:
 from __future__ import annotations
 
 import fnmatch
-import ipaddress
-import re
-from typing import Any, Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Tuple
 
-from ..exceptions import CaptureFilterError
 from ._events import PacketEvent
 
-__all__ = ["EventPredicate", "compile_filter", "CaptureFilterError", "FILTER_KEYS"]
+if TYPE_CHECKING:
+    from pktcap import FilterClause
+
+__all__ = ["EventPredicate", "compile_filter", "FILTER_KEYS"]
 
 EventPredicate = Callable[[PacketEvent], bool]
 FILTER_KEYS = ("op", "host", "src", "dst", "port", "file", "block", "code", "session", "leg", "direction")
-_AND = re.compile(r"\s+and\s+", re.IGNORECASE)
+
+
+def _port(text: str, whole: str) -> int:
+    if not (text.isascii() and text.isdigit()) or int(text) > 65535:
+        raise ValueError("bad port in %r" % whole)
+    return int(text)
 
 
 def _address_matcher(text: str) -> Callable[[Tuple[Any, ...]], bool]:
     """``10.0.0.0/8``, ``10.0.0.5``, ``10.0.0.5:69``, ``[::1]:69`` or ``:69``."""
-    host, port = text, None
-    if text.startswith(":"):
-        host, port = "", text[1:]
-    elif text.startswith("["):
-        end = text.find("]")
-        host, rest = text[1:end], text[end + 1 :]
-        port = rest[1:] if rest.startswith(":") else None
-    elif text.count(":") == 1:
-        host, port = text.split(":")
-    wanted_port = None
-    if port:
-        if not port.isdigit():
-            raise CaptureFilterError("bad port in %r" % text)
-        wanted_port = int(port)
-    network = None
-    if host:
+    from netimps import IPNetwork, parse, split_host, split_zone, unmap
+
+    wanted_port: Optional[int] = None
+    network: Optional[IPNetwork] = None
+    try:
         try:
-            network = ipaddress.ip_network(host, strict=False)
-        except ValueError as exc:
-            raise CaptureFilterError("bad address in %r" % text) from exc
+            network = parse(text, IPNetwork)  # an address, or a network
+        except ValueError:
+            if text.startswith(":"):
+                wanted_port = _port(text[1:], text)
+            else:
+                host, wanted_port = split_host(text)  # an address with a port
+                network = parse(host, IPNetwork)
+    except ValueError as exc:
+        raise ValueError("bad address in %r" % text) from exc
 
     def match(endpoint: Tuple[Any, ...]) -> bool:
         if not endpoint:
@@ -73,17 +74,16 @@ def _address_matcher(text: str) -> Callable[[Tuple[Any, ...]], bool]:
         if network is None:
             return True
         try:
-            address = ipaddress.ip_address(str(endpoint[0]).split("%", 1)[0])
+            host = split_zone(str(endpoint[0]))[0]
+            address = unmap(host) if network.version == 4 else parse(host)
         except ValueError:
             return False
-        if address.version == 6 and address.ipv4_mapped is not None and network.version == 4:
-            address = address.ipv4_mapped
         return address.version == network.version and address in network
 
     return match
 
 
-def _clause(key: str, values: List[str]) -> EventPredicate:
+def _clause(key: str, values: Sequence[str]) -> EventPredicate:
     if key == "op":
         names = {v.upper() for v in values}
         return lambda e: e.opcode_name in names
@@ -98,7 +98,7 @@ def _clause(key: str, values: List[str]) -> EventPredicate:
         try:
             ports = {int(v) for v in values}
         except ValueError as exc:
-            raise CaptureFilterError("port must be a number") from exc
+            raise ValueError("port must be a number") from exc
         return lambda e: bool(e.source and e.source[1] in ports) or bool(
             e.destination and e.destination[1] in ports
         )
@@ -118,29 +118,27 @@ def _clause(key: str, values: List[str]) -> EventPredicate:
         try:
             numbers = {int(v) for v in values}
         except ValueError as exc:
-            raise CaptureFilterError("%s must be a number" % key) from exc
+            raise ValueError("%s must be a number" % key) from exc
         if key == "block":
             return lambda e: e.block in numbers
         return lambda e: e.opcode == 5 and len(e.data) >= 4 and ((e.data[2] << 8) | e.data[3]) in numbers
     if key in ("session", "leg", "direction"):
         wanted = set(values)
         return lambda e: getattr(e, key) in wanted
-    raise CaptureFilterError("unknown filter key %r (known: %s)" % (key, ", ".join(FILTER_KEYS)))
+    raise ValueError("unknown filter key %r (known: %s)" % (key, ", ".join(FILTER_KEYS)))
+
+
+def _build(clause: "FilterClause") -> EventPredicate:
+    return _clause(clause.key.lower(), clause.values)
 
 
 def compile_filter(text: Optional[str]) -> EventPredicate:
-    """A predicate over :class:`PacketEvent`; empty or ``None`` matches everything."""
-    if not text or not text.strip():
-        return lambda event: True
-    predicates: List[EventPredicate] = []
-    for raw in _AND.split(text.strip()):
-        clause = raw.strip()
-        negate = "!=" in clause
-        key, sep, value = clause.partition("!=" if negate else "=")
-        key = key.strip().lower()
-        if not sep or not key or not value.strip():
-            raise CaptureFilterError("expected key=value, got %r" % clause)
-        values = [v.strip() for v in value.split(",") if v.strip()]
-        predicate = _clause(key, values)
-        predicates.append((lambda p: lambda e: not p(e))(predicate) if negate else predicate)
-    return lambda event: all(p(event) for p in predicates)
+    """A predicate over :class:`PacketEvent`; empty or ``None`` matches everything.
+
+    ``pktcap.CaptureFilterError`` (a ``ValueError``) for an expression that does
+    not parse, an unknown key or a value that does not convert; it names the
+    clause.
+    """
+    from pktcap import compile_capture_filter
+
+    return compile_capture_filter(text, _build)

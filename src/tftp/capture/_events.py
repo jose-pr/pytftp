@@ -23,10 +23,15 @@ def new_session_id(prefix: str = "t") -> str:
 
 
 def _endpoint(address: Any) -> str:
+    """``host:port``, IPv6 in brackets; ``?`` for no address or one that is not a host and a port."""
+    from netimps import join_host
+
     if not address:
         return "?"
-    host, port = address[0], address[1]
-    return "[%s]:%s" % (host, port) if ":" in str(host) else "%s:%s" % (host, port)
+    try:
+        return join_host(address[0], address[1])
+    except (TypeError, ValueError):
+        return "?"
 
 
 def _options(options: Mapping[str, str], lead: str) -> str:

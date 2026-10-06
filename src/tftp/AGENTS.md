@@ -32,12 +32,12 @@ takes every field by keyword.
 | `tftp.client` | `AsyncSink`, `AsyncSource`, `AsyncTFTPClient`, `MODES`, `ProgressFunction`, `RemoteStat`, `SinkLike`, `SourceLike`, `TFTPClient`, `download`, `upload` |
 | `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
 | `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `UpstreamLike`, `by_interface`, `by_prefix`, `by_subnet` |
-| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CapturedTransfer`, `DatagramLike`, `DatagramWriter`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `analyze`, `combine_hooks`, `compile_filter`, `new_session_id`, `summarize`, `trace_to` |
+| `tftp.capture` | `Analysis`, `CapturedTransfer`, `DatagramLike`, `DatagramWriter`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `analyze`, `combine_hooks`, `compile_filter`, `new_session_id`, `summarize`, `trace_to` |
 | `tftp.options` | `BUILTIN_OPTIONS`, `Blksize2Option`, `BlksizeOption`, `ClientOptionContext`, `CookieOption`, `DEFAULT_BLKSIZE`, `DEFAULT_REGISTRY`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS`, `MAX_BLKSIZE`, `MAX_UTIMEOUT`, `MAX_WINDOWSIZE`, `MIN_BLKSIZE`, `MIN_UTIMEOUT`, `MstfwindowOption`, `Negotiated`, `OptionHandler`, `OptionRegistry`, `PROFILES`, `Profile`, `RolloverOption`, `STANDARD_OPTIONS`, `SUPPORTED_OPTIONS`, `ServerOptionContext`, `TFTPServerOptions`, `TimeoutOption`, `TsizeOption`, `UtimeoutOption`, `WindowsizeOption`, `XListOption`, `XMtimeOption`, `accept_oack`, `negotiate`, `refuse`, `register_option`, `request_options` |
 | `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
 | `tftp.backends` | `CaseInsensitive`, `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `PerClient`, `Pipe`, `Remap`, `UpstreamBackend`, `normalize_name` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` |
-| `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
+| `tftp.exceptions` | `AccessViolation`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
 | `tftp.cli` | `main` |
 | `tftp.transfer` | `Receiver`, `SendFunction`, `Sender`, `SupportsRead`, `SupportsReadinto`, `SupportsWrite`, `Transfer`, `as_readinto`, `as_write` |
 | `tftp.listing` | `DirectoryListing`, `LIST_OPTION`, `ListEntry`, `MTIME_OPTION`, `dumps`, `loads` |
@@ -916,12 +916,20 @@ destination, payload, fragmented, truncated)`, which `FlowTracker` and
   `pktcap.has_live_capture()` asks the platform). Elsewhere pipe
   `tcpdump`/`dumpcap -w -` into `pytftp capture -` or `pktcap.read_datagrams`.
 
-**Filters** — **`compile_filter(text) -> predicate(event)`**: `key=value`
-clauses joined by `and`, `,` for "any of", `!=` to negate; empty matches all.
-Keys: `op` (opcode name), `host`/`src`/`dst` (address, CIDR, `addr:port`,
+**Filters** — **`compile_filter(text) -> predicate(event)`**: the grammar is
+pktcap's (`pktcap.parse_capture_filter`, `compile_capture_filter`): `key=value`
+clauses joined by `and` (any letter case, a space on each side), `,` for "any
+of", `!=` to negate; empty or `None` matches all. There is no `or`: the word
+alone is refused, so a value cannot contain ` or ` or ` and `, and a trailing
+`and` is refused. The first `=` ends the key, so a value may hold `=` and `!`
+(`file=a!=b` is the pattern `a!=b`). What a key means is this library's:
+`op` (opcode name), `host`/`src`/`dst` (address, CIDR, `addr:port`,
 `[v6]:port`, `:port`; mapped v4 matches v4), `port`, `file` (shell pattern,
-requests only), `block`, `code` (ERROR code), `session`, `leg`, `direction`.
-`CaptureFilterError` (a `TFTPValueError`) for an unknown key or malformed value.
+requests only), `block`, `code` (ERROR code), `session`, `leg`, `direction`
+(`FILTER_KEYS`). `pktcap.CaptureFilterError` (a `ValueError`, not a
+`TFTPError`), naming the clause, for an expression that does not parse, an
+unknown key or a value that does not convert (a port that is not ASCII digits
+or is over 65535, text that is no address), once, when the filter is compiled.
 
 ## Results and errors
 
@@ -939,8 +947,7 @@ object): `ok`, `operation`, `filename`, `mode`, `peer` (`[host, port]`), `bytes`
 `timeout` (seconds), `tsize` (or `None`), `rollover`, and `options` (the OACK
 as sent/received; empty when RFC 1350 defaults applied).
 
-Exceptions, all defined in `tftp.exceptions` (every one but
-`CaptureFilterError` is also importable from `tftp`): every one is a **`TFTPError`** except
+Exceptions, all defined in `tftp.exceptions` (every one is also importable from `tftp`): every one is a **`TFTPError`** except
 `WouldBlock`, so `except TFTPError` catches what the library reports on its
 own account. A caller's own mistake (a wrong
 argument type, an option out of range) is plain `TypeError` or `ValueError`,
@@ -972,7 +979,7 @@ not one of these. `TFTPError` plays three roles, told apart by the subclass:
 
 Malformed text raises **`TFTPValueError`**, also a `ValueError`:
 **`TFTPDecodeError`** (bytes that are not a packet; `.code` is 4),
-`CaptureFilterError` (in `tftp.capture` too) and `TFTPURL.parse`'s refusals. `str()` of these is the message alone. **`WouldBlock`**
+`TFTPURL.parse`'s refusals. `str()` of these is the message alone. A capture that is not one and a filter that does not compile raise pktcap's `CaptureFormatError` and `CaptureFilterError`, `ValueError`s that are not a `TFTPError`. **`WouldBlock`**
 is a `BlockingIOError`, a signal that a source or sink has nothing ready.
 
 Every exception copies and pickles (`copy.copy`, `multiprocessing`), a

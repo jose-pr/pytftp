@@ -16,12 +16,12 @@ subclass:
 
 Text that is not the value it was asked to become raises
 :class:`TFTPValueError`, which is also a :class:`ValueError`:
-:class:`TFTPDecodeError` for bytes that are not a packet and
-:class:`CaptureFilterError` for a filter expression that does not parse. A
-caller's own mistake, a wrong argument type or an option out of range, is
-plain :class:`TypeError` or :class:`ValueError`, not one of these. A file that
-is not a capture raises ``pktcap.CaptureFormatError``, a :class:`ValueError`
-of that library.
+:class:`TFTPDecodeError` for bytes that are not a packet. A caller's own
+mistake, a wrong argument type or an option out of range, is plain
+:class:`TypeError` or :class:`ValueError`, not one of these. A file that is not
+a capture raises ``pktcap.CaptureFormatError`` and a filter expression that does
+not compile ``pktcap.CaptureFilterError``, each a :class:`ValueError` of that
+library.
 
 :class:`WouldBlock` is a signal that a source or sink has nothing ready, not a
 failure, so it is a :class:`BlockingIOError` and not a :class:`TFTPError`.
@@ -53,7 +53,6 @@ __all__ = [
     "TransferTooLargeError",
     "TFTPValueError",
     "TFTPDecodeError",
-    "CaptureFilterError",
     "WouldBlock",
 ]
 
@@ -282,10 +281,6 @@ class TFTPDecodeError(TFTPValueError):
     """
 
     _CODE = TFTPErrorCode.ILLEGAL_OPERATION
-
-
-class CaptureFilterError(TFTPValueError):
-    """The filter expression is not valid."""
 
 
 class WouldBlock(BlockingIOError):

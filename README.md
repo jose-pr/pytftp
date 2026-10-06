@@ -214,7 +214,7 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.listing` | the `x-list` directory listing format: `loads`, `dumps`, `DirectoryListing` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` (`path` extra) |
 | `tftp.netascii` | streaming netascii translation |
-| `tftp.exceptions` | every exception: `TFTPError`, the typed `RemoteError` subclasses, `TFTPValueError` and its decode and filter subclasses |
+| `tftp.exceptions` | every exception: `TFTPError`, the typed `RemoteError` subclasses, `TFTPValueError` and its decode subclass |
 | `tftp.cli` | the `pytftp` command (`cli` extra) |
 
 `tftp` itself exports what the common task needs (the clients and servers and

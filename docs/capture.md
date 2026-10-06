@@ -79,7 +79,9 @@ sudo pytftp capture -i eth0 --extract recovered/            # Linux, live
 
 ## Filters
 
-`key=value` clauses joined by `and`; a comma means "any of"; `!=` negates.
+`key=value` clauses joined by `and`; a comma means "any of"; `!=` negates. The grammar is
+pktcap's, and there is no `or`; an expression that does not parse, an unknown key or a bad
+value is a `pktcap.CaptureFilterError` (a `ValueError`) naming the clause.
 
 | key | matches |
 | --- | --- |

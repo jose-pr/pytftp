@@ -12,7 +12,7 @@ import os as _os
 import sys as _sys
 import typing as _ty
 
-from ..capture._filters import CaptureFilterError, compile_filter
+from ..capture._filters import compile_filter
 from ..capture._flows import FlowTracker
 from ._common import Base, error, write_line
 
@@ -82,7 +82,7 @@ class CaptureCmd(Base):
         try:
             wanted = compile_filter(self.filter)
             datagrams = self._datagrams(pktcap.FrameDissector())
-        except (ValueError, CaptureFilterError) as exc:
+        except ValueError as exc:
             error("error: %s" % exc)
             return 2
         # A transfer the tracker lets go of (a live capture holds a bounded number) is

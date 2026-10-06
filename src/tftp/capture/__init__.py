@@ -20,7 +20,7 @@ import os
 from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union, cast
 
 from ._events import PacketEvent, new_session_id, summarize
-from ._filters import FILTER_KEYS, CaptureFilterError, EventPredicate, compile_filter
+from ._filters import FILTER_KEYS, EventPredicate, compile_filter
 from ._flows import CapturedTransfer, DatagramLike, Endpoint, FlowTracker
 from ._hook import DatagramWriter, combine_hooks, trace_to
 
@@ -31,7 +31,6 @@ __all__ = [
     "compile_filter",
     "EventPredicate",
     "Endpoint",
-    "CaptureFilterError",
     "FILTER_KEYS",
     "CapturedTransfer",
     "DatagramLike",

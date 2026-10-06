@@ -98,7 +98,6 @@ EXPECTED = {
     ],
     "tftp.capture": [
         "Analysis",
-        "CaptureFilterError",
         "CapturedTransfer",
         "DatagramLike",
         "DatagramWriter",
@@ -186,7 +185,6 @@ EXPECTED = {
     ],
     "tftp.exceptions": [
         "AccessViolation",
-        "CaptureFilterError",
         "DiskFull",
         "FileAlreadyExists",
         "FileNotFound",
