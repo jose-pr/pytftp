@@ -22,11 +22,14 @@ from .._text import Escaped
 from ..capture._hook import HookGuard, guard
 from ..capture._events import PacketEvent
 from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, TransferAbortedError
-from ..options import Negotiated, TFTPServerOptions
-from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
+from ..options._handler import Negotiated
+from ..options._policy import TFTPServerOptions
+from ..packet._enums import TFTPErrorCode, TFTPOpcode
+from ..packet._codec import RequestPacket, decode
 from ..packet._codec import _encode_error
 from ..result import TransferResult
-from ..transfer import Receiver, Transfer
+from ..transfer._receiver import Receiver
+from ..transfer._engine import Transfer
 from ._handler import TFTPRequestContext
 from ._listener import Arrival, Listener
 from ._policy import TFTPServerLimits

@@ -15,7 +15,7 @@ import threading
 from typing import Any, Callable, Optional
 
 from ..backends._pipe import Pipe
-from ..packet import TFTPErrorCode
+from ..packet._enums import TFTPErrorCode
 from ..exceptions import (
     AccessViolation,
     DiskFull,

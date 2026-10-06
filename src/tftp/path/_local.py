@@ -11,9 +11,10 @@ from typing import Any, Callable, Iterator, Optional, Tuple
 from pathlib_next import Path, Pathname
 from pathlib_next.utils.stat import FileStat
 
-from ..client import TFTPClient
+from ..client._sync import TFTPClient
 from ..client._core import _ClientBase, _mode
 from ..exceptions import FileNotFound, TFTPError
+from ..uri import TFTPURL
 from ._stream import open_reader, open_writer, os_error
 
 __all__ = ["TFTPPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir", "tftp_unlink"]

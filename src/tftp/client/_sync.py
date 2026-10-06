@@ -13,12 +13,15 @@ from .. import listing
 from ..exceptions import RemoteError
 from ..listing import ListEntry
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
-from ..options import DEFAULT_BLKSIZE
-from ..packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_request
+from ..options._handler import DEFAULT_BLKSIZE
+from ..packet._enums import TFTPErrorCode, TFTPOpcode
+from ..packet._codec import encode_ack, encode_request
 from ..packet._codec import _encode_error
 from ..result import TransferResult
 from .._sockets import fit_window
-from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
+from ..transfer._receiver import Receiver
+from ..transfer._sender import Sender
+from ..transfer._engine import Transfer, as_readinto, as_write
 from ._core import (
     _RECV_BUFFER,
     LISTING_LIMIT,
@@ -137,7 +140,7 @@ class TFTPClient(_ClientBase):
 
     def path(self, *segments: Any, mode: str = "octet") -> Any:
         """A :class:`tftp.path.TFTPPath` on this server (needs the ``path`` extra)."""
-        from ..path import TFTPPath
+        from ..path._local import TFTPPath
 
         return TFTPPath(*segments, client=self, mode=mode)
 

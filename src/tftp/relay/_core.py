@@ -31,7 +31,8 @@ from .._sockets import local_towards, same_host, sockaddr
 from ..capture._hook import HookGuard, guard
 from ..capture._events import PacketEvent, new_session_id
 from ..exceptions import TFTPDecodeError, TFTPError
-from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
+from ..packet._enums import TFTPErrorCode, TFTPOpcode
+from ..packet._codec import RequestPacket, decode
 from ..packet._codec import _encode_error
 from ..server._sync import SelectorService
 from ..server._handler import TFTPRequestContext

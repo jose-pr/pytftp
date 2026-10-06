@@ -29,11 +29,11 @@ if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
 from ..capture._events import PacketEvent
-from ..options import TFTPServerOptions
-from ..packet import TFTPErrorCode
+from ..options._policy import TFTPServerOptions
+from ..packet._enums import TFTPErrorCode
 from ..packet._codec import _encode_error
 from ..result import TransferResult
-from ..transfer import Transfer
+from ..transfer._engine import Transfer
 from ._core import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
 from ._handler import has_coroutine_hooks
 from ._policy import TFTPServerLimits

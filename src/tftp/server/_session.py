@@ -19,9 +19,14 @@ from typing import Any, Callable, Iterator, List, Optional, Tuple, Union
 from .._sockets import fit_window
 from ..exceptions import TFTPError, TFTPValueError
 from ..netascii import NetasciiReader, NetasciiWriter
-from ..options import Negotiated, TFTPServerOptions, negotiate
-from ..packet import TFTPErrorCode, RequestPacket, encode_ack, encode_oack
-from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
+from ..options._handler import Negotiated
+from ..options._policy import TFTPServerOptions
+from ..options._negotiate import negotiate
+from ..packet._enums import TFTPErrorCode
+from ..packet._codec import RequestPacket, encode_ack, encode_oack
+from ..transfer._receiver import Receiver
+from ..transfer._sender import Sender
+from ..transfer._engine import Transfer, as_readinto, as_write
 from ..capture._events import PacketEvent, new_session_id
 from ._handler import TFTPRequestContext
 

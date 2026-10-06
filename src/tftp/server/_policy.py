@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Optional
 
 from ..exceptions import TFTPError
-from ..packet import TFTPErrorCode, RequestPacket
+from ..packet._enums import TFTPErrorCode
+from ..packet._codec import RequestPacket
 
 __all__ = ["TFTPServerLimits"]
 

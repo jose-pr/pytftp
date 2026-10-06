@@ -15,11 +15,14 @@ from .. import listing
 from ..listing import ListEntry
 from ..exceptions import RemoteError, TransferTimeoutError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
-from ..options import DEFAULT_BLKSIZE
-from ..packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_request
+from ..options._handler import DEFAULT_BLKSIZE
+from ..packet._enums import TFTPErrorCode, TFTPOpcode
+from ..packet._codec import encode_ack, encode_request
 from ..packet._codec import _encode_error
 from ..result import TransferResult
-from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
+from ..transfer._receiver import Receiver
+from ..transfer._sender import Sender
+from ..transfer._engine import Transfer, as_readinto, as_write
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
 from .._sockets import fit_window, local_towards, same_host
 from ._core import (

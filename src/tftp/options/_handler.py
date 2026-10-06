@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping, Optional
 
 from ..exceptions import TFTPProtocolError
-from ..packet import TFTPErrorCode
+from ..packet._enums import TFTPErrorCode
 
 __all__ = [
     "DEFAULT_BLKSIZE",

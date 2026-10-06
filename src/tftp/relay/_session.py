@@ -13,10 +13,11 @@ import socket
 import struct
 from typing import Any, NamedTuple, Optional, Tuple
 
-from ..options import DEFAULT_BLKSIZE
+from ..options._handler import DEFAULT_BLKSIZE
 from ..options._handler import read_decimal
 from ..exceptions import TFTPDecodeError
-from ..packet import TFTPOpcode, RequestPacket, decode
+from ..packet._enums import TFTPOpcode
+from ..packet._codec import RequestPacket, decode
 
 __all__ = ["RelaySession", "RelaySummary"]
 

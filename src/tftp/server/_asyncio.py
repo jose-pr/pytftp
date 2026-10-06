@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
-from ..packet import TFTPErrorCode
+from ..packet._enums import TFTPErrorCode
 from ..packet._codec import _encode_error
 from ._core import ServerBase
 from ._handler import ThreadedHandler, has_coroutine_hooks

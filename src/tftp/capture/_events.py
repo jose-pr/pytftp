@@ -9,7 +9,8 @@ from typing import Any, Dict, NamedTuple, Optional, Tuple
 
 from ..exceptions import TFTPDecodeError
 from .._text import escape
-from ..packet import TFTPOpcode, decode
+from ..packet._enums import TFTPOpcode
+from ..packet._codec import decode
 
 __all__ = ["PacketEvent", "summarize", "new_session_id"]
 

@@ -18,7 +18,8 @@ import threading
 from typing import Any, Callable, Mapping, Optional, Tuple, Union
 
 from ..exceptions import RemoteError, TFTPError
-from ..packet import TFTPErrorCode
+from ..client._sync import TFTPClient
+from ..packet._enums import TFTPErrorCode
 from ._pipe import Pipe
 
 __all__ = ["UpstreamBackend"]
@@ -97,7 +98,7 @@ class UpstreamBackend:
         self.writable = writable
 
     def _client(self, context: Any, on_negotiated: Callable[..., Any]):
-        from ..client import TFTPClient
+        from ..client._sync import TFTPClient
 
         target = self.upstream(context) if callable(self.upstream) else self.upstream
         if isinstance(target, tuple):

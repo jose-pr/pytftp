@@ -44,8 +44,9 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import quote, quote_from_bytes, unquote, unquote_to_bytes
 
 from ._arguments import check_seconds
+from .client._sync import TFTPClient
 from .exceptions import TFTPValueError
-from .options import request_options
+from .options._negotiate import request_options
 from .packet._codec import FILENAME_ENCODING, _ERRORS
 
 __all__ = ["TFTPURL", "download_url", "upload_url"]
@@ -444,7 +445,7 @@ def download_url(url: str, dst: Any, /, *, progress: Optional[Any] = None, **cli
     ``client_options`` wins over the URL's option of the same name, and
     ``extra_options`` merge name by name.
     """
-    from .client import TFTPClient
+    from .client._sync import TFTPClient
 
     target = TFTPURL.parse(url)
     return TFTPClient(
@@ -457,7 +458,7 @@ def upload_url(url: str, src: Any, /, *, progress: Optional[Any] = None, **clien
 
     The URL's options and the precedence are as for :func:`download_url`.
     """
-    from .client import TFTPClient
+    from .client._sync import TFTPClient
 
     target = TFTPURL.parse(url)
     return TFTPClient(

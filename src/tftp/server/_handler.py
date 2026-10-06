@@ -21,7 +21,8 @@ import tempfile
 from typing import Any, Optional, Protocol, Tuple, Union
 
 from ..exceptions import TFTPError
-from ..packet import TFTPErrorCode, RequestPacket
+from ..packet._enums import TFTPErrorCode
+from ..packet._codec import RequestPacket
 
 __all__ = [
     "AsyncTFTPHandler",

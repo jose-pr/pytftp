@@ -16,10 +16,11 @@ import struct
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 from ..netascii import decode as netascii_decode
-from ..options import DEFAULT_BLKSIZE
+from ..options._handler import DEFAULT_BLKSIZE
 from ..options._handler import read_decimal
 from ..exceptions import TFTPDecodeError
-from ..packet import TFTPOpcode, decode
+from ..packet._enums import TFTPOpcode
+from ..packet._codec import decode
 from ._events import PacketEvent, new_session_id
 from .frames import UDPDatagram
 

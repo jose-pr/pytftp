@@ -7,7 +7,7 @@ import threading
 from typing import Any, Dict, Mapping, Optional
 
 from ..exceptions import TFTPError
-from ..packet import TFTPErrorCode
+from ..packet._enums import TFTPErrorCode
 
 __all__ = ["MemoryBackend", "normalize_name"]
 

@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from pathlib_next.uri import UriPath
 
-from ..client import TFTPClient
+from ..client._sync import TFTPClient
 from ..exceptions import TFTPValueError
 from ..uri import _client_keywords_over, _decode, _normal_mode, _normal_options, _split_parameters
 from ._local import check_client, tftp_open, tftp_scandir, tftp_stat, tftp_unlink

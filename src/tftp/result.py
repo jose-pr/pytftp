@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional, Tuple
 
 from .exceptions import TFTPError
-from .options import Negotiated
+from .options._handler import Negotiated
 
 __all__ = ["TransferResult"]
 

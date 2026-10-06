@@ -15,7 +15,7 @@ from ..exceptions import (
     TransferTimeoutError,
     WouldBlock,
 )
-from ..options import Negotiated
+from ..options._handler import Negotiated
 from ..packet._codec import _encode_error, _error_text
 
 __all__ = ["Transfer", "as_readinto", "as_write"]
