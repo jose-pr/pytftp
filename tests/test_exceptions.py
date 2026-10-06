@@ -242,3 +242,30 @@ def test_a_remote_error_without_a_code_carries_the_undefined_code():
     err = RemoteError()
     assert err.code == tftp.TFTPErrorCode.NOT_DEFINED
     assert RemoteError(message="odd").message == "odd"
+
+
+# -- the errno table -------------------------------------------------------------------------
+
+_ERRNO_ROWS = [
+    ("ENOENT", tftp.TFTPErrorCode.FILE_NOT_FOUND),
+    ("ENOTDIR", tftp.TFTPErrorCode.FILE_NOT_FOUND),
+    ("EISDIR", tftp.TFTPErrorCode.ACCESS_VIOLATION),
+    ("EACCES", tftp.TFTPErrorCode.ACCESS_VIOLATION),
+    ("EPERM", tftp.TFTPErrorCode.ACCESS_VIOLATION),
+    ("EROFS", tftp.TFTPErrorCode.ACCESS_VIOLATION),
+    ("EEXIST", tftp.TFTPErrorCode.FILE_EXISTS),
+    ("ENOSPC", tftp.TFTPErrorCode.DISK_FULL),
+    ("EFBIG", tftp.TFTPErrorCode.DISK_FULL),
+    ("EDQUOT", tftp.TFTPErrorCode.DISK_FULL),
+    ("EIO", tftp.TFTPErrorCode.NOT_DEFINED),
+]
+
+
+@pytest.mark.parametrize("name, code", _ERRNO_ROWS)
+def test_an_os_error_becomes_the_error_code_for_its_errno(name, code):
+    import errno
+
+    if not hasattr(errno, name):
+        pytest.skip("this platform has no %s" % name)
+    error = TFTPError.from_exception(OSError(getattr(errno, name), "disk secret /srv/x"))
+    assert error.code == code and "secret" not in str(error)
