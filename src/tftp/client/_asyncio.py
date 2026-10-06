@@ -22,7 +22,15 @@ from ..result import TransferResult
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
 from .._sockets import fit_window, same_host
-from ._core import Progress, RemoteStat, _ClientBase, _mode, _NotListing, _source_size
+from ._core import (
+    Progress,
+    RemoteStat,
+    _ClientBase,
+    _mode,
+    _NotListing,
+    _repeats_without_options,
+    _source_size,
+)
 
 __all__ = ["AsyncTFTPClient"]
 
@@ -353,11 +361,7 @@ class AsyncTFTPClient(_ClientBase):
             except RemoteError as exc:
                 # Retry without options only when the request itself was
                 # refused for them: nothing has been read or written yet.
-                if not (
-                    exc.code == TFTPErrorCode.OPTION_REFUSED
-                    and getattr(exc, "_in_request", False)
-                    and attempt + 1 < len(attempts)
-                ):
+                if not (_repeats_without_options(exc) and attempt + 1 < len(attempts)):
                     raise
             finally:
                 sock.close()

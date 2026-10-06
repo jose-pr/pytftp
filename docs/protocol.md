@@ -27,10 +27,11 @@ accepts. Unknown options and unusable values are ignored rather than
 refused, as RFC 2347 requires, and the transfer runs on the default for
 anything not acknowledged. The server clamps `blksize` and `windowsize` to
 its `TFTPServerOptions` limits; the client refuses (ERROR 8) an OACK that grants
-more than it asked for, or an option it never requested.
+more than it asked for, an option it never requested, a `timeout` or `utimeout`
+other than the one it asked for, or a number that is not ASCII digits.
 
-A client whose request is refused with ERROR 8 retries once with no options
-(`fallback=True`), for servers that reject what they do not understand.
+A client whose request is answered with ERROR 8, 4 or 0 retries once with no
+options (`fallback=True`), for servers that reject what they do not understand.
 
 `tsize` is answered for any file whose size is known, except an empty one:
 curl rejects `tsize 0` in an OACK, and the transfer shows the size anyway.

@@ -151,14 +151,38 @@ def test_a_profiles_server_policy_cannot_be_changed_through_a_reference():
     assert profile.server.max_blksize == 1024
 
 
-@pytest.mark.parametrize("text,value", [("8", 8), (" 8 ", 8), ("0", 0), ("007", 7), ("65464", 65464)])
+@pytest.mark.parametrize(
+    "text,value", [("8", 8), ("0", 0), ("007", 7), ("65464", 65464), ("0" * 40 + "5", 5)]
+)
 def test_option_numbers_are_ascii_digits(text, value):
     from tftp.options.base import read_decimal
 
     assert read_decimal(text) == value
 
 
-@pytest.mark.parametrize("text", ["", " ", "+8", "-8", "8.0", "1_0", "0x10", "8k", "٨", "²", "1 2", None, 8])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        " ",
+        " 8",
+        "8 ",
+        " 1024\t",
+        "+8",
+        "-8",
+        "8.0",
+        "1_0",
+        "0x10",
+        "8k",
+        "٨",
+        "²",
+        "1 2",
+        "9" * 20,
+        "9" * 5000,
+        None,
+        8,
+    ],
+)
 def test_anything_else_is_not_an_option_number(text):
     from tftp.options.base import read_decimal
 
@@ -168,3 +192,70 @@ def test_anything_else_is_not_an_option_number(text):
 def test_a_signed_or_non_ascii_blksize_is_not_negotiated():
     for text in ("+1428", "١٤٢٨", "1_428"):
         assert negotiate({"blksize": text}, POLICY, is_read=True, timeout=1.0, size=10).options == {}
+
+
+@pytest.mark.parametrize("text", [" 1024\t", "+1024", "1_024", "١٠٢٤"])
+def test_a_value_that_is_not_ascii_digits_is_not_acknowledged(text):
+    """RFC 2348: "The blksize ... specified in ASCII"; whitespace is not a digit."""
+    assert negotiate({"blksize": text}, POLICY, is_read=True, timeout=1.0, size=10).options == {}
+
+
+def test_a_timeout_is_acknowledged_from_the_number_that_was_read():
+    """RFC 2349: the OACK carries the value as a decimal number, here 5."""
+    assert negotiate({"timeout": "005"}, POLICY, is_read=True, timeout=1.0).options == {"timeout": "5"}
+    for text in (" 5", "5 ", "+5", "٥", "0_5"):
+        assert negotiate({"timeout": text}, POLICY, is_read=True, timeout=1.0).options == {}
+
+
+def test_a_timeout_beside_a_different_utimeout_is_not_acknowledged():
+    """tftp-hpa acknowledges timeout beside utimeout only when both name the same time."""
+    differ = negotiate({"timeout": "5", "utimeout": "250000"}, POLICY, is_read=True, timeout=1.0)
+    assert differ.options == {"utimeout": "250000"} and differ.timeout == 0.25
+    agree = negotiate({"timeout": "5", "utimeout": "5000000"}, POLICY, is_read=True, timeout=1.0)
+    assert agree.options == {"timeout": "5", "utimeout": "5000000"} and agree.timeout == 5.0
+    unusable = negotiate({"timeout": "5", "utimeout": "7"}, POLICY, is_read=True, timeout=1.0)
+    assert unusable.options == {"timeout": "5"} and unusable.timeout == 5.0
+    refused = tftp.TFTPServerOptions(allowed={"timeout", "utimeout"}, refused={"utimeout"})
+    only = negotiate({"timeout": "5", "utimeout": "250000"}, refused, is_read=True, timeout=1.0)
+    assert only.options == {"timeout": "5"}
+    standard = negotiate(
+        {"timeout": "5", "utimeout": "250000"}, tftp.TFTPServerOptions(), is_read=True, timeout=1.0
+    )
+    assert standard.options == {"timeout": "5"}
+
+
+def test_mstfwindow_is_bounded_in_bytes_like_windowsize():
+    policy = tftp.TFTPServerOptions(
+        allowed={"blksize", "windowsize", "mstfwindow"}, max_window_bytes=65464, max_windowsize=64
+    )
+    plain = negotiate({"blksize": "65464", "windowsize": "4"}, policy, is_read=True, timeout=1.0)
+    ms = negotiate({"blksize": "65464", "mstfwindow": "31416"}, policy, is_read=True, timeout=1.0)
+    assert plain.windowsize == ms.windowsize == 1
+    assert (
+        negotiate({"blksize": "512", "mstfwindow": "31416"}, policy, is_read=True, timeout=1.0).windowsize
+        == 4
+    )
+
+
+def test_a_client_refuses_a_timeout_it_did_not_ask_for():
+    """RFC 2349: "The specified timeout value must match the value specified by the client"."""
+    for oack in ({"timeout": "255"}, {"timeout": "2"}, {"timeout": "0"}, {"timeout": "٣"}):
+        with pytest.raises(tftp.TFTPProtocolError) as info:
+            accept_oack({"timeout": "3"}, oack, is_read=True, timeout=3.0)
+        assert info.value.code == tftp.TFTPErrorCode.OPTION_REFUSED
+    assert accept_oack({"timeout": "3"}, {"timeout": "3"}, is_read=True, timeout=1.0).timeout == 3.0
+
+
+def test_a_client_refuses_a_utimeout_it_did_not_ask_for():
+    for answered in ("1", "1" + "0" * 30, "500001", "0"):
+        with pytest.raises(tftp.TFTPProtocolError) as info:
+            accept_oack({"utimeout": "500000"}, {"utimeout": answered}, is_read=True, timeout=1.0)
+        assert info.value.code == tftp.TFTPErrorCode.OPTION_REFUSED
+    answered = accept_oack({"utimeout": "500000"}, {"utimeout": "500000"}, is_read=True, timeout=1.0)
+    assert answered.timeout == 0.5
+
+
+def test_a_client_refuses_a_value_that_is_not_ascii_digits():
+    for text in ("+512", "5_12", " 512", "٥١٢"):
+        with pytest.raises(tftp.TFTPProtocolError):
+            accept_oack({"blksize": "1024"}, {"blksize": text}, is_read=True, timeout=1.0)

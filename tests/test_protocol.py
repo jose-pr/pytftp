@@ -591,3 +591,73 @@ def test_a_request_context_copies_itself_with_another_filename():
     for name in TFTPRequestContext.__slots__:
         if name != "request":
             assert getattr(copy, name) is getattr(context, name), name
+
+
+@pytest.mark.parametrize(
+    "code", [TFTPErrorCode.OPTION_REFUSED, TFTPErrorCode.ILLEGAL_OPERATION, TFTPErrorCode.NOT_DEFINED]
+)
+def test_client_repeats_a_request_without_options_after_an_error_for_them(code):
+    """RFC 2347: after "an error for a request which carries an option", the client "may attempt to repeat the request without appending any options"."""
+
+    def script(packet):
+        if isinstance(packet, tftp.RequestPacket):
+            return [encode_error(code, "no")] if packet.options else [encode_data(1, b"hi")]
+        return []
+
+    fake = FakeServer(script)
+    try:
+        assert tftp.TFTPClient(*fake.address, timeout=0.5).get("f") == b"hi"
+        sent = [bool(r.options) for r in fake.requests if isinstance(r, tftp.RequestPacket)]
+        assert sent == [True, False]
+    finally:
+        fake.close()
+
+
+def test_client_does_not_repeat_a_request_after_other_errors():
+    def script(packet):
+        if isinstance(packet, tftp.RequestPacket):
+            return [encode_error(TFTPErrorCode.FILE_NOT_FOUND, "no")]
+        return []
+
+    fake = FakeServer(script)
+    try:
+        with pytest.raises(tftp.FileNotFound):
+            tftp.TFTPClient(*fake.address, timeout=0.5).get("f")
+        assert len([r for r in fake.requests if isinstance(r, tftp.RequestPacket)]) == 1
+    finally:
+        fake.close()
+
+
+def test_client_refuses_an_acknowledged_timeout_it_did_not_ask_for_with_error_8():
+    """RFC 2349: "The specified timeout value must match the value specified by the client"; RFC 2347: ERROR 8 refuses an OACK."""
+
+    def script(packet):
+        if isinstance(packet, tftp.RequestPacket):
+            return [encode_oack({"timeout": "9"})]
+        return []
+
+    fake = FakeServer(script)
+    try:
+        with pytest.raises(tftp.TFTPProtocolError) as info:
+            tftp.TFTPClient(*fake.address, timeout=2.0).get("f")
+        assert info.value.code == TFTPErrorCode.OPTION_REFUSED
+        fake.thread.join(0.5)
+        errors = [p for p in fake.requests if isinstance(p, tftp.ErrorPacket)]
+        assert [e.code for e in errors] == [TFTPErrorCode.OPTION_REFUSED]
+        assert len([r for r in fake.requests if isinstance(r, tftp.RequestPacket)]) == 1
+    finally:
+        fake.close()
+
+
+@pytest.mark.parametrize("code", [TFTPErrorCode.ILLEGAL_OPERATION, TFTPErrorCode.NOT_DEFINED])
+def test_stat_probes_again_for_the_size_after_an_error_for_its_options(code):
+    def script(packet):
+        if isinstance(packet, tftp.RequestPacket):
+            return [encode_error(code, "no")] if len(packet.options) > 1 else [encode_data(1, b"hi")]
+        return []
+
+    fake = FakeServer(script)
+    try:
+        assert tftp.TFTPClient(*fake.address, timeout=0.5).stat("f").size == 2
+    finally:
+        fake.close()

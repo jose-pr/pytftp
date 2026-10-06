@@ -200,3 +200,18 @@ def test_server_fit_mtu_end_to_end(root, make_server):
     server._mtu = lambda session: 1500
     result = client_for(server, blksize=65464).download("big.bin", io.BytesIO())
     assert result.negotiated.blksize == 1468
+
+
+def test_a_name_that_is_not_lower_case_is_refused_at_registration():
+    """Request names are lower-cased on decode, so an upper-case handler could never match."""
+
+    class Vendor(tftp.options.OptionHandler):
+        name = "X-Vendor"
+
+    registry = tftp.options.OptionRegistry()
+    with pytest.raises(ValueError, match="lower-case"):
+        registry.register(Vendor())
+    assert "x-vendor" not in registry
+    Vendor.name = "x-vendor"
+    registry.register(Vendor())
+    assert registry.get("x-vendor") is not None

@@ -111,13 +111,22 @@ class TimeoutOption(OptionHandler):
         seconds = read_decimal(value)
         if seconds is None or not 1 <= seconds <= 255:
             return None
+        micro = read_decimal(ctx.requested.get("utimeout", ""))
+        if (
+            micro is not None
+            and MIN_UTIMEOUT <= micro <= MAX_UTIMEOUT
+            and micro != seconds * 1_000_000
+            and ctx.policy.accepts("utimeout")
+            and "utimeout" in ctx.policy.registry
+        ):
+            return None  # utimeout takes priority; timeout is acknowledged only beside the same time
         ctx.result.timeout = float(seconds)
-        return value.strip()  # RFC 2349: echo exactly what was asked
+        return str(seconds)
 
     def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         seconds = _number(self.name, acked)
-        if not 1 <= seconds <= 255:
-            raise refuse("server timeout %d outside 1..255" % seconds)
+        if seconds != read_decimal(requested):
+            raise refuse("server timeout %d is not the %s asked for" % (seconds, requested))
         ctx.result.timeout = float(seconds)
 
 
@@ -133,8 +142,8 @@ class UtimeoutOption(OptionHandler):
 
     def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
         micro = _number(self.name, acked)
-        if micro <= 0:
-            raise refuse("server utimeout %d is not positive" % micro)
+        if micro != read_decimal(requested):
+            raise refuse("server utimeout %d is not the %s asked for" % (micro, requested))
         ctx.result.timeout = micro / 1e6
 
 
@@ -163,6 +172,16 @@ class TsizeOption(OptionHandler):
         ctx.result.tsize = size
 
 
+def _window(wanted: int, ctx: ServerOptionContext) -> int:
+    """``wanted`` blocks, lowered to the policy's count and byte limits.
+
+    A sender keeps the whole window in memory, so it is bounded in bytes too.
+    """
+    policy = ctx.policy
+    by_bytes = max(1, policy.max_window_bytes // ctx.result.blksize)
+    return min(wanted, policy.max_windowsize, by_bytes, MAX_WINDOWSIZE)
+
+
 class WindowsizeOption(OptionHandler):
     name = "windowsize"
     standard = True
@@ -171,10 +190,7 @@ class WindowsizeOption(OptionHandler):
         window = read_decimal(value)
         if window is None or window < 1:
             return None
-        policy = ctx.policy
-        # A sender keeps the whole window in memory: bound it in bytes too.
-        by_bytes = max(1, policy.max_window_bytes // ctx.result.blksize)
-        ctx.result.windowsize = min(window, policy.max_windowsize, by_bytes, MAX_WINDOWSIZE)
+        ctx.result.windowsize = _window(window, ctx)
         return str(ctx.result.windowsize)
 
     def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:
@@ -235,7 +251,7 @@ class MstfwindowOption(OptionHandler):
         if value.strip() != self.OFFER:
             return None
         if "windowsize" not in ctx.acked:
-            ctx.result.windowsize = min(self.WINDOW, ctx.policy.max_windowsize)
+            ctx.result.windowsize = _window(self.WINDOW, ctx)
         ctx.result.extra[self.name] = True
         return self.ANSWER
 

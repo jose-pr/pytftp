@@ -315,6 +315,28 @@ Old names are not kept as aliases.
 
 ### Fixed
 
+- **A number in an option is ASCII digits, and nothing else.** A server
+  acknowledged a `blksize` padded with white space as 1024, and echoed
+  a `timeout` as it was written; the acknowledgement is now written from the
+  number that was read (`timeout=005` is answered `5`). A number of more than 19
+  significant digits is not a number. `timeout` and `utimeout` requested
+  together are acknowledged both only when they name the same time, as
+  tftp-hpa does (a server ran on `utimeout` while also acknowledging a
+  different `timeout`), and `mstfwindow` obeys `max_window_bytes` as
+  `windowsize` does (a 65464-octet limit gave a window of 261856 octets).
+- **A client refuses (ERROR 8) an acknowledged `timeout` or `utimeout` that is
+  not the one it asked for** (RFC 2349), where it applied any value from one
+  microsecond to 10^24 seconds. The client's `tsize` and `x-mtime` readers are
+  the same reader as the server's.
+- **The option fallback also answers ERROR 4 and ERROR 0.** A client with
+  `fallback=True` repeats a request that carried options once without them
+  after ERROR 8, 4 or 0, the errors a server older than the option extension
+  sends for the extra data (RFC 2347: the client "may" repeat it); `stat()`
+  probes again for the size alone after the same errors. It repeated only
+  after ERROR 8.
+- `OptionRegistry.register` raises `ValueError` for a name that is not
+  lower-case: such a handler was registered and never negotiated.
+
 - `start()` after `close()` raises `RuntimeError` on `TFTPServer`, `AsyncTFTPServer`
   and `TFTPRelay`. The threaded server waited five seconds and returned as if it
   were serving (the thread died on the same error), and the asynchronous one

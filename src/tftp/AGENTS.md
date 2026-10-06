@@ -116,7 +116,9 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 - `src` — `(address, port)` to send from; the address in any form
   `host` takes.
 - `fallback` — if the server answers the *request* with ERROR 8 (options
-  refused), ask again once without options.
+  refused), 4 (illegal operation) or 0 (not defined), the errors a server
+  older than the option extension sends for the extra data, ask again once
+  without options (RFC 2347: the client "may" repeat it).
 - `dally` — after the last ACK of a download, keep re-ACKing a repeated last
   DATA for one timeout. Costs that much time per download.
 - Arguments are validated at construction, with no I/O and no name
@@ -149,7 +151,7 @@ Methods (each returns a `TransferResult` unless noted):
   allowing them reports the modification time (seconds since the epoch) and
   recognises a directory (`size` is then `None`); others leave `mtime`
   `None` and report a directory as `FileNotFound`. A request refused with
-  ERROR 8 is retried as a plain size probe (with `fallback`). `filename`
+  ERROR 8, 4 or 0 is retried as a plain size probe (with `fallback`). `filename`
   `""` is the root.
 - **`listdir(dirname="") -> list[ListEntry(name, is_dir, size, mtime)]`** —
   a directory listing from a server speaking `x-list`. `NotADirectoryError`
@@ -340,7 +342,9 @@ limit after `fit_mtu`); `ClientOptionContext` carries
 `result`, `requested`, `is_read`. Custom values go in `ctx.result.extra`.
 
 **`OptionRegistry(handlers=BUILTIN_OPTIONS)`** — `register(handler, *,
-replace=False)` (a duplicate name raises), `unregister(name)`, `get(name)`,
+replace=False)` (a duplicate name raises, and so does a name that is not
+lower-case: a request's names are lower-cased, so it could never match),
+`unregister(name)`, `get(name)`,
 `in`, iteration, `names()`, `standard()`, `copy()`. **Registration order is
 negotiation order** (`windowsize` after the block size it depends on).
 `DEFAULT_REGISTRY` is what servers and clients use unless given another;
@@ -349,11 +353,12 @@ server's `allowed`.
 
 Built-ins: `blksize`, `timeout`, `tsize`, `windowsize` (standard), and
 `blksize2` (largest power of two ≤ the request and the limit; ignored when
-`blksize` was acknowledged), `utimeout` (10 000..255 000 000 µs),
+`blksize` was acknowledged), `utimeout` (10 000..255 000 000 µs; beside it `timeout` is acknowledged only
+when it names the same time, as tftp-hpa does),
 `rollover` (0/1), `cookie` (echoed unchanged; a client refuses a changed
 one), `mstfwindow` (`MstfwindowOption`: answers `31416` with `27182` and runs a
-window of 4 unless `windowsize` was also acknowledged; a client refuses any
-other answer), `x-list` (`XListOption`: acknowledged `1` only when the RRQ's stream
+window of 4, lowered by `max_window_bytes` like `windowsize`, unless `windowsize` was
+also acknowledged; a client refuses any other answer), `x-list` (`XListOption`: acknowledged `1` only when the RRQ's stream
 is a listing, `lists_directories = True`), `x-mtime` (`XMtimeOption`: an RRQ's OACK carries
 the stream's `mtime` attribute or `fstat` time, whole seconds; omitted when
 unknown). `stream_mtime(stream)` is that lookup.

@@ -175,7 +175,7 @@ def test_full_range_answers_busy(root, make_server):
             held.append(sock)
             sock.bind(("127.0.0.1", port))
         with pytest.raises(tftp.RemoteError, match="busy"):
-            client_for(server, retries=0).get("one.bin")
+            client_for(server, retries=0, fallback=False).get("one.bin")
         assert server.stats_snapshot()["refused"] == 1
     finally:
         for sock in held:

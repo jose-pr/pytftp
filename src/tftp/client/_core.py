@@ -42,6 +42,7 @@ from ..options import (
     accept_oack,
     request_options,
 )
+from ..options.base import read_decimal
 from ..packet import TFTPErrorCode, TFTPOpcode, decode, encode_ack, encode_request
 from ..packet.codec import _encode_error
 
@@ -92,7 +93,20 @@ class _NotListing(TFTPProtocolError):
 
 
 def _digits(text: Optional[str]) -> Optional[int]:
-    return int(text) if text is not None and text.strip().isdigit() else None
+    return None if text is None else read_decimal(text)
+
+
+#: What a server answers a request that carries options with when it cannot
+#: read them: RFC 2347's ERROR 8, and the "illegal operation" and "not
+#: defined" that a server older than the extension sends for the extra data.
+_OPTION_ERRORS = frozenset(
+    {TFTPErrorCode.OPTION_REFUSED, TFTPErrorCode.ILLEGAL_OPERATION, TFTPErrorCode.NOT_DEFINED}
+)
+
+
+def _repeats_without_options(exc: RemoteError) -> bool:
+    """The request itself was answered with an ERROR that may be about its options."""
+    return exc.code in _OPTION_ERRORS and getattr(exc, "_in_request", False)
 
 
 def _source_size(source: Any) -> Optional[int]:
@@ -384,7 +398,7 @@ class _ClientBase:
         try:
             oack, small = self._probe(filename, mode, asked)
         except RemoteError as exc:
-            if exc.code != TFTPErrorCode.OPTION_REFUSED or not self.fallback:
+            if exc.code not in _OPTION_ERRORS or not self.fallback:
                 raise
             return RemoteStat(self._size(filename, mode))
         if oack is None:

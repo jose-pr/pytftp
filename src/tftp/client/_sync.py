@@ -27,6 +27,7 @@ from ._core import (
     _ClientBase,
     _mode,
     _NotListing,
+    _repeats_without_options,
     _source_size,
 )
 
@@ -60,8 +61,9 @@ class TFTPClient(_ClientBase):
     :param family: ``socket.AF_INET`` / ``AF_INET6`` to force one, ``0`` for
         whatever ``host`` resolves to first.
     :param src: ``(address, port)`` to send from; the address as for ``host``.
-    :param fallback: when the server refuses a request because of its options
-        (ERROR 8), retry once without any.
+    :param fallback: when the server answers a request that carries options
+        with ERROR 8, 4 or 0 (RFC 2347: it "may" be repeated without them),
+        retry once without any.
     :param dally: after acknowledging the last DATA of a download, keep
         answering a retransmitted last DATA for one ``timeout`` (RFC 1350
         section 6). Costs that much time on every download.
@@ -193,12 +195,7 @@ class TFTPClient(_ClientBase):
             except RemoteError as exc:
                 # Only a refusal of the request itself: nothing has been
                 # read or written yet, so asking again is safe.
-                if (
-                    exc.code == TFTPErrorCode.OPTION_REFUSED
-                    and options
-                    and self.fallback
-                    and getattr(exc, "_in_request", False)
-                ):
+                if options and self.fallback and _repeats_without_options(exc):
                     return self._exchange(
                         sock, server, opcode, filename, mode, {}, write, read, progress, started
                     )

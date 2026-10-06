@@ -79,15 +79,15 @@ class Negotiated:
 
 
 def read_decimal(text: str) -> Optional[int]:
-    """The value of an option text of ASCII digits, surrounding space ignored, or ``None``.
+    """The value of a number on the wire, or ``None`` when ``text`` is not one.
 
-    A sign, an underscore and a non-ASCII digit are not digits here: RFC 2347
-    values are decimal numerals.
+    A number is ASCII digits, leading zeros allowed, and at most 19
+    significant ones: RFC 2347 values are decimal numerals, so a sign, an
+    underscore, a space and a non-ASCII digit are not part of one.
     """
-    if not isinstance(text, str):
+    if not isinstance(text, str) or not text.isascii() or not text.isdigit():
         return None
-    digits = text.strip()
-    return int(digits) if digits.isascii() and digits.isdigit() else None
+    return int(text) if len(text.lstrip("0")) <= 19 else None
 
 
 def refuse(message: str) -> TFTPProtocolError:

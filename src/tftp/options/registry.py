@@ -27,6 +27,8 @@ class OptionRegistry:
         name = handler.name.lower()
         if not name:
             raise ValueError("an option handler needs a name")
+        if handler.name != name:
+            raise ValueError("option name %r must be lower-case, as a request's names are" % handler.name)
         if name in self._handlers and not replace:
             raise ValueError("option %r is already registered" % name)
         self._handlers[name] = handler

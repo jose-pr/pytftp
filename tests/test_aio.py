@@ -164,6 +164,29 @@ def test_async_client_trace_and_fallback(root, make_server):
     assert {e.role for e in events} == {"client"}
 
 
+def test_async_client_repeats_a_request_without_options_after_error_4(root, make_server):
+    """RFC 2347: after "an error for a request which carries an option", the client "may attempt to repeat the request without appending any options"."""
+    from test_protocol import FakeServer
+
+    from tftp.packet import encode_data, encode_error
+
+    def script(packet):
+        if isinstance(packet, tftp.RequestPacket):
+            return [encode_error(4, "no")] if packet.options else [encode_data(1, b"plain")]
+        return []
+
+    fake = FakeServer(script)
+
+    async def main():
+        assert await AsyncTFTPClient(*fake.address, timeout=0.5).get("f") == b"plain"
+
+    try:
+        run(main())
+    finally:
+        fake.close()
+    assert [bool(r.options) for r in fake.requests if isinstance(r, tftp.RequestPacket)] == [True, False]
+
+
 # -- AsyncTFTPServer ---------------------------------------------------------------------------------------
 
 
