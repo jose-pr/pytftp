@@ -1,5 +1,5 @@
 """Every public annotation resolves with ``typing.get_type_hints``, except the ones that
-name a netimps type.
+name a netimps type (or the optional ``pathlib_next``'s path class).
 
 ``netimps`` is imported lazily, so the names ``HostLike``, ``IPAddressLike``, ``IPNetworkLike`` and
 ``Interface`` exist only under ``TYPE_CHECKING``; a signature that names one raises ``NameError``
