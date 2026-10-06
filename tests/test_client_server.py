@@ -638,17 +638,18 @@ def test_a_download_to_a_device_is_written_in_place(root, make_server, tmp_path)
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no named pipes here")
-def test_a_download_to_a_named_pipe_is_written_in_place(root, make_server, tmp_path):
+def test_a_download_to_a_named_pipe_is_written_in_place(root, make_server, tmp_path_factory):
     import threading
 
-    pipe = tmp_path / "pipe"
+    where = tmp_path_factory.mktemp("fifo")
+    pipe = where / "pipe"
     os.mkfifo(pipe)
     got = []
     reader = threading.Thread(target=lambda: got.append(pipe.open("rb").read()), daemon=True)
     reader.start()
     client_for(make_server(root)).download("one.bin", pipe)
     reader.join(5)
-    assert got == [b"x"] and _beside(tmp_path) == ["pipe"]
+    assert got == [b"x"] and _beside(where) == ["pipe"]
 
 
 def test_a_download_over_a_file_that_cannot_be_replaced_leaves_it_and_no_temporary(root, make_server, dest):
