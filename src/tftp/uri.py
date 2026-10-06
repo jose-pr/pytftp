@@ -445,8 +445,6 @@ def download_url(url: str, dst: Any, /, *, progress: Optional[Any] = None, **cli
     ``client_options`` wins over the URL's option of the same name, and
     ``extra_options`` merge name by name.
     """
-    from .client._sync import TFTPClient
-
     target = TFTPURL.parse(url)
     return TFTPClient(
         target.host, target.port, **_client_keywords_over(target.options, client_options)
@@ -458,8 +456,6 @@ def upload_url(url: str, src: Any, /, *, progress: Optional[Any] = None, **clien
 
     The URL's options and the precedence are as for :func:`download_url`.
     """
-    from .client._sync import TFTPClient
-
     target = TFTPURL.parse(url)
     return TFTPClient(
         target.host, target.port, **_client_keywords_over(target.options, client_options)

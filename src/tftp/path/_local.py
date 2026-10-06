@@ -227,8 +227,6 @@ class TFTPPath(Path):
         return "/".join(self._segments)
 
     def as_uri(self) -> str:
-        from ..uri import TFTPURL
-
         return str(TFTPURL(self._client.host, self._client.port, self.as_posix(), self._mode))
 
     def __str__(self) -> str:

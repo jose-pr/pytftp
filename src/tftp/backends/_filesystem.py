@@ -112,8 +112,6 @@ class FilesystemBackend:
         else:
             path = self.resolve(context.filename)
         if context.listing and os.path.isdir(path):
-            from ..listing import DirectoryListing
-
             return DirectoryListing(path, root=self.root)  # type: ignore[return-value]
         if not os.path.isfile(path):
             raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND)

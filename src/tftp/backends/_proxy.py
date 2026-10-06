@@ -98,8 +98,6 @@ class UpstreamBackend:
         self.writable = writable
 
     def _client(self, context: Any, on_negotiated: Callable[..., Any]):
-        from ..client._sync import TFTPClient
-
         target = self.upstream(context) if callable(self.upstream) else self.upstream
         if isinstance(target, tuple):
             host, port = target
