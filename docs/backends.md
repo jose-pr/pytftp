@@ -11,6 +11,11 @@ files = MemoryBackend({"pxelinux.cfg/default": b"DEFAULT linux\n"}, writable=Tru
 tftp.TFTPServer(files).serve_forever()       # uploads land in files.files when complete
 ```
 
+Uploads are bounded: `max_upload` (16 MiB by default) is the most one upload may
+hold and `max_entries` (1024, the names already in `files` included) the most names;
+a client that crosses either gets ERROR 3, and a name that exists can still be
+replaced. Pass `None` to remove a bound.
+
 ## HTTP(S) gateway
 
 Boot ROMs speak TFTP; images often live behind HTTP.

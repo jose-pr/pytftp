@@ -79,6 +79,72 @@ def test_memory_handler(make_server):
         client_for(make_server(MemoryBackend())).put("x", b"y")
 
 
+def test_a_writable_memory_backend_is_bounded_by_default():
+    handler = MemoryBackend(writable=True)
+    assert (handler.max_upload, handler.max_entries) == (16 << 20, 1024)
+    unbounded = MemoryBackend(writable=True, max_upload=None, max_entries=None)
+    assert (unbounded.max_upload, unbounded.max_entries) == (None, None)
+    for bad in (-1, "1", 1.5, True):
+        with pytest.raises((TypeError, ValueError)):
+            MemoryBackend(max_upload=bad)
+        with pytest.raises((TypeError, ValueError)):
+            MemoryBackend(max_entries=bad)
+
+
+class _Announcing:
+    """An upload source that announces ``size`` octets whatever it holds."""
+
+    def __init__(self, size, data=b""):
+        self.size, self.data = size, data
+
+    def read(self, n):
+        chunk, self.data = self.data[:n], self.data[n:]
+        return chunk
+
+
+def test_an_upload_announced_above_the_default_bound_is_refused_with_error_3(make_server):
+    handler = MemoryBackend(writable=True)
+    client = client_for(make_server(handler))
+    with pytest.raises(tftp.DiskFull):  # the request is refused: no data is needed to cross the bound
+        client.upload("big", _Announcing((16 << 20) + 1))
+    assert handler.files == {}
+
+
+@pytest.mark.parametrize("announce", [True, False])
+def test_an_upload_past_max_upload_is_refused_with_error_3(make_server, announce):
+    handler = MemoryBackend(writable=True, max_upload=1000)
+    client = client_for(make_server(handler), tsize=announce, blksize=512)
+    assert client.put("fits", b"x" * 1000).bytes == 1000
+    with pytest.raises(tftp.DiskFull):
+        client.put("over", b"x" * 1001)
+    assert handler.files == {"fits": b"x" * 1000}
+
+
+def test_the_1025th_name_is_refused_with_error_3(make_server):
+    handler = MemoryBackend(writable=True)
+    client = client_for(make_server(handler, dally=False, max_sessions=None))
+    for number in range(1024):
+        client.put("n%d" % number, b"x")
+    assert len(handler.files) == 1024
+    with pytest.raises(tftp.DiskFull):
+        client.put("one-too-many", b"x")
+    assert "one-too-many" not in handler.files and len(handler.files) == 1024
+    client.put("n0", b"replaced")  # a name that exists is still replaced
+    assert handler.files["n0"] == b"replaced"
+
+
+def test_max_entries_counts_the_names_it_was_given_and_leaves_replacing_alone(make_server):
+    handler = MemoryBackend({"a": b"1", "b": b"2"}, writable=True, max_entries=2)
+    client = client_for(make_server(handler))
+    with pytest.raises(tftp.DiskFull):
+        client.put("c", b"3")
+    client.put("a", b"replaced")
+    assert handler.files == {"a": b"replaced", "b": b"2"}
+    no_replace = MemoryBackend({"a": b"1"}, writable=True, overwrite=False, max_entries=1)
+    with pytest.raises(tftp.FileAlreadyExists):
+        client_for(make_server(no_replace)).put("a", b"x")
+
+
 # -- HTTP ------------------------------------------------------------------------------
 
 

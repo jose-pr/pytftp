@@ -263,6 +263,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   documented as such. The three marker attributes are public: `_tftp_fast_open_`
   is `opens_fast`, `_tftp_copies_` is `copies_writes` and `_tftp_listing_` is
   `lists_directories`.
+- **A writable `MemoryBackend` is bounded.** `max_upload` defaults to 16 MiB
+  where it was unlimited, and the new `max_entries` (default 1024, the names in
+  `files` included) bounds the names: an upload past either is ERROR 3, where
+  one client stored 20,000,000 octets and any number of names. A name that
+  exists can still be replaced. Pass `None` for the old behaviour.
 - **`HTTPBackend` fetches `http` and `https` only.** `HTTPBackend("file:///srv")`
   and any `base_url` that is not an `http` or `https` URL raise `ValueError`; a
   `url_for` URL that is not one is refused with ERROR 2; and the default opener

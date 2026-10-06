@@ -621,9 +621,15 @@ Both support what TFTP can do, plus listing against a server speaking
 
 ## Backends (`tftp.backends`)
 
-- **`MemoryBackend(files=None, *, writable=False, overwrite=True, max_upload=None)`**
+- **`MemoryBackend(files=None, *, writable=False, overwrite=True, max_upload=16 MiB, max_entries=1024)`**
   — serves `files` (name → bytes; names normalised so `/a\\b` is `a/b`);
   uploads replace an entry only when complete. Thread-safe `files` updates.
+  What an anonymous peer can make it hold is bounded: an announced `tsize`
+  above `max_upload` is ERROR 3 at the request, an upload that grows past it
+  is ERROR 3, and an upload to a new name when `max_entries` names are held
+  (`files` included) is ERROR 3; a name that exists can still be replaced
+  (when `overwrite`). The most it can hold is the product of the two; `None`
+  removes a bound.
 - **`HTTPBackend(base_url=None, *, url_for=None, writable=False, headers=None, timeout=10.0, buffer=1 MiB, opener=None)`**
   — TFTP-to-HTTP(S) gateway on `urllib`: GET `base_url + quote(name)`
   (a name that is not UTF-8 is percent-encoded as the octets that arrived;
