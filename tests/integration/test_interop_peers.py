@@ -20,7 +20,7 @@ import pytest
 
 import tftp
 from tftp import TFTPOpcode
-from tftp.packet import encode_request
+from tftp.packet import encode_error, encode_request
 
 pytestmark = pytest.mark.interop
 
@@ -80,23 +80,31 @@ class PeerServer:
         self.port = port
         self.pattern = pattern
         self.proc = subprocess.Popen(_root_cmd(argv), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        if not self._answers():
+        if not self._serves():
             self.stop()
-            pytest.skip("peer server did not answer: %s" % self._stderr)
+            pytest.skip("peer server does not serve its directory: %s" % self._stderr)
 
-    def _answers(self) -> bool:
-        """Ask for a file that is not there until the peer answers, whatever it answers."""
-        request = encode_request(TFTPOpcode.RRQ, "ready-probe")
+    def _serves(self) -> bool:
+        """Ask for the served file until this peer sends it.
+
+        Any answer is not enough: dnsmasq takes port 69, where a system TFTP
+        service may answer in its place, and a peer that dropped privileges
+        may be unable to read the directory. Both answer "file not found".
+        """
+        request = encode_request(TFTPOpcode.RRQ, "f.bin")
         deadline = time.monotonic() + 10.0
         while self.proc.poll() is None and time.monotonic() < deadline:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
                 probe.settimeout(0.25)
                 probe.sendto(request, ("127.0.0.1", self.port))
                 try:
-                    probe.recvfrom(2048)
-                    return True
+                    answer, peer = probe.recvfrom(2048)
                 except OSError:
                     continue
+                if answer[:2] == b"\x00\x03":
+                    probe.sendto(encode_error(0, "probe"), peer)  # end the transfer the probe began
+                    return True
+                time.sleep(0.25)
         return False
 
     def stop(self):
@@ -143,6 +151,7 @@ def _peer(kind, root):
             "--bind-interfaces",
             "--conf-file=/dev/null",
             "--pid-file=",
+            "--user=root",  # or it changes user and cannot enter pytest's private directory
         ]
         return PeerServer(argv, 69, "dnsmasq --no-daemon --port=0 --enable-tftp")
     raise AssertionError(kind)
