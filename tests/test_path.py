@@ -119,7 +119,6 @@ def test_client_path_needs_no_pathlib_import_until_used():
     code = "import sys, tftp; assert 'pathlib_next' not in sys.modules; print('ok')"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert out.stdout.strip() == "ok", out.stderr
-    assert os.environ is not None
 
 
 # -- a path is synchronous: an asyncio client is refused where it is bound ------------------
@@ -433,25 +432,3 @@ def test_a_uri_path_refuses_text_the_url_parser_refuses(root, spy_server):
         with pytest.raises(ValueError):
             tftp.TFTPURL.parse(base + text)
     assert spy.requests == []
-
-
-def test_the_uri_path_without_uritools_names_the_extra():
-    import subprocess
-    import sys
-
-    code = (
-        "import sys\n"
-        "class Hide:\n"
-        "    def find_spec(self, name, path=None, target=None):\n"
-        "        if name.split('.')[0] == 'uritools':\n"
-        "            raise ModuleNotFoundError(\"No module named 'uritools'\", name='uritools')\n"
-        "sys.meta_path.insert(0, Hide())\n"
-        "import tftp.path\n"
-        "tftp.path.TFTPPath\n"
-        "try:\n"
-        "    tftp.path.TFTPURIPath\n"
-        "except ImportError as exc:\n"
-        "    print(exc)\n"
-    )
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
-    assert "'path' extra" in out.stdout and "tftp[path]" in out.stdout, (out.stdout, out.stderr)

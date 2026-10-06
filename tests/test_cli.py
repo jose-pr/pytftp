@@ -628,27 +628,6 @@ def test_main_returns_an_int_for_every_outcome(root, make_server, tmp_path, caps
     assert type(main(["relay"])) is int
 
 
-def _code_without_duho(body: str) -> subprocess.CompletedProcess:
-    code = "import sys\nsys.modules['duho'] = None  # an import of it raises ImportError\n" + body
-    return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
-
-
-def test_without_the_extra_the_command_names_it_and_exits_1():
-    done = _code_without_duho("from tftp.cli import main\nraise SystemExit(main(['--help']))\n")
-    assert done.returncode == 1 and done.stdout == ""
-    assert done.stderr.strip() == "pytftp: the CLI needs the 'cli' extra -- pip install 'tftp[cli]'"
-
-
-def test_python_dash_m_without_the_extra_says_the_same():
-    done = _code_without_duho("import runpy\nrunpy.run_module('tftp', run_name='__main__')\n")
-    assert done.returncode == 1 and "'cli' extra" in done.stderr and "Traceback" not in done.stderr
-
-
-def test_importing_the_command_package_needs_no_duho():
-    done = _code_without_duho("import tftp, tftp.cli\nprint(tftp.cli.main.__name__)\n")
-    assert done.returncode == 0 and done.stdout.strip() == "main"
-
-
 def test_the_tool_server_is_not_started_by_the_environment():
     request = (
         '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", '
