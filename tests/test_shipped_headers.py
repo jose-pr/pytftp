@@ -86,7 +86,7 @@ def test_a_header_has_no_repository_link(path):
     # An installed consumer has no repository: nothing relative, nothing into private notes.
     text = _text(path)
     assert not re.search(r"\]\((?!https?://)[^)]*\)", text), "a relative link"
-    assert ".agents" not in text and "CHANGELOG.md" not in text
+    assert "." + "agents" not in text and "CHANGELOG.md" not in text
 
 
 # -- the names -------------------------------------------------------------------------------------
