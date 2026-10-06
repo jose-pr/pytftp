@@ -626,10 +626,31 @@ Both support what TFTP can do, plus listing against a server speaking
   uploads replace an entry only when complete. Thread-safe `files` updates.
 - **`HTTPBackend(base_url=None, *, url_for=None, writable=False, headers=None, timeout=10.0, buffer=1 MiB, opener=None)`**
   — TFTP-to-HTTP(S) gateway on `urllib`: GET `base_url + quote(name)`
-  (or `url_for(context)`), streamed; `Content-Length` answers `tsize`;
-  WRQ → `PUT` (chunked without `tsize`) when `writable`; the final ACK
-  waits for the PUT's response. HTTP 404/410 → ERROR 1, 401/403 → 2,
-  409 → 6, 413/507 → 3, other → 0. `..` in a name → ERROR 2.
+  (a name that is not UTF-8 is percent-encoded as the octets that arrived;
+  or `url_for(context)`), streamed; `Content-Length` answers `tsize` (ASCII
+  digits only). Requests carry `User-Agent: tftp/<version>` (a header in
+  `headers` wins, whatever its case) and a `PUT` carries
+  `Content-Type: application/octet-stream`. WRQ → `PUT` when `writable`; the
+  final ACK waits for the PUT's response. HTTP 404/410 → ERROR 1, 401/403 → 2,
+  409 → 6, 413/507 → 3, other → 0; the response of a failed request is
+  closed. `..` in a name → ERROR 2.
+  - **Schemes.** `base_url` must be `http` or `https` (`ValueError`), a
+    `url_for` URL that is not is refused with ERROR 2, and the default opener
+    speaks `http` and `https` only, so a redirect to `ftp:`, `file:` or
+    `data:` fails (redirects between `http` and `https` are followed). With
+    `opener=` the scheme of `base_url` and of `url_for`'s URLs is yours.
+  - **Uploads are exact.** The `PUT` carries the announced `tsize` as its
+    `Content-Length` (chunked without one, and for netascii, whose announced
+    size is not the size received), and its last octets are sent only when the
+    transfer is complete. More octets than announced fail the transfer with
+    ERROR 3 and fewer with ERROR 0; the origin then holds nothing and sees no
+    second request.
+  - **A download reads ahead a window, then a buffer.** Until the peer has
+    taken data the gateway has pulled about 16 KiB more than the first window
+    from the origin (the origin's own socket buffers come on top); the limit
+    grows with what the transfer takes, up to `buffer`. The origin is asked
+    once per request, when it arrives: run a gateway that anonymous peers can
+    reach with `max_sessions` set.
 - **`UpstreamBackend(upstream, *, client_options=None, buffer=1 MiB, stall_timeout=30.0, writable=False)`**
   — terminating proxy: `upstream` is `"host"`, `"host:port"`, an address
   object or `netimps.Host`, `(host, port)`, or `upstream(context)` returning

@@ -263,6 +263,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   documented as such. The three marker attributes are public: `_tftp_fast_open_`
   is `opens_fast`, `_tftp_copies_` is `copies_writes` and `_tftp_listing_` is
   `lists_directories`.
+- **`HTTPBackend` fetches `http` and `https` only.** `HTTPBackend("file:///srv")`
+  and any `base_url` that is not an `http` or `https` URL raise `ValueError`; a
+  `url_for` URL that is not one is refused with ERROR 2; and the default opener
+  carries the HTTP(S) handlers only, where urllib's own also read `file:` and
+  `ftp:` and `data:` (a redirect from the origin to an `ftp:` host was fetched).
+  Redirects between `http` and `https` are still followed, and `opener=` still
+  lets the caller choose any scheme.
+- **`HTTPBackend` sends what it declared and names itself.** Requests carry
+  `User-Agent: tftp/<version>` where urllib's `Python-urllib/3.x` went, and a
+  `PUT` carries `Content-Type: application/octet-stream` where urllib's form
+  content type went. A header in `headers` wins over either default.
 
 ### Renamed
 
@@ -535,6 +546,24 @@ Old names are not kept as aliases.
   `netascii` (`TypeError` for a value that is not text), where the path failed
   when first used. `tftp.path.TFTPURIPath` without `uritools` raises
   `ImportError` naming the `path` extra.
+- **The HTTP gateway's `PUT` is exact.** A WRQ's announced `tsize` was sent as
+  `Content-Length` and then every octet uploaded: a client that announced 5 and
+  sent 69 was told the upload succeeded while the origin stored 5 octets, and an
+  origin that ignores `Connection: close` ran the surplus as a second request.
+  The last octets of the body are now sent only when the transfer ends, more
+  octets than announced fail it with ERROR 3 and fewer with ERROR 0, and the
+  origin stores nothing and sees one request. A netascii upload, whose announced
+  size is not the size received, is chunked.
+- **The HTTP gateway no longer fetches ahead of a peer that has not answered.**
+  One unacknowledged request made the gateway pull the whole 1 MiB buffer from
+  the origin (1.9 MB had left the origin after 2 seconds) and hold the
+  connection until the session ended. A download is read ahead by about 16 KiB
+  until the transfer has taken data, and by up to `buffer` as it takes more.
+- A file name that is not UTF-8 reaches the origin percent-encoded as the
+  octets that arrived, where it raised `UnicodeEncodeError` and logged a
+  traceback per request. The response of a failed request is closed (a 404
+  left a socket and a temporary file to be collected, with a `ResourceWarning`),
+  and a `Content-Length` that is not ASCII digits is no size.
 
 ## [0.0.0] - 2026-10-03
 

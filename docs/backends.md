@@ -28,6 +28,14 @@ last block is acknowledged only once the HTTP server has answered. Pass
 `url_for=` to route by client or filename, `headers=` for authentication, or
 an `opener` for proxies and TLS settings. Only the standard library is used.
 
+The gateway fetches `http` and `https` only: a `base_url` of another scheme is a
+`ValueError`, and the default opener refuses a redirect to `ftp:`, `file:` or
+`data:` (an `opener` of your own is yours to restrict or widen). An upload's `PUT`
+carries the announced size, so a client that sends more or fewer octets than it
+announced fails with an ERROR and the origin stores nothing. Run a gateway that
+anonymous peers can reach with `max_sessions` set: each request costs the origin
+one connection.
+
 ## Another TFTP server (terminating proxy)
 
 ```python
