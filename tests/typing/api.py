@@ -46,10 +46,12 @@ from tftp.backends import CaseInsensitive, FilesystemBackend, PerClient, Remap
 from pktcap import DissectorRegistry, Dissected, PcapWriter, PcapngWriter
 from tftp.capture import (
     PacketEvent,
+    ReplayedTransfers,
     TFTPLayer,
     combine_hooks,
     dissect_tftp,
     register_tftp_dissector,
+    replay_transfers,
     trace_to,
 )
 from tftp.client import ProgressFunction, RemoteStat, SinkLike, SourceLike
@@ -266,6 +268,13 @@ def the_dissector_is_pktcaps_and_its_layer_a_value(data: bytes, registry: Dissec
     layer = TFTPLayer("RRQ", filename="f", mode="octet", options=(("blksize", "512"),))
     assert_type(layer.block, Optional[int])
     assert_type(layer.options, Optional[Tuple[Tuple[str, str], ...]])
+
+
+def a_replay_asks_the_server_the_caller_names(path: str) -> None:
+    done = replay_transfers(path, "192.0.2.1", 69, writes=False, speed=None, limit=3, timeout=0.5)
+    assert_type(done, ReplayedTransfers)
+    assert_type(done.results, Tuple[TransferResult, ...])
+    assert_type(done.skipped, int)
 
 
 # -- where a name lives -------------------------------------------------------------------------

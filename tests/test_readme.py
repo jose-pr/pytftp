@@ -67,7 +67,7 @@ def _arguments(line, root, port):
     points = {"192.0.2.1": "127.0.0.1", "/srv/tftp": str(root), "6969": "0"}
     arguments = [points.get(token, token) for token in shlex.split(text)]
     command = arguments[0]
-    if command in ("get", "put", "ls"):
+    if command in ("get", "put", "ls", "replay"):
         arguments += ["-p", str(port)]
     elif command in ("serve", "relay") and "--port" not in arguments:
         arguments += ["-p", "0"]
@@ -100,9 +100,9 @@ def test_a_readme_command_line_runs_as_written(line, served):
     work = pathlib.Path.cwd()
     (work / "firmware.bin").write_bytes(b"firmware")
     argv = [sys.executable, "-m", "tftp", *arguments]
-    if command in ("get", "put", "ls", "capture"):
+    if command in ("get", "put", "ls", "capture", "replay"):
         stdin = None
-        if command == "capture":
+        if command in ("capture", "replay"):
             from pktcap import PcapWriter
             from tftp.capture import trace_to
 
@@ -113,8 +113,21 @@ def test_a_readme_command_line_runs_as_written(line, served):
                     tftp.TFTPClient("127.0.0.1", other.server_address[1], timeout=0.5).get("pxelinux.0")
                 finally:
                     other.close()
-            stdin = capture.read_bytes()
-            argv += ["-p", str(other.server_address[1])]
+            if command == "capture":
+                stdin = capture.read_bytes()
+                argv += ["-p", str(other.server_address[1])]
+            else:
+                # The README's capture is recorded again against a server that holds the file, and
+                # replayed to the served one: both reads succeed.
+                arguments = [str(capture) if token == "boot.pcapng" else token for token in arguments]
+                argv = [
+                    sys.executable,
+                    "-m",
+                    "tftp",
+                    *arguments,
+                    "--request-port",
+                    str(other.server_address[1]),
+                ]
         feed = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
         done = subprocess.run(argv, capture_output=True, timeout=60, **feed)
         assert done.returncode == 0, done.stderr.decode()
@@ -123,6 +136,8 @@ def test_a_readme_command_line_runs_as_written(line, served):
             assert (work / arguments[2]).read_bytes() == (root / arguments[2]).read_bytes()
         if command == "put":
             assert (root / arguments[2]).read_bytes() == b"firmware"
+        if command == "replay":
+            assert b"replayed 1 transfers, 0 failed, 0 skipped" in done.stderr
         return
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     lines = []

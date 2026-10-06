@@ -108,6 +108,35 @@ chosen per transfer, which no selector names, so `FlowTracker` follows them. Wit
 registered, `pktcap.compile_capture_filter("proto=tftp", pktcap.frame_filter)` selects the
 frames that have it and `pktcap.frame_record` writes its fields.
 
+## Replay
+
+`pytftp replay FILE HOST` asks a server you name for each transfer the capture holds again, each
+by a client built from what the capture's client asked for (mode, file name, options) and paced
+by the capture's own times. It is **not a replay of datagrams**: after the request a transfer runs
+between ports chosen anew, so the request is repeated and the client answers the server as any
+client does. **Nothing is sent to an address in the capture**: `HOST` is the only destination.
+
+```bash
+pytftp replay boot.pcapng 192.0.2.1 --speed 10
+pytftp replay boot.pcapng 192.0.2.1 -p 6969 --json --limit 5
+```
+
+- A **read** is asked for again and its octets are discarded. A **write** is replayed only with
+  `--writes`, and then it uploads the octets the capture holds of it, **which overwrites that file
+  on the server**; a write the capture holds only partly is never replayed.
+- `--speed` divides each recorded gap (default 1.0, the recorded pace) and `--max-delay` bounds
+  any single wait, so a capture with a jump of a year does not hang a replay.
+- One line per transfer on stdout (`--json`: the transfer's result), and a count of what was
+  replayed, failed and skipped on stderr. Status 0 when every transfer run succeeded, 1 when one
+  failed, 2 for a file that is no capture.
+
+```python
+from tftp.capture import replay_transfers
+
+done = replay_transfers("boot.pcapng", "192.0.2.1", speed=10.0, max_delay=1.0)
+print(len(done.results), "run,", done.skipped, "skipped")
+```
+
 ## Filters
 
 `key=value` clauses joined by `and`; a comma means "any of"; `!=` negates. The grammar is

@@ -1,4 +1,4 @@
-"""The root parser: the six subcommands under one program name, and the run around them."""
+"""The root parser: the seven subcommands under one program name, and the run around them."""
 
 from __future__ import annotations
 
@@ -15,13 +15,14 @@ from .get import Get
 from .ls import Ls
 from .put import Put
 from .relay import RelayCmd
+from .replay import ReplayCmd
 from .serve import Serve
 
 __all__ = ["Pytftp", "execute"]
 
 
 class Pytftp(LoggingArgs, Cli):
-    """TFTP client, server, relay and capture decoder (RFC 1350, 2347-2349, 7440) for IPv4 and IPv6."""
+    """TFTP client, server, relay, capture decoder and replay (RFC 1350, 2347-2349, 7440) for IPv4 and IPv6."""
 
     _parsername_ = "pytftp"
     _logger_name_ = "tftp"
@@ -31,7 +32,7 @@ class Pytftp(LoggingArgs, Cli):
     # get replaces files, so PYTFTP_MCP=stdio is not read.
     _mcp_ = False
     _help_formatter_ = DefaultsFormatter
-    _subcommands_ = [Get, Put, Ls, Serve, RelayCmd, CaptureCmd]
+    _subcommands_ = [Get, Put, Ls, Serve, RelayCmd, CaptureCmd, ReplayCmd]
 
 
 def execute(argv: _ty.Optional[_ty.Sequence[str]]) -> int:

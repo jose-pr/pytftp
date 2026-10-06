@@ -12,6 +12,8 @@ Three sources of :class:`PacketEvent`:
 :func:`dissect_tftp` is TFTP as a pktcap layer (:class:`TFTPLayer`), registered by
 :func:`register_tftp_dissector` and by nothing else.
 
+:func:`replay_transfers` asks a server the caller names for each transfer a capture holds again.
+
 :func:`trace_to` turns a pktcap writer (``pktcap.PcapWriter``,
 ``pktcap.PcapngWriter``) into a trace hook, so a run is recorded for Wireshark, and
 :func:`combine_hooks` joins several trace hooks into the one ``trace=`` takes.
@@ -19,14 +21,13 @@ Three sources of :class:`PacketEvent`:
 
 from __future__ import annotations
 
-import os
-from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union, cast
-
+from ._analysis import Analysis, analyze
 from ._dissector import TFTPLayer, dissect_tftp, register_tftp_dissector
 from ._events import PacketEvent, new_session_id, summarize
 from ._filters import FILTER_KEYS, EventPredicate, compile_filter
 from ._flows import CapturedTransfer, DatagramLike, Endpoint, FlowTracker
 from ._hook import DatagramWriter, combine_hooks, trace_to
+from ._replay import ReplayedTransfers, replay_transfers
 
 __all__ = [
     "PacketEvent",
@@ -45,42 +46,8 @@ __all__ = [
     "TFTPLayer",
     "dissect_tftp",
     "register_tftp_dissector",
+    "ReplayedTransfers",
+    "replay_transfers",
     "Analysis",
     "analyze",
 ]
-
-
-class Analysis(NamedTuple):
-    """The TFTP in a capture: matching events and every transfer seen."""
-
-    events: List[PacketEvent]
-    transfers: List[CapturedTransfer]
-
-
-def analyze(
-    source: Union[str, "os.PathLike[str]", BinaryIO, Iterable[DatagramLike]],
-    *,
-    ports: Iterable[int] = (69,),
-    filter: Optional[str] = None,
-    keep_payloads: bool = True,
-) -> Analysis:
-    """Read a whole capture (path, stream, or datagrams) and reconstruct its transfers.
-
-    A path or a stream is read by ``pktcap.read_datagrams``, which raises
-    ``pktcap.CaptureFormatError`` for a file that is not a capture. ``filter``
-    (see :func:`compile_filter`) selects events; transfers are always
-    reconstructed from everything, and every one is kept: the result holds what
-    the capture holds.
-    """
-    if isinstance(source, (str, os.PathLike)) or hasattr(source, "read"):
-        from pktcap import read_datagrams
-
-        datagrams: Iterable[DatagramLike] = read_datagrams(
-            cast("Union[str, os.PathLike[str], BinaryIO]", source)
-        )
-    else:
-        datagrams = source
-    tracker = FlowTracker(ports, keep_payloads=keep_payloads, max_tracked=None)
-    wanted = compile_filter(filter)
-    events = [e for e in tracker.feed_all(datagrams) if wanted(e)]
-    return Analysis(events, tracker.transfers)

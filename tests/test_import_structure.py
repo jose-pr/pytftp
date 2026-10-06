@@ -122,6 +122,7 @@ _COMMAND_MODULES = {
     "tftp.cli.ls",
     "tftp.cli.put",
     "tftp.cli.relay",
+    "tftp.cli.replay",
     "tftp.cli.serve",
 }
 
@@ -153,6 +154,10 @@ _LOCAL_IMPORTS = {
     ),
     ("path/__init__.py", "tftp.path._uri"): (
         "TFTPURIPath needs uritools, an optional dependency, so it is loaded only when asked for"
+    ),
+    ("capture/_replay.py", "tftp.client._sync"): (
+        "the client core imports capture._hook, so a top-level import here runs while the client "
+        "package is half built"
     ),
     ("server/_core.py", "tftp.backends._filesystem"): (
         "_filesystem imports server._handler, so a top-level import here runs while the "

@@ -55,7 +55,8 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 - **Capture and debugging** — trace every datagram from the client, server or
   relay; write Wireshark-readable pcap or pcapng; read pcap/pcapng files or a
   live `tcpdump` pipe (both through [pktcap](https://github.com/jose-pr/pktcap)),
-  reconstruct each transfer and extract its file.
+  reconstruct each transfer and extract its file, or ask a server for the transfers a
+  capture holds again (`pytftp replay`: reads only, unless told to upload too).
 - **Directory listings** — an opt-in extension between pytftp peers: `pytftp ls`,
   `TFTPClient.listdir()`, and `iterdir`/`walk`/`glob` on paths; other servers
   simply ignore it.
@@ -69,7 +70,7 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 - **Bounded** — limits on requests, sessions (500 by default), sessions per
   client, idle time (60 s by default), window memory and transfer time;
   counters for metrics.
-- **CLI** — `pytftp get|put|serve|relay|capture` with `--json`, `--trace` and
+- **CLI** — `pytftp get|put|ls|serve|relay|capture|replay` with `--json`, `--trace` and
   `--pcap` (optional extra).
 
 ## Installation
@@ -197,6 +198,7 @@ async def fetch():
 pytftp serve --http https://images.example.com/pxe/ --compat pxe
 pytftp relay 10.0.0.20 --route-prefix windows/=wds.lan --trace
 tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
+pytftp replay boot.pcapng 192.0.2.1 --speed 10
 ```
 
 ## API overview
@@ -207,7 +209,7 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.server` | `TFTPServer`, `AsyncTFTPServer`, `TFTPServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
 | `tftp.backends` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` (proxy), `Pipe` |
 | `tftp.relay` | `TFTPRelay` and routing helpers |
-| `tftp.capture` | trace events, `trace_to`, `FlowTracker`, `analyze`, filters (reading and writing a capture are pktcap's) |
+| `tftp.capture` | trace events, `trace_to`, `FlowTracker`, `analyze`, filters, `replay_transfers`, and TFTP as a pktcap layer (`TFTPLayer`, `register_tftp_dissector`); reading and writing a capture are pktcap's |
 | `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |

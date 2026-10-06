@@ -32,7 +32,7 @@ takes every field by keyword.
 | `tftp.client` | `AsyncSink`, `AsyncSource`, `AsyncTFTPClient`, `MODES`, `ProgressFunction`, `RemoteStat`, `SinkLike`, `SourceLike`, `TFTPClient`, `download`, `upload` |
 | `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
 | `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `UpstreamLike`, `by_interface`, `by_prefix`, `by_subnet` |
-| `tftp.capture` | `Analysis`, `CapturedTransfer`, `DatagramLike`, `DatagramWriter`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `TFTPLayer`, `analyze`, `combine_hooks`, `compile_filter`, `dissect_tftp`, `new_session_id`, `register_tftp_dissector`, `summarize`, `trace_to` |
+| `tftp.capture` | `Analysis`, `CapturedTransfer`, `DatagramLike`, `DatagramWriter`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `ReplayedTransfers`, `TFTPLayer`, `analyze`, `combine_hooks`, `compile_filter`, `dissect_tftp`, `new_session_id`, `register_tftp_dissector`, `replay_transfers`, `summarize`, `trace_to` |
 | `tftp.options` | `BUILTIN_OPTIONS`, `Blksize2Option`, `BlksizeOption`, `ClientOptionContext`, `CookieOption`, `DEFAULT_BLKSIZE`, `DEFAULT_REGISTRY`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS`, `MAX_BLKSIZE`, `MAX_UTIMEOUT`, `MAX_WINDOWSIZE`, `MIN_BLKSIZE`, `MIN_UTIMEOUT`, `MstfwindowOption`, `Negotiated`, `OptionHandler`, `OptionRegistry`, `PROFILES`, `Profile`, `RolloverOption`, `STANDARD_OPTIONS`, `SUPPORTED_OPTIONS`, `ServerOptionContext`, `TFTPServerOptions`, `TimeoutOption`, `TsizeOption`, `UtimeoutOption`, `WindowsizeOption`, `XListOption`, `XMtimeOption`, `accept_oack`, `negotiate`, `refuse`, `register_option`, `request_options` |
 | `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
 | `tftp.backends` | `CaseInsensitive`, `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `PerClient`, `Pipe`, `Remap`, `UpstreamBackend`, `normalize_name` |
@@ -943,6 +943,23 @@ destination, payload, fragmented, truncated)`, which `FlowTracker` and
 - **`analyze(source, *, ports=(69,), filter=None, keep_payloads=True) -> Analysis(events, transfers)`**
   — a whole capture (a path or a stream, read by pktcap, or any iterable of
   `DatagramLike`) at once.
+- **`replay_transfers(source, host, port=69, *, ports=(69,), writes=False, speed=1.0, max_delay=5.0, limit=None, timeout=1.0, retries=5) -> ReplayedTransfers(results, skipped)`**
+  — asks the server at `host` and `port` for each transfer the capture `source` (what `analyze`
+  takes) holds again, with a `TFTPClient` built from what the capture's client asked for (its
+  mode, file name and options; `timeout` is the argument's, not the captured value). **It is not a
+  replay of datagrams** (a transfer runs between ports chosen anew), and **nothing is sent to an
+  address the capture holds**: `host` and `port` are the only destination. Transfers run one at a
+  time, in the order their requests were seen, after the wait `pktcap.replay_schedule` gives
+  (`speed=None` removes the waits, `max_delay` is the longest single one, `limit` ends the
+  replay after that many transfers; the rest are neither run nor counted). **A read is asked for
+  again and its octets are discarded; a write is replayed only with `writes=True`, and then it
+  uploads the octets the capture holds and overwrites a file on the server.** A write the capture
+  holds only partly (a missing block, an ERROR, no final acknowledgement) is never replayed. `results`
+  is the `TransferResult` of each transfer run (a failure, an ERROR or a timeout, is one with
+  `error` set and the replay goes on); `skipped` counts the writes not replayed and the transfers
+  the client refuses (a mode it does not send). `ValueError` for an argument out of range,
+  `pktcap.CaptureFormatError` for a file that is not a capture, `OSError` when `host` does not
+  resolve or a socket fails.
 - **Live capture** is `pktcap.sniff(interface=None, *, stop=None,
   dissector=None)`, Linux only (`AF_PACKET`, needs `CAP_NET_RAW`;
   `pktcap.has_live_capture()` asks the platform). Elsewhere pipe
@@ -1185,6 +1202,8 @@ pytftp relay [UPSTREAM] [--route-subnet CIDR=HOST[:PORT]]... [--route-prefix PRE
              [--json] [--trace] [--pcap FILE]
 pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--transfers]
              [--extract DIR] [--json] [--payload]
+pytftp replay FILE|- HOST [-p PORT] [--request-port PORT]... [--writes] [--speed X] [--max-delay S]
+             [--limit N] [-t S] [-r N] [--json]
 ```
 
 `-v`, `-q` and `--loglevel` go before or after the subcommand. `pytftp --help`
@@ -1262,6 +1281,14 @@ served as a tool.
   when every frame was of an unsupported link type the status is 2, otherwise it is not
   changed. A datagram the capture's snap length cut is listed as a packet, and its
   transfer is incomplete.
+- `replay` runs `replay_transfers` over a capture and asks `HOST` (the only address anything is sent
+  to) for each transfer in it again: one line per transfer on stdout (`--json`: its
+  `TransferResult.to_dict()`), and a `replayed N transfers, F failed, S skipped` line on stderr. It
+  asks for reads only: `--writes` also uploads what the capture holds of each write, which
+  overwrites that file on the server, and the help says so. `-p` is the server's port,
+  `--request-port` the capture's request port. Status 0 when every transfer run succeeded
+  (none run is 0), 1 when one failed or `HOST` does not resolve, 2 for a file that is no
+  capture or a value out of range.
 - `serve` and `relay` log each transfer at INFO on stderr (`-v`/`-q` adjust)
   and their final counters when stopped. Ctrl-C, Ctrl-Break and SIGTERM stop
   them, idle or not (the signal wakes the loop through its wake socket; there

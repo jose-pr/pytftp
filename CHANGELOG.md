@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   gives a `TFTPLayer` on the datagrams to the request port, `pktcap.frame_record` writes
   it and the filter `proto=tftp` selects it. Nothing registers on import; the call registers
   in the registry given, or in pktcap's default one.
+- `tftp.capture.replay_transfers(source, host, port=69, *, ports, writes, speed, max_delay, limit,
+  timeout, retries)` and `pytftp replay FILE HOST`: ask a server you name for each transfer a
+  capture holds again, paced by the capture's own times (`speed`, `max_delay` and `limit` as
+  `pktcap.replay_schedule` has them). It is not a replay of datagrams, and it sends nothing to an
+  address in the capture. Reads only by default; `writes=True` / `--writes` also uploads what the
+  capture holds of each write, which overwrites a file on the server, and a write the capture
+  holds only partly is never replayed. It returns `ReplayedTransfers(results, skipped)`.
 - `by_prefix` and `by_subnet` take `"KEY=HOST[:PORT]"` text in a sequence, in place of
   a pair.
 - `pytftp serve --max-duration SECONDS` (the longest a transfer may run),
