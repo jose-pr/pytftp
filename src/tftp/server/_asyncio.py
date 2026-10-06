@@ -16,19 +16,23 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    from netimps import Host, IPAddressLike
+    from netimps import HostLike, InterfaceLike
 
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
+from .._result import TransferResult
+from ..capture._events import PacketEvent
+from ..options._policy import TFTPServerOptions
 from ..packet._enums import TFTPErrorCode
 from ..packet._codec import _encode_error
 from .._loggers import SERVER as log
-from ._core import ServerBase
-from ._handler import ThreadedHandler, has_coroutine_hooks
+from ._core import DEFAULT_MAX_SESSIONS, ServerBase
+from ._handler import AsyncTFTPHandler, ThreadedHandler, has_coroutine_hooks
 from ._listener import _RECV_SIZE, Arrival
-from ._session import Session
+from ._policy import TFTPServerLimits
+from ._session import PortRangeLike, Session
 
 __all__ = ["AsyncTFTPServer"]
 
@@ -79,11 +83,27 @@ class AsyncTFTPServer(ServerBase):
 
     def __init__(
         self,
-        root_or_handler: Any,
+        root_or_handler: Union[str, "os.PathLike[str]", AsyncTFTPHandler, ThreadedHandler],
         *,
-        host: Optional[Union[IPAddressLike, Host]] = None,
+        host: Optional[HostLike] = None,
         port: int = 69,
-        **kwargs: Any,
+        writable: bool = False,
+        create: bool = True,
+        overwrite: bool = False,
+        timeout: float = 1.0,
+        retries: int = 5,
+        options: Optional[TFTPServerOptions] = None,
+        max_sessions: Optional[int] = DEFAULT_MAX_SESSIONS,
+        reply_from_request_address: bool = True,
+        dally: bool = True,
+        on_complete: Optional[Callable[[TransferResult], Any]] = None,
+        limits: Optional[TFTPServerLimits] = None,
+        ignore_broadcast: bool = True,
+        backoff: float = 2.0,
+        max_timeout: Optional[float] = None,
+        trace: Optional[Callable[[PacketEvent], Any]] = None,
+        port_range: Optional[PortRangeLike] = None,
+        interface: InterfaceLike = None,
     ) -> None:
         is_root = isinstance(root_or_handler, (str, os.PathLike))
         if (
@@ -95,7 +115,28 @@ class AsyncTFTPServer(ServerBase):
                 "%s has plain hooks; AsyncTFTPServer takes coroutine hooks, or a synchronous handler "
                 "wrapped as ThreadedHandler(handler)" % type(root_or_handler).__name__
             )
-        super().__init__(root_or_handler, host=host, port=port, **kwargs)
+        super().__init__(
+            root_or_handler,
+            host=host,
+            port=port,
+            writable=writable,
+            create=create,
+            overwrite=overwrite,
+            timeout=timeout,
+            retries=retries,
+            options=options,
+            max_sessions=max_sessions,
+            reply_from_request_address=reply_from_request_address,
+            dally=dally,
+            on_complete=on_complete,
+            limits=limits,
+            ignore_broadcast=ignore_broadcast,
+            backoff=backoff,
+            max_timeout=max_timeout,
+            trace=trace,
+            port_range=port_range,
+            interface=interface,
+        )
         if is_root:
             self.handler = ThreadedHandler(self.handler)
         # Only the adapter returns synchronous streams; a coroutine handler returns asynchronous ones.
@@ -348,7 +389,9 @@ class AsyncTFTPServer(ServerBase):
                 timer.handle.cancel()
             timer.at = due
             delay = max(0.0, due - time.monotonic())
-            timer.handle = self._loop.call_later(delay, self._fire, session)  # type: ignore[union-attr]
+            timer.handle = self._loop.call_later(  # type: ignore[union-attr]  # serving sets the loop first
+                delay, self._fire, session
+            )
 
     def _fire(self, session: Session) -> None:
         timer: _Timer = session.driver

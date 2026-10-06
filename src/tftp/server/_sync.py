@@ -17,6 +17,7 @@ import collections
 import concurrent.futures
 import contextlib
 import heapq
+import os
 import selectors
 import socket
 import sys
@@ -25,7 +26,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, TypeVar, Union
 
 if TYPE_CHECKING:
-    from netimps import Host, IPAddressLike
+    from netimps import HostLike, InterfaceLike
 
 from ..capture._events import PacketEvent
 from ..options._policy import TFTPServerOptions
@@ -35,9 +36,9 @@ from .._result import TransferResult
 from ..transfer._engine import Transfer
 from .._loggers import SERVER as log
 from ._core import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
-from ._handler import has_coroutine_hooks
+from ._handler import TFTPHandler, has_coroutine_hooks
 from ._policy import TFTPServerLimits
-from ._session import Session
+from ._session import PortRangeLike, Session
 
 __all__ = ["SelectorService", "TFTPServer"]
 
@@ -266,9 +267,9 @@ class TFTPServer(SelectorService, ServerBase):
 
     def __init__(
         self,
-        root_or_handler: Any,
+        root_or_handler: Union[str, "os.PathLike[str]", TFTPHandler],
         *,
-        host: Optional[Union[IPAddressLike, Host]] = None,
+        host: Optional[HostLike] = None,
         port: int = 69,
         writable: bool = False,
         create: bool = True,
@@ -287,8 +288,8 @@ class TFTPServer(SelectorService, ServerBase):
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         open_in_thread: Optional[bool] = None,
         workers: int = 8,
-        port_range: Any = None,
-        interface: Any = None,
+        port_range: Optional[PortRangeLike] = None,
+        interface: InterfaceLike = None,
     ) -> None:
         if has_coroutine_hooks(root_or_handler):
             raise TypeError(

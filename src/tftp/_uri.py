@@ -37,6 +37,7 @@ survives ``str(TFTPURL.parse(text))``.
 from __future__ import annotations
 
 import ipaddress
+import os  # the string annotations name os.PathLike, which get_type_hints resolves here
 import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -44,6 +45,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import quote, quote_from_bytes, unquote, unquote_to_bytes
 
 from ._arguments import check_seconds
+from ._result import TransferResult
+from .client._core import ProgressFunction, SinkLike, SourceLike
 from .client._sync import TFTPClient
 from .exceptions import TFTPValueError
 from .options._negotiate import request_options
@@ -438,7 +441,9 @@ class TFTPURL:
         return "tftp://%s/%s%s" % (authority, file, "".join(";" + parameter for parameter in parameters))
 
 
-def download_url(url: str, dst: Any, /, *, progress: Optional[Any] = None, **client_options: Any):
+def download_url(
+    url: str, dst: SinkLike, /, *, progress: Optional[ProgressFunction] = None, **client_options: Any
+) -> TransferResult:
     """Download the file a ``tftp://`` URL names; ``client_options`` go to ``TFTPClient``.
 
     The URL's options become ``TFTPClient`` keywords; a keyword in
@@ -451,7 +456,14 @@ def download_url(url: str, dst: Any, /, *, progress: Optional[Any] = None, **cli
     ).download(target.filename, dst, mode=target.mode, progress=progress)
 
 
-def upload_url(url: str, src: Any, /, *, progress: Optional[Any] = None, **client_options: Any):
+def upload_url(
+    url: str,
+    src: SourceLike,
+    /,
+    *,
+    progress: Optional[ProgressFunction] = None,
+    **client_options: Any,
+) -> TransferResult:
     """Upload to the file a ``tftp://`` URL names; ``client_options`` go to ``TFTPClient``.
 
     The URL's options and the precedence are as for :func:`download_url`.

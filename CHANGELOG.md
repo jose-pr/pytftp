@@ -305,6 +305,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `upload_url` and `TransferResult` are imported from `tftp`, where they were already
   exported. `tftp.transfer`, `tftp.listing` and `tftp.netascii` stay public topic modules.
 
+- **Annotations are complete and true.** The package is checked with mypy (Linux, macOS
+  and Windows). Every public callable is annotated, and every public annotation resolves
+  with `typing.get_type_hints` on Python 3.9, except the signatures that name a netimps
+  type (netimps is imported lazily) and `TFTPClient.path`. Where an annotation said more
+  than the code did, it now says what is true: the servers' and the relay's `host=` is a
+  netimps `HostLike` (an `int` or `bytes` address was never accepted: it raised `TypeError`
+  from `bind()`); `by_interface` keys are `HostLike`, an `Interface` or an `int`;
+  `AsyncTFTPServer`'s keywords are spelled out instead of `**kwargs`; `Sender`, `Receiver`
+  and `Transfer` take `backoff`, `max_timeout`, `expires` and `max_idle` as keyword
+  parameters; `TFTPRequestContext.options` is a read-only mapping and
+  `TFTPRequestContext.interface` a `netimps.Interface` or `None`; `download` and `upload`
+  take any object with `write(data)` or `readinto(buffer)`/`read(size)`, as they always
+  did, and `AsyncTFTPClient.download` and `upload` name the asynchronous stream shapes.
+- **Public aliases are exported.** `tftp.client`: `SinkLike`, `SourceLike`,
+  `ProgressFunction`, `AsyncSink`, `AsyncSource`; `tftp.transfer`: `SendFunction`,
+  `SupportsWrite`, `SupportsReadinto`, `SupportsRead`; `tftp.relay`: `UpstreamLike`;
+  `tftp.capture`: `EventPredicate`, `Endpoint`. `OptionRegistry.copy()` returns the
+  subclass it was called on.
+
 ### Renamed
 
 Old names are not kept as aliases.
@@ -356,6 +375,8 @@ Old names are not kept as aliases.
 
 ### Fixed
 
+- **`RemoteError()` with no code raised `TypeError`.** It now carries the undefined code
+  (0), as `TFTPError()` does.
 - **`pytftp get`, `put` and `ls` report a failure in one line.** A download to a directory
   that does not exist or that is a directory, and a host that does not resolve, ended with a
   Python traceback (`get` and `put` caught `TFTPError` only); the three commands now share

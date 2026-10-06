@@ -31,7 +31,7 @@ Every class is rebuilt by ``type(*args)``, so each one copies and pickles.
 from __future__ import annotations
 
 import errno
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple, Type
 
 from .packet._enums import TFTPErrorCode
 
@@ -142,7 +142,9 @@ class RemoteError(TFTPError):
     expects the builtin.
     """
 
-    _CODE: Optional[int] = None
+    _CODE: int = TFTPErrorCode.NOT_DEFINED
+    #: Set by the client on an ERROR that answered the request itself, which may be about its options.
+    _in_request: bool = False
 
     def __init__(self, code: Optional[int] = None, message: str = "") -> None:
         super().__init__(self._CODE if code is None else code, message)
@@ -201,7 +203,7 @@ class OptionNegotiationError(RemoteError):
     _CODE = TFTPErrorCode.OPTION_REFUSED
 
 
-_REMOTE_CLASSES = {
+_REMOTE_CLASSES: Dict[int, Type[RemoteError]] = {
     cls._CODE: cls
     for cls in (
         FileNotFound,
@@ -301,7 +303,7 @@ class WouldBlock(BlockingIOError):
     """
 
 
-_MESSAGES = {
+_MESSAGES: Dict[int, str] = {
     TFTPErrorCode.NOT_DEFINED: "error",
     TFTPErrorCode.FILE_NOT_FOUND: "file not found",
     TFTPErrorCode.ACCESS_VIOLATION: "access violation",
@@ -315,7 +317,7 @@ _MESSAGES = {
 
 
 def _default_message(code: int) -> str:
-    return _MESSAGES.get(code, "error")  # type: ignore[call-overload]
+    return _MESSAGES.get(code, "error")
 
 
 _ERRNO_CODES = {

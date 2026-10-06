@@ -15,16 +15,22 @@ use :class:`tftp.relay.TFTPRelay` instead.
 from __future__ import annotations
 
 import threading
-from typing import Any, Callable, Mapping, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional, Tuple, Union
+
+if TYPE_CHECKING:
+    from netimps import HostLike
 
 from ..exceptions import RemoteError, TFTPError
 from ..client._sync import TFTPClient
+from ..options._handler import Negotiated
 from ..packet._enums import TFTPErrorCode
+from ..server._handler import TFTPRequestContext
 from ._pipe import Pipe
 
 __all__ = ["UpstreamBackend"]
 
-Upstream = Union[str, Tuple[str, int]]
+#: A server: a host (``"name"``, ``"name:port"``, an address) or a ``(host, port)`` pair.
+_Target = Union["HostLike", Tuple["HostLike", int]]
 
 
 class _PipeSink:
@@ -36,7 +42,7 @@ class _PipeSink:
         self._pipe = pipe
         self._timeout = timeout
 
-    def write(self, data) -> int:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
         self._pipe.put(data, timeout=self._timeout)
         return len(data)
 
@@ -84,7 +90,7 @@ class UpstreamBackend:
 
     def __init__(
         self,
-        upstream: Union[Upstream, Callable[[Any], Upstream]],
+        upstream: Union[_Target, Callable[[TFTPRequestContext], _Target]],
         *,
         client_options: Optional[Mapping[str, Any]] = None,
         buffer: int = 1 << 20,
@@ -97,7 +103,7 @@ class UpstreamBackend:
         self.stall_timeout = stall_timeout
         self.writable = writable
 
-    def _client(self, context: Any, on_negotiated: Callable[..., Any]):
+    def _client(self, context: TFTPRequestContext, on_negotiated: Callable[..., Any]) -> TFTPClient:
         target = self.upstream(context) if callable(self.upstream) else self.upstream
         if isinstance(target, tuple):
             host, port = target
@@ -107,12 +113,12 @@ class UpstreamBackend:
         options["on_negotiated"] = on_negotiated
         return TFTPClient(host, port, **options)
 
-    def _start(self, context: Any, work: Callable[[Any], None], pipe: Pipe) -> Pipe:
+    def _start(self, context: TFTPRequestContext, work: Callable[[TFTPClient], object], pipe: Pipe) -> Pipe:
         """Run ``work(client)`` in a thread; return once the upstream has answered."""
         answered = threading.Event()
         failure: list = []
 
-        def on_negotiated(negotiated, peer) -> None:
+        def on_negotiated(negotiated: Negotiated, peer: Tuple[Any, ...]) -> None:
             if negotiated.tsize is not None and pipe.size is None:
                 pipe.size = negotiated.tsize
             answered.set()
@@ -144,14 +150,14 @@ class UpstreamBackend:
             raise _relayable(failure[0])
         return pipe
 
-    def open_read(self, context: Any) -> Pipe:
+    def open_read(self, context: TFTPRequestContext) -> Pipe:
         pipe = Pipe(self.buffer)
         sink = _PipeSink(pipe, self.stall_timeout)
         return self._start(
             context, lambda client: client.download(context.filename, sink, mode=context.mode), pipe
         )
 
-    def open_write(self, context: Any, size: Optional[int]) -> Pipe:
+    def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> Pipe:
         if not self.writable:
             raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION, "server is read-only")
         pipe = Pipe(self.buffer, size).for_upload()

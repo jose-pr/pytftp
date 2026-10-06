@@ -227,6 +227,7 @@ class Serve(Traced):
             return 1
         logger = _logging.getLogger("tftp")
         address = server.server_address
+        assert address is not None  # bound above
         source = self.http or (self.upstream and "upstream " + self.upstream) or _os.path.abspath(self.root)
         logger.info(
             "serving %s on %s port %d%s%s",

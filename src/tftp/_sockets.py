@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 import socket
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 __all__ = ["fit_window", "sockaddr", "same_host", "local_towards"]
 
@@ -72,7 +73,7 @@ def _zone_index(zone: str) -> int:
     return socket.if_nametoindex(zone)
 
 
-def sockaddr(address, port: int) -> Tuple:
+def sockaddr(address: Union[ipaddress.IPv4Address, ipaddress.IPv6Address], port: int) -> Tuple[Any, ...]:
     """The destination to send to: ``(host, port)``, or for IPv6 ``(host, port, 0, scope_id)``.
 
     ``address`` is an ``ipaddress`` object. A zone (``fe80::1%10``) becomes the
@@ -101,8 +102,8 @@ def _identity(addr: Tuple) -> Tuple:
         ip = ipaddress.ip_address(host)
     except ValueError:
         return (host, scope)
-    if ip.version == 6 and ip.ipv4_mapped is not None:  # type: ignore[union-attr]
-        ip = ip.ipv4_mapped  # type: ignore[union-attr]
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
     return (ip.packed, scope)
 
 

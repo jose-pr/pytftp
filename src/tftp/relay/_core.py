@@ -24,7 +24,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    from netimps import Host, IPAddressLike
+    from netimps import HostLike, InterfaceLike
 
 from .._sockets import local_towards, same_host, sockaddr
 from ..capture._hook import HookGuard, guard
@@ -37,8 +37,8 @@ from ..server._sync import SelectorService
 from ..server._handler import TFTPRequestContext
 from ..server._listener import Arrival, Listener
 from ..server._policy import TFTPServerLimits
-from ..server._session import PortAllocator, as_port_range, bind_transfer
-from ._routing import RouteFunction, Upstream
+from ..server._session import PortAllocator, PortRangeLike, as_port_range, bind_transfer
+from ._routing import RouteFunction, Upstream, UpstreamLike
 from ..server._stats import RELAY_COUNTERS, TFTPStats
 from .._loggers import RELAY as log
 from ._session import RelaySession, RelaySummary
@@ -87,22 +87,22 @@ class TFTPRelay(SelectorService):
 
     def __init__(
         self,
-        route: Any,
+        route: Union[RouteFunction, UpstreamLike],
         *,
-        host: Optional[Union[IPAddressLike, Host]] = None,
+        host: Optional[HostLike] = None,
         port: int = 69,
         idle_timeout: float = 30.0,
         max_duration: float = 3600.0,
         linger: float = 2.0,
-        upstream_src: Optional[Union[IPAddressLike, Host]] = None,
+        upstream_src: Optional[HostLike] = None,
         limits: Optional[TFTPServerLimits] = None,
         max_sessions: Optional[int] = None,
         ignore_broadcast: bool = True,
         reply_from_request_address: bool = True,
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         on_session_end: Optional[Callable[[RelaySummary], Any]] = None,
-        port_range: Any = None,
-        interface: Any = None,
+        port_range: Optional[PortRangeLike] = None,
+        interface: InterfaceLike = None,
     ) -> None:
         if callable(route):
             self.route: RouteFunction = route
@@ -140,7 +140,7 @@ class TFTPRelay(SelectorService):
         self._wake_r: Any = None
         self._wake_w: Any = None
         self._sessions: Dict[Tuple[str, int], RelaySession] = {}
-        self._resolved: Dict[str, Tuple[Any, float]] = {}
+        self._resolved: Dict["HostLike", Tuple[Any, float]] = {}
         self._buf = bytearray(_RECV)
         self._init_service()
 
@@ -243,7 +243,15 @@ class TFTPRelay(SelectorService):
 
     # -- forwarding ---------------------------------------------------------------
 
-    def _emit(self, session: Optional[RelaySession], sock: socket.socket, data, peer, direction, leg) -> None:
+    def _emit(
+        self,
+        session: Optional[RelaySession],
+        sock: socket.socket,
+        data: Union[bytes, bytearray, memoryview],
+        peer: Tuple[Any, ...],
+        direction: str,
+        leg: str,
+    ) -> None:
         self._trace_guard = trace = guard(self.trace, log, self._trace_guard)
         if trace is None:
             return
@@ -253,11 +261,25 @@ class TFTPRelay(SelectorService):
             local = ()
         trace(
             PacketEvent(
-                time.time(), direction, local, peer, bytes(data), "relay", session and session.id, leg
+                time.time(),
+                direction,
+                local,
+                peer,
+                bytes(data),
+                "relay",
+                None if session is None else session.id,
+                leg,
             )
         )
 
-    def _send(self, session: RelaySession, sock: socket.socket, data, peer, direction: str = "out") -> None:
+    def _send(
+        self,
+        session: RelaySession,
+        sock: socket.socket,
+        data: Union[bytes, bytearray, memoryview],
+        peer: Tuple[Any, ...],
+        direction: str = "out",
+    ) -> None:
         try:
             sock.sendto(data, peer)
         except OSError:
@@ -304,14 +326,14 @@ class TFTPRelay(SelectorService):
                 log.exception("relaying a request from %s failed", sender[:2])
                 self._discard(key)
 
-    def _open(self, arrival: Arrival, key, now: float) -> None:
+    def _open(self, arrival: Arrival, key: Tuple[str, int], now: float) -> None:
         self.stats.add("requests")
         if not self._open_session(arrival, key, now):
             self.stats.add("refused")
         else:
             self.stats.add("started")
 
-    def _open_session(self, arrival: Arrival, key, now: float) -> bool:
+    def _open_session(self, arrival: Arrival, key: Tuple[str, int], now: float) -> bool:
         data, sender, local, ifindex = arrival[:4]
         if len(data) > self.limits.max_request_size:
             self._listener.reply_error(sender, TFTPErrorCode.ILLEGAL_OPERATION, "request too large")
@@ -408,7 +430,7 @@ class TFTPRelay(SelectorService):
                 session.observe(data, True, now, self.linger)
                 self._send(session, session.up, data, session.upstream_tid)
 
-    def _discard(self, key) -> None:
+    def _discard(self, key: Tuple[str, int]) -> None:
         """Drop a session whose opening failed half-way."""
         session = self._sessions.get(key)
         if session is not None:

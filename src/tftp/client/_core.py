@@ -27,6 +27,7 @@ from typing import (
     Union,
 )
 
+from .._streams import SupportsRead, SupportsReadinto, SupportsWrite
 from .._arguments import check_family, check_int, check_seconds, check_source
 from .._sockets import local_towards, same_host, sockaddr
 from ..capture._hook import HookGuard, guard
@@ -45,7 +46,7 @@ from ..options._registry import OptionRegistry
 from ..options._negotiate import accept_oack, request_options
 from ..options._handler import read_decimal
 from ..packet._enums import TFTPErrorCode, TFTPOpcode
-from ..packet._codec import decode, encode_ack, encode_request
+from ..packet._codec import ErrorPacket, OptionAckPacket, encode_ack, encode_request
 from ..packet._codec import _encode_error
 from ..server._handler import AtomicWriter
 from .._loggers import CLIENT as log
@@ -61,8 +62,11 @@ _RECV_BUFFER = 65536
 #: Transfer modes this library speaks. ``mail`` (obsolete since RFC 1350) is not.
 MODES = ("octet", "netascii")
 
-PathOrFile = Union[str, "os.PathLike[str]", BinaryIO]
-Progress = Callable[[int, Optional[int]], Any]
+#: Where a download goes: a path, or any object with ``write(data)``.
+SinkLike = Union[str, "os.PathLike[str]", SupportsWrite]
+#: What an upload sends: a path, bytes, or any object with ``readinto(buffer)`` or ``read(size)``.
+SourceLike = Union[str, "os.PathLike[str]", bytes, bytearray, memoryview, SupportsReadinto, SupportsRead]
+ProgressFunction = Callable[[int, Optional[int]], Any]
 
 
 def _mode(mode: str) -> str:
@@ -106,7 +110,7 @@ _OPTION_ERRORS = frozenset(
 )
 
 
-def _is_first_packet(view, n: int, is_read: bool) -> bool:
+def _is_first_packet(view: memoryview, n: int, is_read: bool) -> bool:
     """The packet an option-less server starts with: DATA 1 for a read, ACK 0 for a write."""
     if n < 4 or view[0] != 0:
         return False
@@ -116,7 +120,7 @@ def _is_first_packet(view, n: int, is_read: bool) -> bool:
 
 def _repeats_without_options(exc: RemoteError) -> bool:
     """The request itself was answered with an ERROR that may be about its options."""
-    return exc.code in _OPTION_ERRORS and getattr(exc, "_in_request", False)
+    return exc.code in _OPTION_ERRORS and exc._in_request
 
 
 #: What ``listdir`` accepts of a listing, in octets: a directory entry is a line.
@@ -174,18 +178,20 @@ class _PathSink:
         """The download succeeded: put it in place (``OSError`` when that fails)."""
         if self._file is not None:
             self._file.close()
-        else:
-            self._atomic.close()  # type: ignore[union-attr]
+        elif self._atomic is not None:
+            self._atomic.close()
 
     def abort(self) -> None:
         """The download failed or was interrupted: leave what was there."""
         if self._file is not None:
             self._file.close()
-        else:
-            self._atomic.abort()  # type: ignore[union-attr]
+        elif self._atomic is not None:
+            self._atomic.abort()
 
 
-def _bounded(write: Callable[[memoryview], Any], limit: Optional[int], announced: Optional[int]) -> Callable:
+def _bounded(
+    write: Callable[[Union[bytes, memoryview]], object], limit: Optional[int], announced: Optional[int]
+) -> Callable[[Union[bytes, memoryview]], object]:
     """``write`` refusing the octets past ``limit`` and past the ``announced`` size.
 
     A block that would pass either is not written. A write that raises
@@ -193,7 +199,7 @@ def _bounded(write: Callable[[memoryview], Any], limit: Optional[int], announced
     """
     done = 0
 
-    def bounded(view: memoryview) -> Any:
+    def bounded(view: Union[bytes, memoryview]) -> object:
         nonlocal done
         total = done + len(view)
         if limit is not None and total > limit:
@@ -224,6 +230,15 @@ def _mtu_blksize(server: Any) -> int:
     return max(MIN_BLKSIZE, min(fits, MAX_BLKSIZE))
 
 
+def _blksize_number(blksize: Union[int, str, None]) -> Optional[int]:
+    """``blksize`` as the number a request carries: ``None`` for ``'mtu'``, which is measured per server."""
+    if blksize == "mtu":
+        return None
+    if isinstance(blksize, str):
+        raise ValueError("blksize must be an int, None or 'mtu'")
+    return blksize
+
+
 _Client = TypeVar("_Client", bound="_ClientBase")
 
 
@@ -243,7 +258,7 @@ class _ClientBase:
         rollover: Optional[int] = None,
         timeout_option: bool = True,
         family: int = 0,
-        src: Optional[Tuple[Any, ...]] = None,
+        src: Optional[Tuple["HostLike", int]] = None,
         fallback: bool = True,
         dally: bool = False,
         backoff: float = 2.0,
@@ -272,12 +287,8 @@ class _ClientBase:
         check_family(family)
         src = check_source(src)
         # Validate the options now rather than on the first transfer.
-        if blksize == "mtu":
-            pass
-        elif isinstance(blksize, str):
-            raise ValueError("blksize must be an int, None or 'mtu'")
         request_options(
-            blksize=blksize if blksize != "mtu" else None,  # type: ignore[arg-type]
+            blksize=_blksize_number(blksize),
             windowsize=windowsize,
             rollover=rollover,
             extra=extra_options,
@@ -311,11 +322,9 @@ class _ClientBase:
         tsize = None
         if self.tsize:
             tsize = 0 if is_read else size
-        blksize = self.blksize
-        if blksize == "mtu":
-            blksize = _mtu_blksize(server)
+        blksize = _mtu_blksize(server) if self.blksize == "mtu" else _blksize_number(self.blksize)
         return request_options(
-            blksize=blksize,  # type: ignore[arg-type]
+            blksize=blksize,
             windowsize=self.windowsize,
             timeout=self.timeout if self.timeout_option else None,
             tsize=tsize,
@@ -324,7 +333,14 @@ class _ClientBase:
             extra=self.extra_options,
         )
 
-    def _first_response(self, view, n: int, options, is_read: bool, send) -> Tuple[Negotiated, bool]:
+    def _first_response(
+        self,
+        view: memoryview,
+        n: int,
+        options: Mapping[str, str],
+        is_read: bool,
+        send: Callable[[bytes], Any],
+    ) -> Tuple[Negotiated, bool]:
         """Interpret the server's answer to the request: ``(negotiated, first_data)``.
 
         ``first_data`` is true when the answer is DATA 1 itself (an RRQ whose
@@ -338,12 +354,12 @@ class _ClientBase:
         op = view[1] if n >= 2 and view[0] == 0 else -1
         try:
             if op == TFTPOpcode.ERROR:
-                packet = decode(view[:n])
-                refused = RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
-                refused._in_request = True  # type: ignore[attr-defined]
+                packet = ErrorPacket.decode(view[:n])
+                refused = RemoteError.from_code(packet.code, packet.message)
+                refused._in_request = True
                 raise refused
             if op == TFTPOpcode.OACK:
-                oack = decode(view[:n]).options  # type: ignore[union-attr]
+                oack = OptionAckPacket.decode(view[:n]).options
                 try:
                     negotiated = accept_oack(
                         options, oack, is_read=is_read, timeout=self.timeout, registry=self.registry
@@ -378,9 +394,9 @@ class _ClientBase:
         from netimps import Host
 
         host, port = self._target()
-        address = Host(host).ip(
-            check=True, ipv6={socket.AF_INET6: True, socket.AF_INET: False}.get(self.family)
-        )
+        want_ipv6: Dict[int, bool] = {socket.AF_INET6: True, socket.AF_INET: False}
+        address = Host(host).ip(check=True, ipv6=want_ipv6.get(self.family))
+        assert address is not None  # check=True raises for a name that does not resolve
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
         return family, sockaddr(address, port), address
 
@@ -432,7 +448,9 @@ class _ClientBase:
         self._trace_guard = guard(self.trace, log, self._trace_guard)
         return self._trace_guard
 
-    def _emitter(self, sock, server) -> Optional[Callable[[Any, str, Tuple[Any, ...]], None]]:
+    def _emitter(
+        self, sock: socket.socket, server: Tuple[Any, ...]
+    ) -> Optional[Callable[[Any, str, Tuple[Any, ...]], None]]:
         """``emit(data, direction, remote)`` reporting to ``trace``, or ``None``.
 
         The events' local address is the one the route to ``server`` uses.
@@ -443,12 +461,21 @@ class _ClientBase:
         session_id = new_session_id("c")
         local = local_towards(sock, server)
 
-        def emit(data, direction: str, remote) -> None:
+        def emit(data: Any, direction: str, remote: Tuple[Any, ...]) -> None:
             trace(PacketEvent(time.time(), direction, local, remote, bytes(data), "client", session_id))
 
         return emit
 
-    def _request(self, sock, server, request: bytes, buf, view, expires, emit) -> Tuple[int, Tuple[Any, ...]]:
+    def _request(
+        self,
+        sock: socket.socket,
+        server: Tuple[Any, ...],
+        request: bytes,
+        buf: bytearray,
+        view: memoryview,
+        expires: Optional[float],
+        emit: Optional[Callable[[Any, str, Tuple[Any, ...]], None]],
+    ) -> Tuple[int, Tuple[Any, ...]]:
         """Send ``request`` (retrying with backoff) until the server answers: ``(n, peer)``."""
         clock = time.monotonic
         sock.sendto(request, server)
@@ -546,7 +573,7 @@ class _ClientBase:
             emit = self._emitter(sock, server)
             n, peer = self._request(sock, server, request, buf, view, expires, emit)
 
-            def send(packet) -> None:
+            def send(packet: bytes) -> None:
                 sock.sendto(packet, peer)
                 if emit is not None:
                     emit(packet, "out", peer)
@@ -554,10 +581,10 @@ class _ClientBase:
             op = view[1] if n >= 2 and view[0] == 0 else -1
             try:
                 if op == TFTPOpcode.ERROR:
-                    packet = decode(view[:n])
-                    raise RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
+                    packet = ErrorPacket.decode(view[:n])
+                    raise RemoteError.from_code(packet.code, packet.message)
                 if op == TFTPOpcode.OACK:
-                    oack = dict(decode(view[:n]).options)  # type: ignore[union-attr]
+                    oack = dict(OptionAckPacket.decode(view[:n]).options)
                     send(_encode_error(TFTPErrorCode.OPTION_REFUSED, "size probe only"))
                     return oack, None
             except TFTPDecodeError as exc:

@@ -7,7 +7,7 @@ import io
 import os
 import socket
 import time
-from typing import TYPE_CHECKING, Any, BinaryIO, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, List, Mapping, Optional, Tuple, Union
 
 from .. import listing
 from ..exceptions import RemoteError
@@ -25,8 +25,9 @@ from ..transfer._engine import Transfer, as_readinto, as_write
 from ._core import (
     _RECV_BUFFER,
     LISTING_LIMIT,
-    PathOrFile,
-    Progress,
+    SinkLike,
+    SourceLike,
+    ProgressFunction,
     RemoteStat,
     _ClientBase,
     _mode,
@@ -38,8 +39,10 @@ from ._core import (
     _source_size,
 )
 
-if TYPE_CHECKING:  # netimps is imported lazily at run time
+if TYPE_CHECKING:  # netimps and pathlib_next are imported lazily at run time
     from netimps import HostLike
+
+    from ..path._local import TFTPPath
 
 __all__ = ["TFTPClient", "download", "upload"]
 
@@ -109,10 +112,10 @@ class TFTPClient(_ClientBase):
     def download(
         self,
         filename: str,
-        dst: PathOrFile,
+        dst: SinkLike,
         *,
         mode: str = "octet",
-        progress: Optional[Progress] = None,
+        progress: Optional[ProgressFunction] = None,
         max_size: Optional[int] = None,
     ) -> TransferResult:
         """Fetch ``filename`` into ``dst`` (a path or a writable binary file).
@@ -138,11 +141,11 @@ class TFTPClient(_ClientBase):
             return result
         return self._download(filename, dst, mode, progress, limit)
 
-    def path(self, *segments: Any, mode: str = "octet") -> Any:
+    def path(self, *segments: Any, mode: str = "octet") -> TFTPPath:
         """A :class:`tftp.path.TFTPPath` on this server (needs the ``path`` extra)."""
         from ..path._local import TFTPPath
 
-        return TFTPPath(*segments, client=self, mode=mode)
+        return TFTPPath(*segments, client=self, mode=mode)  # type: ignore[abstract]  # pathlib_next's empty bodies
 
     def get(self, filename: str, *, mode: str = "octet", max_size: Optional[int] = None) -> bytes:
         """Fetch ``filename`` and return its contents."""
@@ -153,10 +156,10 @@ class TFTPClient(_ClientBase):
     def upload(
         self,
         filename: str,
-        src: Union[PathOrFile, bytes, bytearray, memoryview],
+        src: SourceLike,
         *,
         mode: str = "octet",
-        progress: Optional[Progress] = None,
+        progress: Optional[ProgressFunction] = None,
     ) -> TransferResult:
         """Send ``src`` (a path, a readable binary file or bytes) as ``filename``."""
         mode = _mode(mode)
@@ -174,7 +177,12 @@ class TFTPClient(_ClientBase):
     # -- internals --------------------------------------------------------
 
     def _download(
-        self, filename: str, sink: BinaryIO, mode: str, progress: Optional[Progress], limit: Optional[int]
+        self,
+        filename: str,
+        sink: Any,
+        mode: str,
+        progress: Optional[ProgressFunction],
+        limit: Optional[int],
     ) -> TransferResult:
         writer: Any = NetasciiWriter(sink) if mode == "netascii" else sink
         write = as_write(writer)
@@ -184,7 +192,7 @@ class TFTPClient(_ClientBase):
         return result
 
     def _upload(
-        self, filename: str, source: BinaryIO, mode: str, progress: Optional[Progress]
+        self, filename: str, source: Any, mode: str, progress: Optional[ProgressFunction]
     ) -> TransferResult:
         size: Optional[int]
         if mode == "netascii":
@@ -196,7 +204,17 @@ class TFTPClient(_ClientBase):
         read = as_readinto(reader)
         return self._run(TFTPOpcode.WRQ, filename, mode, size, None, read, progress, None)
 
-    def _run(self, opcode, filename, mode, size, write, read, progress, limit) -> TransferResult:
+    def _run(
+        self,
+        opcode: int,
+        filename: str,
+        mode: str,
+        size: Optional[int],
+        write: Optional[Callable[[Union[bytes, memoryview]], object]],
+        read: Optional[Callable[[memoryview], int]],
+        progress: Optional[ProgressFunction],
+        limit: Optional[int],
+    ) -> TransferResult:
         family, server, address = self._endpoint()
         options = self._options(opcode == TFTPOpcode.RRQ, size, address)
         with self._socket(family) as sock:
@@ -259,7 +277,18 @@ class TFTPClient(_ClientBase):
         return listing.loads(sink.getvalue())
 
     def _exchange(
-        self, sock, server, opcode, filename, mode, options, write, read, progress, started, limit
+        self,
+        sock: socket.socket,
+        server: Tuple[Any, ...],
+        opcode: int,
+        filename: str,
+        mode: str,
+        options: Mapping[str, str],
+        write: Optional[Callable[[Union[bytes, memoryview]], object]],
+        read: Optional[Callable[[memoryview], int]],
+        progress: Optional[ProgressFunction],
+        started: float,
+        limit: Optional[int],
     ) -> TransferResult:
         is_read = opcode == TFTPOpcode.RRQ
         request = encode_request(opcode, filename, mode=mode, options=options)
@@ -275,22 +304,28 @@ class TFTPClient(_ClientBase):
         fit_window(sock, requested_blksize, int(options.get("windowsize", 1)))
 
         expires = None if self.deadline is None else started + self.deadline
-        engine = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
 
         emit = self._emitter(sock, server)
-        trace = emit
         n, peer = self._request(sock, server, request, buf, view, expires, emit)
 
-        if trace is None:
+        if emit is None:
 
-            def send(packet, _sendto=sock.sendto, _peer=peer):
+            def send(
+                packet: Union[bytes, memoryview],
+                _sendto: Callable[..., int] = sock.sendto,
+                _peer: Tuple[Any, ...] = peer,
+            ) -> int:
                 return _sendto(packet, _peer)
 
         else:
 
-            def send(packet, _sendto=sock.sendto, _peer=peer):
+            def send(
+                packet: Union[bytes, memoryview],
+                _sendto: Callable[..., int] = sock.sendto,
+                _peer: Tuple[Any, ...] = peer,
+            ) -> int:
                 result = _sendto(packet, _peer)
-                emit(packet, "out", _peer)  # type: ignore[misc]
+                emit(packet, "out", _peer)
                 return result
 
         session: Transfer
@@ -302,15 +337,36 @@ class TFTPClient(_ClientBase):
         now = clock()
         if is_read:
             self._admit(negotiated, send, limit)
+            assert write is not None  # a download is given its sink
             announced = negotiated.tsize if mode == "octet" else None
             if limit is not None or announced is not None:
                 write = _bounded(write, limit, announced)
             reply = None if first_data else encode_ack(0)
-            session = Receiver(send, write, negotiated, self.retries, now, reply=reply, **engine)
+            session = Receiver(
+                send,
+                write,
+                negotiated,
+                self.retries,
+                now,
+                reply=reply,
+                backoff=self.backoff,
+                max_timeout=self.max_timeout,
+                expires=expires,
+            )
             if first_data:
                 session.handle(view, n, now)
         else:
-            session = Sender(send, read, negotiated, self.retries, now, **engine)
+            assert read is not None  # an upload is given its source
+            session = Sender(
+                send,
+                read,
+                negotiated,
+                self.retries,
+                now,
+                backoff=self.backoff,
+                max_timeout=self.max_timeout,
+                expires=expires,
+            )
 
         total = negotiated.tsize
         reported = -1
@@ -350,13 +406,13 @@ class TFTPClient(_ClientBase):
                     continue
                 except ConnectionResetError:  # pragma: no cover - connreset is off
                     continue
-                if trace is not None:
+                if emit is not None:
                     emit(view[:n], "in", addr)
                 if addr[1] != peer_port or addr[0] != peer_host:
                     try:
                         stray = _encode_error(TFTPErrorCode.UNKNOWN_TID)
                         sock.sendto(stray, addr)
-                        if trace is not None:
+                        if emit is not None:
                             emit(stray, "out", addr)
                     except OSError:
                         pass
@@ -383,7 +439,7 @@ class TFTPClient(_ClientBase):
                     n, addr = recv_into(buf)
                 except (socket.timeout, ConnectionResetError):
                     break
-                if trace is not None:
+                if emit is not None:
                     emit(view[:n], "in", addr)
                 if addr[1] == peer_port and addr[0] == peer_host:
                     session.handle(view, n, clock())
@@ -405,12 +461,12 @@ class TFTPClient(_ClientBase):
 def download(
     host: "HostLike",
     filename: str,
-    dst: PathOrFile,
+    dst: SinkLike,
     /,
     *,
     port: int = 69,
     mode: str = "octet",
-    progress: Optional[Progress] = None,
+    progress: Optional[ProgressFunction] = None,
     **client_options: Any,
 ) -> TransferResult:
     """One-shot :meth:`TFTPClient.download`; ``client_options`` go to :class:`TFTPClient`."""
@@ -420,12 +476,12 @@ def download(
 def upload(
     host: "HostLike",
     filename: str,
-    src: Union[PathOrFile, bytes],
+    src: SourceLike,
     /,
     *,
     port: int = 69,
     mode: str = "octet",
-    progress: Optional[Progress] = None,
+    progress: Optional[ProgressFunction] = None,
     **client_options: Any,
 ) -> TransferResult:
     """One-shot :meth:`TFTPClient.upload`; ``client_options`` go to :class:`TFTPClient`."""

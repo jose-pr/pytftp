@@ -14,7 +14,7 @@ listing, deleting, renaming, ``move()`` from TFTP and directories raise
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 try:
     import pathlib_next
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 __all__ = ["TFTPPath", "TFTPURIPath"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     # TFTPURIPath needs pathlib_next.uri, which needs uritools (pathlib-next's
     # own "uri" extra, included in ours); import it only when asked.
     if name == "TFTPURIPath":

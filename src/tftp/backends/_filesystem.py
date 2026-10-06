@@ -5,12 +5,12 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from typing import Any, BinaryIO, Optional, Union
+from typing import BinaryIO, Optional, Union
 
 from ..exceptions import TFTPError
 from ..listing import DirectoryListing
 from ..packet._enums import TFTPErrorCode
-from ..server._handler import AtomicWriter, TFTPRequestContext
+from ..server._handler import AtomicWriter, TFTPRequestContext, TFTPWriter
 
 __all__ = ["FilesystemBackend"]
 
@@ -112,12 +112,12 @@ class FilesystemBackend:
         else:
             path = self.resolve(context.filename)
         if context.listing and os.path.isdir(path):
-            return DirectoryListing(path, root=self.root)  # type: ignore[return-value]
+            return DirectoryListing(path, root=self.root)
         if not os.path.isfile(path):
             raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND)
         return open(path, "rb", buffering=_READ_BUFFER)
 
-    def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> Any:
+    def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> TFTPWriter:
         if not self.writable:
             raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION, "server is read-only")
         path = self.resolve(context.filename)
@@ -159,7 +159,7 @@ class _Capped:
         self._inner = inner
         self._left = limit
 
-    def write(self, data) -> int:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
         self._left -= len(data)
         if self._left < 0:
             raise TFTPError(TFTPErrorCode.DISK_FULL, "file too large")

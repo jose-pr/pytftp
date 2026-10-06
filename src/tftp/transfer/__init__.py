@@ -24,8 +24,19 @@ Behaviour worth knowing:
 
 from __future__ import annotations
 
-from ._engine import Transfer, as_readinto, as_write
+from .._streams import SupportsRead, SupportsReadinto, SupportsWrite
+from ._engine import SendFunction, Transfer, as_readinto, as_write
 from ._receiver import Receiver
 from ._sender import Sender
 
-__all__ = ["Transfer", "Sender", "Receiver", "as_readinto", "as_write"]
+__all__ = [
+    "Receiver",
+    "SendFunction",
+    "Sender",
+    "SupportsRead",
+    "SupportsReadinto",
+    "SupportsWrite",
+    "Transfer",
+    "as_readinto",
+    "as_write",
+]

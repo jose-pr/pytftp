@@ -11,7 +11,7 @@ consumer's next read, and vice versa.
 from __future__ import annotations
 
 import threading
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 from ..exceptions import TFTPError
 from ..exceptions import WouldBlock
@@ -59,7 +59,7 @@ class Pipe:
 
     # -- producer side --------------------------------------------------------
 
-    def put(self, data, timeout: Optional[float] = None) -> None:
+    def put(self, data: Union[bytes, bytearray, memoryview], timeout: Optional[float] = None) -> None:
         """Blocking write for a worker thread; raises if the consumer is gone."""
         view = memoryview(data)
         while view:
@@ -76,7 +76,7 @@ class Pipe:
                 self._lock.notify_all()
             self._wake()
 
-    def write(self, data) -> int:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
         """Non-blocking write for a transfer: all of ``data`` or WouldBlock."""
         with self._lock:
             if self._error is not None:
@@ -102,7 +102,7 @@ class Pipe:
 
     # -- consumer side --------------------------------------------------------
 
-    def readinto(self, view) -> int:
+    def readinto(self, view: Union[bytearray, memoryview]) -> int:
         """Non-blocking read for a transfer: some bytes, 0 at the end, or WouldBlock."""
         with self._lock:
             if self._buffer:

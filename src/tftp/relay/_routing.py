@@ -11,9 +11,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Optional, Sequence, Tuple, Union
 
 if TYPE_CHECKING:
-    from netimps import HostLike, Interface, IPAddressLike, IPNetworkLike
+    from netimps import HostLike, Interface, IPNetworkLike
 
 from ..exceptions import TFTPValueError
+from ..packet._codec import RequestPacket
+from ..server._handler import TFTPRequestContext
 
 __all__ = ["Upstream", "RouteTable", "by_subnet", "by_prefix", "by_interface", "RouteFunction"]
 
@@ -46,8 +48,8 @@ class Upstream:
         :raises TypeError: a host that is none of those.
         :raises ValueError: host text netimps cannot read, or a bad port.
         """
-        if isinstance(value, cls):
-            return value
+        if isinstance(value, Upstream):
+            return value if isinstance(value, cls) else cls(value.host, value.port)
         if isinstance(value, tuple):
             return cls(value[0], value[1])
         from netimps import split_host
@@ -57,7 +59,7 @@ class Upstream:
 
 
 UpstreamLike = Union[Upstream, "HostLike", Tuple["HostLike", int]]
-RouteFunction = Callable[[Any, Any], Optional[UpstreamLike]]
+RouteFunction = Callable[[RequestPacket, TFTPRequestContext], Optional[UpstreamLike]]
 
 
 def by_subnet(
@@ -79,7 +81,7 @@ def by_subnet(
         reverse=True,
     )
 
-    def route(request: Any, context: Any) -> Optional[Upstream]:
+    def route(request: RequestPacket, context: TFTPRequestContext) -> Optional[Upstream]:
         from netimps import unmap
 
         address = unmap(context.peer[0])
@@ -102,7 +104,7 @@ def by_prefix(table: Union[Dict[str, UpstreamLike], Sequence[Tuple[str, Upstream
         ((p.replace("\\", "/").lstrip("/"), Upstream.parse(t)) for p, t in items), key=lambda x: -len(x[0])
     )
 
-    def route(request: Any, context: Any) -> Optional[Upstream]:
+    def route(request: RequestPacket, context: TFTPRequestContext) -> Optional[Upstream]:
         name = request.filename.replace("\\", "/").lstrip("/")
         for prefix, target in prefixes:
             if name.startswith(prefix):
@@ -112,7 +114,7 @@ def by_prefix(table: Union[Dict[str, UpstreamLike], Sequence[Tuple[str, Upstream
     return route
 
 
-def by_interface(table: "dict[Union[int, Interface, IPAddressLike], UpstreamLike]") -> RouteFunction:
+def by_interface(table: Dict[Union[int, Interface, HostLike], UpstreamLike]) -> RouteFunction:
     """Route by arrival: an interface index (``int``), a ``netimps.Interface``,
     or the local address the request was sent to (an address string or
     object, an ``ipaddress`` interface, a ``netimps.Host``).
@@ -136,7 +138,7 @@ def by_interface(table: "dict[Union[int, Interface, IPAddressLike], UpstreamLike
                 raise ValueError("by_interface: cannot resolve %r" % (key,))
             by_address[unmap(address)] = Upstream.parse(target)
 
-    def route(request: Any, context: Any) -> Optional[Upstream]:
+    def route(request: RequestPacket, context: TFTPRequestContext) -> Optional[Upstream]:
         if context.interface_index and context.interface_index in by_index:
             return by_index[context.interface_index]
         if context.local_address is not None and by_address:
@@ -156,7 +158,7 @@ class RouteTable:
         self.routes = list(routes)
         self.default = Upstream.parse(default) if default is not None else None
 
-    def __call__(self, request: Any, context: Any) -> Optional[Upstream]:
+    def __call__(self, request: RequestPacket, context: TFTPRequestContext) -> Optional[Upstream]:
         for route in self.routes:
             target = route(request, context)
             if target is not None:

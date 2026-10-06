@@ -9,13 +9,26 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, List
 
-from ._core import MODES, RemoteStat
+from .._streams import AsyncSink, AsyncSource
+from ._core import MODES, ProgressFunction, RemoteStat, SinkLike, SourceLike
 from ._sync import TFTPClient, download, upload
 
 if TYPE_CHECKING:
     from ._asyncio import AsyncTFTPClient
 
-__all__ = ["AsyncTFTPClient", "MODES", "RemoteStat", "TFTPClient", "download", "upload"]
+__all__ = [
+    "AsyncSink",
+    "AsyncSource",
+    "AsyncTFTPClient",
+    "MODES",
+    "ProgressFunction",
+    "RemoteStat",
+    "SinkLike",
+    "SourceLike",
+    "TFTPClient",
+    "download",
+    "upload",
+]
 
 
 def __getattr__(name: str) -> Any:

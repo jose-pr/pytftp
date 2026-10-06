@@ -207,7 +207,7 @@ class RolloverOption(OptionHandler):
         target = read_decimal(value)
         if target not in (0, 1):
             return None
-        ctx.result.rollover = target  # type: ignore[assignment]
+        ctx.result.rollover = target
         return str(target)
 
     def accept(self, requested: str, acked: str, ctx: ClientOptionContext) -> None:

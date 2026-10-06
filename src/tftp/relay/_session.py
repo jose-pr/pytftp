@@ -14,10 +14,11 @@ import struct
 from typing import Any, NamedTuple, Optional, Tuple
 
 from ..options._handler import DEFAULT_BLKSIZE
+from ..server._handler import TFTPRequestContext
 from ..options._handler import read_decimal
 from ..exceptions import TFTPDecodeError
 from ..packet._enums import TFTPOpcode
-from ..packet._codec import RequestPacket, decode
+from ..packet._codec import ErrorPacket, OptionAckPacket, RequestPacket
 
 __all__ = ["RelaySession", "RelaySummary"]
 
@@ -76,7 +77,7 @@ class RelaySession:
         up: socket.socket,
         upstream: Tuple[Any, ...],
         request: RequestPacket,
-        context: Any,
+        context: TFTPRequestContext,
         now: float,
     ) -> None:
         self.id = session_id
@@ -133,7 +134,7 @@ class RelaySession:
                 self.closing_at = now + linger
         elif op == TFTPOpcode.OACK and not from_client:
             try:
-                options = decode(data).options  # type: ignore[union-attr]
+                options = OptionAckPacket.decode(data).options
             except TFTPDecodeError:
                 return
             for name in ("blksize", "blksize2"):
@@ -142,8 +143,8 @@ class RelaySession:
                     self.blksize = value
         elif op == TFTPOpcode.ERROR:
             try:
-                packet = decode(data)
-                self.error = (int(packet.code), packet.message)  # type: ignore[union-attr]
+                packet = ErrorPacket.decode(data)
+                self.error = (int(packet.code), packet.message)
             except TFTPDecodeError:
                 self.error = (0, "")
             self.reason = "error"

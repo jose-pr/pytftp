@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import errno
 import socket
-from typing import TYPE_CHECKING, Any, NamedTuple, Union, Optional, Tuple
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Tuple
 
 if TYPE_CHECKING:
-    from netimps import Host, InterfaceLike, IPAddressLike
+    from netimps import Datagram, HostLike, Interface, InterfaceLike
 
 from ..packet._codec import _encode_error
 from ._session import PortAllocator
@@ -30,34 +30,30 @@ class Arrival(NamedTuple):
     sender: Tuple[Any, ...]
     local: Optional[str]
     ifindex: int
-    datagram: Any = None
-    interface: Any = None
+    datagram: Optional[Datagram] = None
+    interface: Optional[Interface] = None
 
 
-def _bind_interface(
-    host: Optional[Union[IPAddressLike, Host]], port: int, interface: "InterfaceLike"
-) -> socket.socket:
+def _bind_interface(host: Optional[HostLike], port: int, interface: "InterfaceLike") -> socket.socket:
     """Listen on ``interface``'s address: IPv4 when it has one, unless ``host`` is a
     wildcard naming the family (``"0.0.0.0"`` or ``"::"``)."""
     from netimps import Host, bind, is_wildcard
 
-    plain = {"interface": interface}
     if not host:
         try:
-            return bind("", port, family=socket.AF_INET, **plain)
+            return bind("", port, family=socket.AF_INET, interface=interface)
         except ValueError:  # no IPv4 address on that adapter
-            return bind("", port, family=socket.AF_INET6, **plain)
+            return bind("", port, family=socket.AF_INET6, interface=interface)
     address = Host(host).ip()
-    if address is None or not is_wildcard(host):
+    if address is None or not is_wildcard(host):  # type: ignore[arg-type]  # a Host is accepted at run time
         raise ValueError(
             "give host or interface, not both (host may be '0.0.0.0' or '::' to pick the family)"
         )
-    return bind("", port, family=socket.AF_INET6 if address.version == 6 else socket.AF_INET, **plain)
+    family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
+    return bind("", port, family=family, interface=interface)
 
 
-def _bind(
-    host: Optional[Union[IPAddressLike, Host]], port: int, interface: "InterfaceLike" = None
-) -> socket.socket:
+def _bind(host: Optional[HostLike], port: int, interface: "InterfaceLike" = None) -> socket.socket:
     from netimps import Host, bind, is_wildcard, split_host
 
     if interface is not None:
@@ -68,7 +64,11 @@ def _bind(
     if host:
         host = split_host(host)[0]  # "[::1]" -> "::1"
     address = Host(host).ip() if host else None
-    if not host or (is_wildcard(host) and address is not None and address.version == 6):
+    if not host or (
+        is_wildcard(host)  # type: ignore[arg-type]  # a Host is accepted at run time
+        and address is not None
+        and address.version == 6
+    ):
         try:
             sock = bind(
                 "::",
@@ -100,7 +100,7 @@ class Listener:
 
     def __init__(
         self,
-        host: Optional[Union[IPAddressLike, Host]],
+        host: Optional[HostLike],
         port: int,
         pktinfo: bool = True,
         interface: "InterfaceLike" = None,
@@ -146,7 +146,7 @@ class Listener:
         return self.arrival(datagram)
 
     @staticmethod
-    def arrival(datagram: Any) -> Arrival:
+    def arrival(datagram: Datagram) -> Arrival:
         """An :class:`Arrival` from a netimps ``Datagram``."""
         local = datagram.destination
         return Arrival(
@@ -181,13 +181,16 @@ class Listener:
         With ``ports`` it takes a free port from the range;
         :class:`netimps.AddressInUseError` when none is free.
         """
-        sock = self.endpoint.reply_socket(arrival.datagram, port=ports.ordered() if ports else 0)
+        datagram = arrival.datagram
+        if datagram is None:
+            raise ValueError("an arrival that carries no datagram has no sender to reply to")
+        sock = self.endpoint.reply_socket(datagram, port=ports.ordered() if ports else 0)
         if ports is not None:
             ports.taken(sock.getsockname()[1])
         sock.setblocking(False)
         # The sender in the family netimps chose: a v4 client of a dual-stack
         # listener is answered from a plain v4 socket, at its plain address.
-        return sock, arrival.datagram.reply_address
+        return sock, datagram.reply_address
 
     def reply_error(self, sender: Tuple[Any, ...], code: int, message: str) -> None:
         """Answer a request with an ERROR from the listening socket itself."""

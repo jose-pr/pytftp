@@ -19,15 +19,18 @@ from test_surface import EXPECTED
 
 pytest.importorskip("pathlib_next")
 
-#: Public callable -> the one name its annotations cannot resolve at run time.
+#: Public callable -> the one name its annotations cannot resolve at run time: a netimps type, or
+#: ``TFTPPath``, which needs the optional ``pathlib_next``.
 NETIMPS_TYPED = {
     "tftp.TFTPClient": "HostLike",
+    "tftp.TFTPClient.path": "TFTPPath",
     "tftp.AsyncTFTPClient": "HostLike",
     "tftp.download": "HostLike",
     "tftp.upload": "HostLike",
-    "tftp.TFTPServer": "IPAddressLike",
-    "tftp.AsyncTFTPServer": "IPAddressLike",
-    "tftp.relay.TFTPRelay": "IPAddressLike",
+    "tftp.TFTPServer": "HostLike",
+    "tftp.AsyncTFTPServer": "HostLike",
+    "tftp.backends.UpstreamBackend": "HostLike",
+    "tftp.relay.TFTPRelay": "HostLike",
     "tftp.relay.Upstream": "HostLike",
     "tftp.relay.Upstream.parse": "HostLike",
     "tftp.relay.RouteTable": "HostLike",

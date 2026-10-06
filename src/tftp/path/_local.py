@@ -6,7 +6,7 @@ import copy
 import errno
 import posixpath
 import sys
-from typing import Any, Callable, Iterator, Optional, Tuple
+from typing import Any, Callable, Iterator, List, Optional, Tuple
 
 from pathlib_next import Path, Pathname
 from pathlib_next.utils.stat import FileStat
@@ -68,7 +68,9 @@ def tftp_stat(client: TFTPClient, filename: str, mode: str, path: Any) -> FileSt
         info = client.stat(filename, mode=mode)
     except TFTPError as exc:
         raise os_error(exc, path) from None
-    return FileStat(st_size=info.size or 0, st_mtime=info.mtime or 0, is_dir=info.is_dir)
+    return FileStat(  # type: ignore[abstract]  # pathlib_next's protocol fields are set in __init__
+        st_size=info.size or 0, st_mtime=info.mtime or 0, is_dir=info.is_dir
+    )
 
 
 def tftp_scandir(client: TFTPClient, dirname: str, path: Any) -> Iterator[Tuple[str, FileStat]]:
@@ -78,7 +80,9 @@ def tftp_scandir(client: TFTPClient, dirname: str, path: Any) -> Iterator[Tuple[
     except TFTPError as exc:
         raise os_error(exc, path) from None
     for entry in entries:
-        yield entry.name, FileStat(st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir)
+        yield entry.name, FileStat(  # type: ignore[abstract]  # pathlib_next's protocol fields are set in __init__
+            st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir
+        )
 
 
 def tftp_unlink(path: Any, missing_ok: bool, caller: Any) -> None:
@@ -141,6 +145,10 @@ class TFTPPath(Path):
 
     __slots__ = ("_client", "_segments", "_mode")
 
+    _client: TFTPClient
+    _segments: List[str]
+    _mode: str
+
     def __init__(self, *segments: Any, client: Optional[TFTPClient] = None, mode: str = "octet") -> None:
         text = ""
         inherited = None
@@ -184,7 +192,7 @@ class TFTPPath(Path):
         return self._mode
 
     @property
-    def segments(self):
+    def segments(self) -> List[str]:
         return self._segments
 
     @property
@@ -227,7 +235,7 @@ class TFTPPath(Path):
         return "/".join(self._segments)
 
     def as_uri(self) -> str:
-        return str(TFTPURL(self._client.host, self._client.port, self.as_posix(), self._mode))
+        return str(TFTPURL(str(self._client.host), self._client.port, self.as_posix(), self._mode))
 
     def __str__(self) -> str:
         return self.as_posix()
@@ -246,8 +254,8 @@ class TFTPPath(Path):
     def __hash__(self) -> int:
         return hash((tuple(self._segments), self._endpoint()))
 
-    def _same_filesystem(self, other: "TFTPPath") -> bool:
-        return self._endpoint() == other._endpoint()
+    def _same_filesystem(self, other: Path) -> bool:
+        return isinstance(other, TFTPPath) and self._endpoint() == other._endpoint()
 
     # -- I/O -------------------------------------------------------------------------
 

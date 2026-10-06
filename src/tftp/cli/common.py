@@ -212,7 +212,12 @@ class Traced(Base):
             return None
         if len(hooks) == 1:
             return hooks[0]
-        return lambda event: [hook(event) for hook in hooks] and None
+
+        def combined(event: _ty.Any) -> None:
+            for hook in hooks:
+                hook(event)
+
+        return combined
 
     def _close_trace(self) -> None:
         writer = getattr(self, "_writer", None)

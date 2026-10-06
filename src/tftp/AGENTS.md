@@ -29,19 +29,44 @@ takes every field by keyword.
 | Module | Exports |
 | --- | --- |
 | `tftp` | `AccessViolation`, `AckPacket`, `AsyncTFTPClient`, `AsyncTFTPServer`, `AtomicWriter`, `DataPacket`, `DiskFull`, `ErrorPacket`, `FileAlreadyExists`, `FileNotFound`, `FilesystemBackend`, `IllegalOperation`, `ListEntry`, `NetasciiReader`, `NetasciiWriter`, `NoSuchUser`, `OptionAckPacket`, `OptionNegotiationError`, `Profile`, `Receiver`, `RemoteError`, `RequestPacket`, `Sender`, `TFTPClient`, `TFTPDecodeError`, `TFTPError`, `TFTPErrorCode`, `TFTPHandler`, `TFTPOpcode`, `TFTPProtocolError`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPServerOptions`, `TFTPURL`, `TFTPValueError`, `TransferAbortedError`, `TransferResult`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock`, `decode`, `download`, `download_url`, `upload`, `upload_url` |
-| `tftp.client` | `AsyncTFTPClient`, `MODES`, `RemoteStat`, `TFTPClient`, `download`, `upload` |
+| `tftp.client` | `AsyncSink`, `AsyncSource`, `AsyncTFTPClient`, `MODES`, `ProgressFunction`, `RemoteStat`, `SinkLike`, `SourceLike`, `TFTPClient`, `download`, `upload` |
 | `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
-| `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `by_interface`, `by_prefix`, `by_subnet` |
-| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CaptureFormatError`, `CapturedTransfer`, `FILTER_KEYS`, `FlowTracker`, `FrameDecoder`, `LINKTYPES`, `PacketEvent`, `PcapWriter`, `UDPDatagram`, `analyze`, `compile_filter`, `live_capture_supported`, `new_session_id`, `read_datagrams`, `read_frames`, `sniff`, `summarize` |
+| `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `UpstreamLike`, `by_interface`, `by_prefix`, `by_subnet` |
+| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CaptureFormatError`, `CapturedTransfer`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `FrameDecoder`, `LINKTYPES`, `PacketEvent`, `PcapWriter`, `UDPDatagram`, `analyze`, `compile_filter`, `live_capture_supported`, `new_session_id`, `read_datagrams`, `read_frames`, `sniff`, `summarize` |
 | `tftp.options` | `BUILTIN_OPTIONS`, `Blksize2Option`, `BlksizeOption`, `ClientOptionContext`, `CookieOption`, `DEFAULT_BLKSIZE`, `DEFAULT_REGISTRY`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS`, `MAX_BLKSIZE`, `MAX_UTIMEOUT`, `MAX_WINDOWSIZE`, `MIN_BLKSIZE`, `MIN_UTIMEOUT`, `MstfwindowOption`, `Negotiated`, `OptionHandler`, `OptionRegistry`, `PROFILES`, `Profile`, `RolloverOption`, `STANDARD_OPTIONS`, `SUPPORTED_OPTIONS`, `ServerOptionContext`, `TFTPServerOptions`, `TimeoutOption`, `TsizeOption`, `UtimeoutOption`, `WindowsizeOption`, `XListOption`, `XMtimeOption`, `accept_oack`, `negotiate`, `refuse`, `register_option`, `request_options` |
 | `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
 | `tftp.backends` | `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `Pipe`, `UpstreamBackend`, `normalize_name` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` |
 | `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `CaptureFormatError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
 | `tftp.cli` | `CaptureCmd`, `Get`, `Ls`, `Put`, `Pytftp`, `RelayCmd`, `Serve`, `run` |
-| `tftp.transfer` | `Receiver`, `Sender`, `Transfer`, `as_readinto`, `as_write` |
+| `tftp.transfer` | `Receiver`, `SendFunction`, `Sender`, `SupportsRead`, `SupportsReadinto`, `SupportsWrite`, `Transfer`, `as_readinto`, `as_write` |
 | `tftp.listing` | `DirectoryListing`, `LIST_OPTION`, `ListEntry`, `MTIME_OPTION`, `dumps`, `loads` |
 | `tftp.netascii` | `NetasciiReader`, `NetasciiWriter`, `decode`, `encode`, `encoded_size` |
+
+## Static typing
+
+The package ships `py.typed` and is checked with mypy on Linux, macOS and
+Windows. Public aliases, each exported from the module named:
+
+| Alias | Module | Meaning |
+| --- | --- | --- |
+| `SinkLike` | `tftp.client` | where a download goes: a path, or any object with `write(data)` |
+| `SourceLike` | `tftp.client` | what an upload sends: a path, bytes, or any object with `readinto(buffer)` or `read(size)` |
+| `ProgressFunction` | `tftp.client` | `progress(done_bytes, total_or_None)` |
+| `AsyncSink`, `AsyncSource` | `tftp.client` | the objects `AsyncTFTPClient` writes a download to and reads an upload from |
+| `SendFunction` | `tftp.transfer` | what an engine calls to send one datagram |
+| `SupportsWrite`, `SupportsReadinto`, `SupportsRead` | `tftp.transfer` | the stream shapes `as_write` and `as_readinto` take |
+| `UpstreamLike` | `tftp.relay` | what a route may return: an `Upstream`, a host, or `(host, port)` |
+| `EventPredicate` | `tftp.capture` | what `compile_filter` returns: `predicate(event) -> bool` |
+| `Endpoint` | `tftp.capture` | `(host, port)` |
+| `PortRangeLike` | `tftp.server` | what `port_range=` takes |
+
+`host=` of the servers and the relay is a netimps `HostLike`: text, an
+`ipaddress` address or interface, a `netimps.Host` or `FQDN`; an `int` or
+`bytes` address is a `TypeError`. A signature that names a netimps type
+(`HostLike`, `IPNetworkLike`, `Interface`) cannot be resolved by
+`typing.get_type_hints` at run time, because netimps is imported lazily;
+every other public annotation resolves on every supported Python.
 
 ## Protocol coverage
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import struct
-from typing import IO, Any, BinaryIO, Iterator, List, Optional, Tuple, Union
+from typing import IO, Any, BinaryIO, Dict, Iterator, List, Optional, Tuple, Union
 
 from ..exceptions import CaptureFormatError
 from ._events import PacketEvent
@@ -62,7 +62,7 @@ def _pcap(stream: BinaryIO, head: bytes) -> Iterator[Tuple[float, int, bytes]]:
 def _pcapng(stream: BinaryIO, head: bytes) -> Iterator[Tuple[float, int, bytes]]:
     endian = "<"
     interfaces: List[Tuple[int, float]] = []
-    block_type_bytes = head
+    block_type_bytes: Optional[bytes] = head
     while True:
         if block_type_bytes is None:
             return
@@ -131,7 +131,7 @@ def read_frames(source: Union[str, "os.PathLike[str]", BinaryIO]) -> Iterator[Tu
 
 def read_datagrams(source: Union[str, "os.PathLike[str]", BinaryIO]) -> Iterator[UDPDatagram]:
     """Every UDP datagram in a capture, IP fragments reassembled."""
-    decoders = {}
+    decoders: Dict[int, FrameDecoder] = {}
     for time, linktype, frame in read_frames(source):
         decoder = decoders.get(linktype)
         if decoder is None:

@@ -17,8 +17,8 @@ import os
 from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union
 
 from ._events import PacketEvent, new_session_id, summarize
-from ._filters import FILTER_KEYS, CaptureFilterError, compile_filter
-from ._flows import CapturedTransfer, FlowTracker
+from ._filters import FILTER_KEYS, CaptureFilterError, EventPredicate, compile_filter
+from ._flows import CapturedTransfer, Endpoint, FlowTracker
 from .frames import LINKTYPES, FrameDecoder, UDPDatagram
 from .live import live_capture_supported, sniff
 from .pcap import CaptureFormatError, PcapWriter, read_datagrams, read_frames
@@ -28,6 +28,8 @@ __all__ = [
     "summarize",
     "new_session_id",
     "compile_filter",
+    "EventPredicate",
+    "Endpoint",
     "CaptureFilterError",
     "FILTER_KEYS",
     "CapturedTransfer",
@@ -68,8 +70,8 @@ def analyze(
     """
     datagrams = source if not isinstance(source, (str, os.PathLike)) and not hasattr(source, "read") else None
     if datagrams is None:
-        datagrams = read_datagrams(source)  # type: ignore[arg-type]
+        datagrams = read_datagrams(source)  # type: ignore[arg-type]  # a stream with read() is a BinaryIO
     tracker = FlowTracker(ports, keep_payloads=keep_payloads, max_tracked=None)
     wanted = compile_filter(filter)
-    events = [e for e in tracker.feed_all(datagrams) if wanted(e)]  # type: ignore[arg-type]
+    events = [e for e in tracker.feed_all(datagrams) if wanted(e)]
     return Analysis(events, tracker.transfers)

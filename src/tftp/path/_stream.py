@@ -12,7 +12,11 @@ from __future__ import annotations
 import errno
 import io
 import threading
-from typing import Any, Callable, Optional
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Callable, Optional, Type, Union
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer, WriteableBuffer
 
 from ..backends._pipe import Pipe
 from ..packet._enums import TFTPErrorCode
@@ -63,7 +67,7 @@ class _Sink:
     def __init__(self, pipe: Pipe) -> None:
         self._pipe = pipe
 
-    def write(self, data) -> int:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
         self._pipe.put(data, timeout=STALL_TIMEOUT)
         return len(data)
 
@@ -123,13 +127,14 @@ class _Reader(io.RawIOBase):
     def readable(self) -> bool:
         return True
 
-    def readinto(self, buffer) -> int:
+    def readinto(self, buffer: WriteableBuffer) -> int:
+        view = memoryview(buffer)
         try:
-            chunk = self._pipe.get(len(buffer), timeout=STALL_TIMEOUT)
+            chunk = self._pipe.get(len(view), timeout=STALL_TIMEOUT)
         except (TFTPError, BrokenPipeError) as exc:
             raise os_error(exc, self._path) from None
         n = len(chunk)
-        buffer[:n] = chunk
+        view[:n] = chunk
         return n
 
     def close(self) -> None:
@@ -160,17 +165,19 @@ class _Writer(io.RawIOBase):
     def writable(self) -> bool:
         return True
 
-    def write(self, data) -> int:
+    def write(self, data: ReadableBuffer) -> int:
+        view = memoryview(data)
         if self._outcome:
             raise os_error(self._outcome[0], self._path)
         try:
-            self._pipe.put(bytes(data), timeout=STALL_TIMEOUT)
+            self._pipe.put(bytes(view), timeout=STALL_TIMEOUT)
         except (TFTPError, BrokenPipeError, TimeoutError):
-            self._thread.join(STALL_TIMEOUT)
+            if self._thread is not None:
+                self._thread.join(STALL_TIMEOUT)
             if self._outcome:
                 raise os_error(self._outcome[0], self._path) from None
             raise
-        return len(data)
+        return len(view)
 
     def abandon(self) -> None:
         """Fail the upload: the transfer's next read raises, so the client sends ERROR and
@@ -204,9 +211,18 @@ def open_reader(client_factory: Callable[..., Any], filename: str, mode: str, pa
 class _BufferedUpload(io.BufferedWriter):
     """The upload's buffered writer: leaving a ``with`` block by an exception abandons it."""
 
-    def __exit__(self, exc_type, exc, traceback) -> None:
+    def __init__(self, raw: _Writer) -> None:
+        super().__init__(raw)
+        self._upload = raw
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
         if exc_type is not None and not self.closed:
-            self.raw.abandon()  # type: ignore[attr-defined]
+            self._upload.abandon()
         super().__exit__(exc_type, exc, traceback)
 
 

@@ -69,7 +69,7 @@ class TFTPServerLimits:
         return all(getattr(self, name) == getattr(other, name) for name in self.__slots__)
 
     #: Mutable, so not hashable.
-    __hash__ = None  # type: ignore[assignment]
+    __hash__ = None  # type: ignore[assignment]  # mutable, so unhashable
 
     def __repr__(self) -> str:
         return "TFTPServerLimits(%s)" % ", ".join(

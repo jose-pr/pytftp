@@ -249,7 +249,7 @@ class Session:
         self.local: Tuple[Any, ...] = sock.getsockname()
         #: Thread-safe "this transfer can make progress again" callback,
         #: handed to streams that support ``set_wakeup`` (see WouldBlock).
-        self.notify: Optional[Callable[[], None]] = None
+        self.notify: Optional[Callable[[], object]] = None
         self.id = new_session_id("s")
         #: ``trace(PacketEvent)`` for this transfer's datagrams, or ``None``.
         self.trace: Optional[Callable[[PacketEvent], Any]] = None
@@ -263,7 +263,7 @@ class Session:
             return self.linger_until
         return self.transfer.deadline if self.transfer is not None else None
 
-    def send(self, packet) -> None:
+    def send(self, packet: Union[bytes, memoryview]) -> None:
         """Send one datagram to the peer.
 
         A full send buffer or a busy network stack drops it, which the
@@ -282,7 +282,11 @@ class Session:
             self.emit(packet, "out", self.peer)
 
     def emit(
-        self, data, direction: str, remote: Tuple[Any, ...], local: Optional[Tuple[Any, ...]] = None
+        self,
+        data: Union[bytes, bytearray, memoryview],
+        direction: str,
+        remote: Tuple[Any, ...],
+        local: Optional[Tuple[Any, ...]] = None,
     ) -> None:
         """Report one datagram to the trace hook (exceptions are logged, not raised)."""
         self.trace(  # type: ignore[misc]  # a HookGuard: it logs a failure once and returns
@@ -354,14 +358,15 @@ class Session:
             log.debug("%r: %r", self.context, negotiated)
             return Sender(self.send, as_readinto(reader), negotiated, retries, now, oack=oack, **engine)
 
-        negotiated = self._negotiated
-        fit_window(self.sock, negotiated.blksize, negotiated.windowsize)
+        granted = self._negotiated
+        assert granted is not None  # call_handler negotiated the WRQ
+        fit_window(self.sock, granted.blksize, granted.windowsize)
         writer: Any = NetasciiWriter(stream) if request.mode == "netascii" else stream
         self.stream = writer
-        reply = encode_oack(negotiated.options) if negotiated.options else encode_ack(0)
-        log.debug("%r: %r", self.context, negotiated)
+        reply = encode_oack(granted.options) if granted.options else encode_ack(0)
+        log.debug("%r: %r", self.context, granted)
         return Receiver(
-            self.send, as_write(writer), negotiated, retries, now, reply=reply, complete=self.commit, **engine
+            self.send, as_write(writer), granted, retries, now, reply=reply, complete=self.commit, **engine
         )
 
     def open(

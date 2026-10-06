@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, Iterator, Optional
+from typing import Dict, FrozenSet, Iterable, Iterator, Optional, TypeVar
 
 from ._handler import OptionHandler
 from ._builtin import BUILTIN_OPTIONS
 
 __all__ = ["OptionRegistry", "DEFAULT_REGISTRY", "register_option"]
+
+
+_Registry = TypeVar("_Registry", bound="OptionRegistry")
 
 
 class OptionRegistry:
@@ -17,7 +20,7 @@ class OptionRegistry:
     on another (``windowsize`` on the block size) is registered after it.
     """
 
-    def __init__(self, handlers=BUILTIN_OPTIONS) -> None:
+    def __init__(self, handlers: Iterable[OptionHandler] = BUILTIN_OPTIONS) -> None:
         self._handlers: Dict[str, OptionHandler] = {}
         for handler in handlers:
             self.register(handler)
@@ -56,8 +59,8 @@ class OptionRegistry:
     def __repr__(self) -> str:
         return "OptionRegistry(%s)" % ", ".join(self._handlers)
 
-    def copy(self) -> "OptionRegistry":
-        return OptionRegistry(list(self._handlers.values()))
+    def copy(self: _Registry) -> _Registry:
+        return type(self)(list(self._handlers.values()))
 
 
 #: The registry every server and client uses unless given another.

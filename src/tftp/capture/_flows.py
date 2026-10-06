@@ -20,11 +20,11 @@ from ..options._handler import DEFAULT_BLKSIZE
 from ..options._handler import read_decimal
 from ..exceptions import TFTPDecodeError
 from ..packet._enums import TFTPOpcode
-from ..packet._codec import decode
+from ..packet._codec import ErrorPacket, OptionAckPacket, RequestPacket
 from ._events import PacketEvent, new_session_id
 from .frames import UDPDatagram
 
-__all__ = ["CapturedTransfer", "FlowTracker"]
+__all__ = ["CapturedTransfer", "Endpoint", "FlowTracker"]
 
 Endpoint = Tuple[str, int]
 _ANSWER_WINDOW = 10.0  # seconds within which a reply from another address counts
@@ -195,7 +195,7 @@ class CapturedTransfer:
         return self.ended - self.started
 
     def to_dict(self) -> Dict[str, Any]:
-        def endpoint(e):
+        def endpoint(e: Optional[Endpoint]) -> Optional[str]:
             return None if e is None else "%s:%s" % e if ":" not in e[0] else "[%s]:%s" % e
 
         return {
@@ -287,7 +287,7 @@ class FlowTracker:
         transfer = None
         if destination[1] in self.ports and len(payload) >= 2 and payload[0] == 0 and payload[1] in (1, 2):
             try:
-                request = decode(payload)
+                request = RequestPacket.decode(payload)
             except TFTPDecodeError:
                 request = None
             if request is not None:
@@ -365,7 +365,7 @@ class FlowTracker:
             transfer.add_ack(struct.unpack_from("!H", payload, 2)[0])
         elif op == TFTPOpcode.OACK and not from_client:
             try:
-                options = decode(payload).options  # type: ignore[union-attr]
+                options = OptionAckPacket.decode(payload).options
             except TFTPDecodeError:
                 return
             transfer.acknowledged = dict(options)
@@ -379,12 +379,13 @@ class FlowTracker:
             tsize = read_decimal(options.get("tsize", ""))
             if tsize is not None:
                 transfer.tsize = tsize
-            if read_decimal(options.get("rollover", "")) in (0, 1):
-                transfer._rollover = read_decimal(options["rollover"])
+            rollover = read_decimal(options.get("rollover", ""))
+            if rollover is not None and rollover in (0, 1):
+                transfer._rollover = rollover
         elif op == TFTPOpcode.ERROR and transfer.error is None:
             try:
-                packet = decode(payload)
-                transfer.error = (int(packet.code), packet.message, "client" if from_client else "server")  # type: ignore[union-attr]
+                packet = ErrorPacket.decode(payload)
+                transfer.error = (int(packet.code), packet.message, "client" if from_client else "server")
             except TFTPDecodeError:
                 transfer.error = (0, "", "client" if from_client else "server")
 

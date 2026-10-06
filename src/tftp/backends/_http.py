@@ -10,12 +10,13 @@ from __future__ import annotations
 import threading
 import urllib.error
 import urllib.request
-from typing import Any, Callable, Dict, Iterator, Mapping, Optional
+from typing import Callable, Dict, Iterator, Mapping, Optional, Union
 from urllib.parse import quote, urlsplit
 
 from ..exceptions import TFTPError
 from ..options._handler import read_decimal
 from ..packet._enums import TFTPErrorCode
+from ..server._handler import TFTPRequestContext
 from .._loggers import BACKENDS as log
 from ._memory import normalize_name
 from ._pipe import Pipe
@@ -103,7 +104,7 @@ class _ReadAhead(Pipe):
         self._taken = 0
         super().__init__(limit, size)
 
-    @property  # type: ignore[override]
+    @property
     def capacity(self) -> int:
         return min(self._limit, _FIRST_READ_AHEAD + self._taken)
 
@@ -111,7 +112,7 @@ class _ReadAhead(Pipe):
     def capacity(self, value: int) -> None:
         self._limit = value
 
-    def readinto(self, view) -> int:
+    def readinto(self, view: Union[bytearray, memoryview]) -> int:
         n = super().readinto(view)
         with self._lock:
             self._taken += n
@@ -131,7 +132,7 @@ class _AnnouncedUpload(Pipe):
         self.limit = limit
         self._received = 0
 
-    def write(self, data) -> int:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
         limit = self.limit
         if limit is not None and self._received + len(data) > limit:
             raise TFTPError(TFTPErrorCode.DISK_FULL, "more octets than the announced size")
@@ -175,7 +176,7 @@ class HTTPBackend:
         self,
         base_url: Optional[str] = None,
         *,
-        url_for: Optional[Callable[[Any], str]] = None,
+        url_for: Optional[Callable[[TFTPRequestContext], str]] = None,
         writable: bool = False,
         headers: Optional[Dict[str, str]] = None,
         timeout: float = 10.0,
@@ -197,7 +198,7 @@ class HTTPBackend:
         self._agent = _user_agent()
         self._refused_warned = False
 
-    def url(self, context: Any) -> str:
+    def url(self, context: TFTPRequestContext) -> str:
         if self.url_for is not None:
             url = self.url_for(context)
             if self._restricted and urlsplit(url).scheme.lower() not in _SCHEMES:
@@ -211,9 +212,11 @@ class HTTPBackend:
             raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION)
         # The name is the client's octets decoded with surrogateescape; encoding them the
         # same way sends the octets that arrived.
-        return self.base_url.rstrip("/") + "/" + quote(name, errors="surrogateescape")  # type: ignore[union-attr]
+        base_url = self.base_url
+        assert base_url is not None  # exactly one of base_url and url_for is given
+        return base_url.rstrip("/") + "/" + quote(name, errors="surrogateescape")
 
-    def open_read(self, context: Any) -> Pipe:
+    def open_read(self, context: TFTPRequestContext) -> Pipe:
         request = urllib.request.Request(
             self.url(context), headers=_headers({"User-Agent": self._agent}, self.headers)
         )
@@ -242,7 +245,7 @@ class HTTPBackend:
         threading.Thread(target=pump, name="tftp-http-get", daemon=True).start()
         return pipe
 
-    def open_write(self, context: Any, size: Optional[int]) -> Pipe:
+    def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> Pipe:
         if not self.writable:
             raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION, "server is read-only")
         url = self.url(context)

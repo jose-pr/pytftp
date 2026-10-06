@@ -9,10 +9,11 @@ cross between ``tftp:``, ``file:``, ``http:``, ``s3:``...
 from __future__ import annotations
 
 import sys
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterator, Mapping, Optional, Tuple
 from urllib.parse import quote
 
 from pathlib_next.uri import UriPath
+from pathlib_next.utils.stat import FileStat
 
 from ..client._sync import TFTPClient
 from ..exceptions import TFTPValueError
@@ -60,7 +61,7 @@ class TFTPURIPath(UriPath):
 
     def _initbackend(self) -> _TFTPBackend:
         source = self.source
-        return _TFTPBackend(TFTPClient(source.host, source.port or 69), {})
+        return _TFTPBackend(TFTPClient(source.host or "", source.port or 69), {})
 
     def with_options(self, **client_options: Any) -> "TFTPURIPath":
         """This path with a ``TFTPClient`` built from ``client_options`` (blksize, windowsize...).
@@ -68,7 +69,7 @@ class TFTPURIPath(UriPath):
         A keyword given here wins over the option of the same name in the URI.
         """
         source = self.source
-        client = TFTPClient(source.host, source.port or 69, **client_options)
+        client = TFTPClient(source.host or "", source.port or 69, **client_options)
         return self.with_backend(_TFTPBackend(client, client_options))
 
     def with_client(self, client: TFTPClient) -> "TFTPURIPath":
@@ -103,7 +104,9 @@ class TFTPURIPath(UriPath):
         if not options or backend.explicit is None:
             return backend.client
         source = self.source
-        return TFTPClient(source.host, source.port or 69, **_client_keywords_over(options, backend.explicit))
+        return TFTPClient(
+            source.host or "", source.port or 69, **_client_keywords_over(options, backend.explicit)
+        )
 
     @property
     def filename(self) -> str:
@@ -113,21 +116,21 @@ class TFTPURIPath(UriPath):
     def transfer_mode(self) -> str:
         return self._parts()[1]
 
-    def stat(self, *, follow_symlinks: bool = True):
+    def stat(self, *, follow_symlinks: bool = True) -> FileStat:
         filename, mode, options = self._parts()
         return tftp_stat(self._client_for(options), filename, mode, self)
 
-    def _open(self, mode: str = "r", buffering: int = -1):
+    def _open(self, mode: str = "r", buffering: int = -1) -> Any:
         filename, transfer_mode, options = self._parts()
         return tftp_open(self._client_for(options), filename, transfer_mode, mode, self)
 
     def unlink(self, missing_ok: bool = False) -> None:
         tftp_unlink(self, missing_ok, sys._getframe(1))
 
-    def _scandir(self):
+    def _scandir(self) -> Iterator[Tuple[str, FileStat]]:
         filename, _, options = self._parts()
         return tftp_scandir(self._client_for(options), filename, self)
 
-    def _listdir(self):
+    def _listdir(self) -> Iterator[str]:
         for name, _ in self._scandir():
             yield name

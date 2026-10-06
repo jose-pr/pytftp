@@ -18,7 +18,10 @@ import os
 import secrets
 import stat
 import tempfile
-from typing import Any, Optional, Protocol, Tuple, Union
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Protocol, Tuple, Union
+
+if TYPE_CHECKING:
+    from netimps import Interface
 
 from ..exceptions import TFTPError
 from ..packet._enums import TFTPErrorCode
@@ -67,7 +70,7 @@ class TFTPRequestContext:
         self.peer = peer
         self.local_address = local_address
         self.interface_index = interface_index
-        self.interface: Any = None
+        self.interface: Optional[Interface] = None
         self.listing = False
 
     def with_filename(self, filename: str) -> "TFTPRequestContext":
@@ -89,7 +92,7 @@ class TFTPRequestContext:
         return self.request.mode
 
     @property
-    def options(self) -> dict:
+    def options(self) -> Mapping[str, str]:
         return self.request.options
 
     def __repr__(self) -> str:
@@ -246,7 +249,9 @@ class ThreadedHandler:
     written on the loop thread, as a synchronous server's are on its own.
     """
 
-    def __init__(self, handler: Any, *, executor: Optional[concurrent.futures.Executor] = None) -> None:
+    def __init__(
+        self, handler: TFTPHandler, *, executor: Optional[concurrent.futures.Executor] = None
+    ) -> None:
         if has_coroutine_hooks(handler):
             raise TypeError(
                 "ThreadedHandler wraps a synchronous handler; %r has coroutine hooks" % (handler,)
@@ -255,7 +260,7 @@ class ThreadedHandler:
         self.executor = executor
         self.opens_fast = bool(getattr(handler, "opens_fast", False))
 
-    async def open_read(self, context: TFTPRequestContext) -> Any:
+    async def open_read(self, context: TFTPRequestContext) -> Union[TFTPReader, TFTPChunkReader]:
         if self.opens_fast:
             return self.handler.open_read(context)
         import asyncio  # not at module level: a synchronous caller never needs it
@@ -264,7 +269,7 @@ class ThreadedHandler:
             self.executor, self.handler.open_read, context
         )
 
-    async def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> Any:
+    async def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> TFTPWriter:
         if self.opens_fast:
             return self.handler.open_write(context, size)
         import asyncio
@@ -313,7 +318,7 @@ class AtomicWriter:
         self._file = os.fdopen(fd, "wb")
         self.closed = False
 
-    def write(self, data) -> int:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
         return self._file.write(data)
 
     def close(self) -> None:

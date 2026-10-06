@@ -15,7 +15,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    from netimps import Host, IPAddressLike
+    from netimps import HostLike, InterfaceLike
 
 from .._text import Escaped
 from ..capture._hook import HookGuard, guard
@@ -30,10 +30,10 @@ from .._result import TransferResult
 from ..transfer._receiver import Receiver
 from ..transfer._engine import Transfer
 from .._loggers import SERVER as log
-from ._handler import TFTPRequestContext
+from ._handler import AsyncTFTPHandler, TFTPHandler, TFTPRequestContext, ThreadedHandler
 from ._listener import Arrival, Listener
 from ._policy import TFTPServerLimits
-from ._session import PortAllocator, Session, as_port_range
+from ._session import PortAllocator, PortRangeLike, Session, as_port_range
 from ._stats import SERVER_COUNTERS, TFTPStats
 
 __all__ = ["ServerBase"]
@@ -50,9 +50,9 @@ class ServerBase:
 
     def __init__(
         self,
-        root_or_handler: Any,
+        root_or_handler: Union[str, "os.PathLike[str]", TFTPHandler, AsyncTFTPHandler, ThreadedHandler],
         *,
-        host: Optional[Union[IPAddressLike, Host]] = None,
+        host: Optional[HostLike] = None,
         port: int = 69,
         writable: bool = False,
         create: bool = True,
@@ -69,13 +69,13 @@ class ServerBase:
         backoff: float = 2.0,
         max_timeout: Optional[float] = None,
         trace: Optional[Callable[[PacketEvent], Any]] = None,
-        port_range: Any = None,
-        interface: Any = None,
+        port_range: Optional[PortRangeLike] = None,
+        interface: InterfaceLike = None,
     ) -> None:
         if interface is not None and host:
             from netimps import is_wildcard
 
-            if not is_wildcard(host):
+            if not is_wildcard(host):  # type: ignore[arg-type]  # a Host is accepted at run time
                 raise ValueError(
                     "give host or interface, not both (host may be '0.0.0.0' or '::' to pick the family)"
                 )
@@ -216,7 +216,9 @@ class ServerBase:
             self._trace_guard = guard(self.trace, log, self._trace_guard)
             session.trace = self._trace_guard
             # The request arrived at the listening port, not the transfer's.
-            arrived = (local, self._address[1]) if local is not None else self._address[:2]
+            address = self._address
+            assert address is not None  # a request arrives on a bound listener
+            arrived = (local, address[1]) if local is not None else address[:2]
             session.emit(data, "in", sender, arrived)
         # Registered at once, so a retransmitted request is recognised while
         # the stream is still being opened.
@@ -395,13 +397,13 @@ class ServerBase:
             stats.add("declined" if declined else "completed" if error is None else "failed")
             stats.add("bytes_sent" if request.is_read else "bytes_received", transfer.bytes)
             stats.add("retransmits", transfer.retransmits)
-        if declined:
+        if declined and error is not None:
             log.info(
                 "%s %r: %s declined the options (%s)",
                 result.operation,
                 request.filename,
                 session.peer[0],
-                Escaped(error.message),  # type: ignore[union-attr]
+                Escaped(error.message),
             )
         elif error is None:
             log.info(

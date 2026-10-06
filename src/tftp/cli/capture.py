@@ -87,7 +87,7 @@ class CaptureCmd(Base):
             return 2
         # A transfer the tracker lets go of (a live capture holds a bounded number) is
         # summarised and written when it goes, the rest at the end.
-        written = []
+        written: _ty.List[_ty.Any] = []
         tracker = FlowTracker(
             self.port,
             keep_payloads=bool(self.extract),
@@ -112,7 +112,7 @@ class CaptureCmd(Base):
             error("no transfer data to extract")
         return None
 
-    def _finish(self, transfer: _ty.Any, written: list) -> None:
+    def _finish(self, transfer: _ty.Any, written: _ty.List[_ty.Any]) -> None:
         """The transfer is complete as far as this capture goes: summarise it, write its file."""
         if self.transfers:
             if self.json_out:

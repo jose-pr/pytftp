@@ -8,7 +8,7 @@ import io
 import os
 import socket
 import time
-from typing import Any, AsyncIterator, List, Optional, Tuple
+from typing import Any, AsyncIterator, Callable, List, Mapping, Optional, Tuple, Union
 
 from ..capture._events import PacketEvent, new_session_id
 from .. import listing
@@ -25,9 +25,10 @@ from ..transfer._sender import Sender
 from ..transfer._engine import Transfer, as_readinto, as_write
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
 from .._sockets import fit_window, local_towards, same_host
+from .._streams import AsyncSink, AsyncSource
 from ._core import (
     LISTING_LIMIT,
-    Progress,
+    ProgressFunction,
     RemoteStat,
     _ClientBase,
     _mode,
@@ -74,7 +75,7 @@ class _Transfer:
         self.engine: Optional[Transfer] = None
         self.timer: Optional[asyncio.TimerHandle] = None
         self.timer_at: Optional[float] = None
-        self.progress: Optional[Progress] = None
+        self.progress: Optional[ProgressFunction] = None
         self.total: Optional[int] = None
         self.reported = -1
         self.trace = client._trace_hook()
@@ -87,12 +88,16 @@ class _Transfer:
 
     # -- I/O ---------------------------------------------------------------------
 
-    def emit(self, data: bytes, direction: str, remote: Tuple[Any, ...]) -> None:
-        self.trace(  # type: ignore[misc]
-            PacketEvent(time.time(), direction, self.observer, remote, bytes(data), "client", self.session_id)
-        )
+    def emit(self, data: Union[bytes, memoryview], direction: str, remote: Tuple[Any, ...]) -> None:
+        trace = self.trace
+        if trace is not None:
+            trace(
+                PacketEvent(
+                    time.time(), direction, self.observer, remote, bytes(data), "client", self.session_id
+                )
+            )
 
-    def sendto(self, data, addr: Tuple[Any, ...]) -> None:
+    def sendto(self, data: Union[bytes, memoryview], addr: Tuple[Any, ...]) -> None:
         assert self.transport is not None
         if self.parting is not None:
             # abort() discards what the transport has queued, and on the
@@ -106,8 +111,9 @@ class _Transfer:
         if self.trace is not None:
             self.emit(data, "out", addr)
 
-    def send(self, packet) -> None:
-        self.sendto(packet, self.peer)  # type: ignore[arg-type]
+    def send(self, packet: Union[bytes, memoryview]) -> None:
+        # The engine exists, and sends, only once the first answer has set the peer.
+        self.sendto(packet, self.peer)  # type: ignore[arg-type]  # peer is set before any send
 
     def received(self, data: bytes, addr: Tuple[Any, ...]) -> None:
         if self.trace is not None:
@@ -119,7 +125,7 @@ class _Transfer:
                     self.first.set_result((data, addr))
             return
         peer = self.peer
-        if addr[1] != peer[1] or addr[0] != peer[0]:  # type: ignore[index]
+        if addr[1] != peer[1] or addr[0] != peer[0]:  # type: ignore[index]  # an engine implies a peer
             self.sendto(_encode_error(TFTPErrorCode.UNKNOWN_TID), addr)
             return
         engine = self.engine
@@ -211,10 +217,10 @@ class AsyncTFTPClient(_ClientBase):
     async def download(
         self,
         filename: str,
-        dst: Any,
+        dst: Union[str, "os.PathLike[str]", AsyncSink],
         *,
         mode: str = "octet",
-        progress: Optional[Progress] = None,
+        progress: Optional[ProgressFunction] = None,
         max_size: Optional[int] = None,
     ) -> TransferResult:
         """Fetch ``filename`` into ``dst``: a path, or an object with ``async write(data)``.
@@ -243,10 +249,10 @@ class AsyncTFTPClient(_ClientBase):
     async def upload(
         self,
         filename: str,
-        src: Any,
+        src: Union[str, "os.PathLike[str]", bytes, bytearray, memoryview, AsyncSource],
         *,
         mode: str = "octet",
-        progress: Optional[Progress] = None,
+        progress: Optional[ProgressFunction] = None,
     ) -> TransferResult:
         """Send ``src``: a path, bytes, or an object with ``async read(n)``."""
         mode = _mode(mode)
@@ -335,13 +341,13 @@ class AsyncTFTPClient(_ClientBase):
         filename: str,
         sink: Any,
         mode: str,
-        progress: Optional[Progress],
+        progress: Optional[ProgressFunction],
         limit: Optional[int],
         *,
         bridged: bool,
         capacity: int = 1 << 20,
     ) -> TransferResult:
-        bridge = None
+        bridge: Optional[AsyncWriterBridge] = None
         if bridged:
             bridge = AsyncWriterBridge(sink, capacity=capacity, close_sink=False, start=False)
             target: Any = bridge
@@ -362,9 +368,9 @@ class AsyncTFTPClient(_ClientBase):
                 await bridge.aclose()
 
     async def _upload(
-        self, filename: str, source: Any, mode: str, progress: Optional[Progress], *, bridged: bool
+        self, filename: str, source: Any, mode: str, progress: Optional[ProgressFunction], *, bridged: bool
     ) -> TransferResult:
-        bridge = None
+        bridge: Optional[AsyncReaderBridge] = None
         if bridged:
             bridge = AsyncReaderBridge(source, start=False)
             source = bridge
@@ -384,7 +390,16 @@ class AsyncTFTPClient(_ClientBase):
                 await bridge.aclose()
 
     async def _run(
-        self, opcode, filename, mode, size, write, read, progress, bridge, limit
+        self,
+        opcode: int,
+        filename: str,
+        mode: str,
+        size: Optional[int],
+        write: Optional[Callable[[Union[bytes, memoryview]], object]],
+        read: Optional[Callable[[memoryview], int]],
+        progress: Optional[ProgressFunction],
+        bridge: Union[AsyncReaderBridge, AsyncWriterBridge, None],
+        limit: Optional[int],
     ) -> TransferResult:
         from netimps import bind
 
@@ -422,19 +437,19 @@ class AsyncTFTPClient(_ClientBase):
 
     async def _exchange_async(
         self,
-        loop,
-        sock,
-        server,
-        opcode,
-        filename,
-        mode,
-        options,
-        write,
-        read,
-        progress,
-        started,
-        bridge,
-        limit,
+        loop: asyncio.AbstractEventLoop,
+        sock: socket.socket,
+        server: Tuple[Any, ...],
+        opcode: int,
+        filename: str,
+        mode: str,
+        options: Mapping[str, str],
+        write: Optional[Callable[[Union[bytes, memoryview]], object]],
+        read: Optional[Callable[[memoryview], int]],
+        progress: Optional[ProgressFunction],
+        started: float,
+        bridge: Union[AsyncReaderBridge, AsyncWriterBridge, None],
+        limit: Optional[int],
     ) -> TransferResult:
         is_read = opcode == TFTPOpcode.RRQ
         try:
@@ -455,7 +470,6 @@ class AsyncTFTPClient(_ClientBase):
         try:
             budget = self._expires(started)
             expires = None if budget is None else loop.time() + (budget - time.monotonic())
-            engine_kwargs = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
             # Request phase, with the same backoff as retransmissions.
             from netimps import Backoff
 
@@ -480,17 +494,36 @@ class AsyncTFTPClient(_ClientBase):
             now = loop.time()
             if is_read:
                 self._admit(negotiated, driver.send, limit)
+                assert write is not None  # a download is given its sink
                 announced = negotiated.tsize if mode == "octet" else None
                 if limit is not None or announced is not None:
                     write = _bounded(write, limit, announced)
                 reply = None if first_data else encode_ack(0)
                 driver.engine = Receiver(
-                    driver.send, write, negotiated, self.retries, now, reply=reply, **engine_kwargs
+                    driver.send,
+                    write,
+                    negotiated,
+                    self.retries,
+                    now,
+                    reply=reply,
+                    backoff=self.backoff,
+                    max_timeout=self.max_timeout,
+                    expires=expires,
                 )
                 if first_data:
                     driver.engine.handle(view, len(data), now)
             else:
-                driver.engine = Sender(driver.send, read, negotiated, self.retries, now, **engine_kwargs)
+                assert read is not None  # an upload is given its source
+                driver.engine = Sender(
+                    driver.send,
+                    read,
+                    negotiated,
+                    self.retries,
+                    now,
+                    backoff=self.backoff,
+                    max_timeout=self.max_timeout,
+                    expires=expires,
+                )
             if bridge is not None:
                 bridge.set_wakeup(lambda: loop.call_soon(driver.resume))
                 bridge.start()

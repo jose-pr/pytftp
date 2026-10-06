@@ -35,9 +35,9 @@ from typing import Any, Callable, List, Optional, Tuple
 from ..exceptions import CaptureFilterError
 from ._events import PacketEvent
 
-__all__ = ["compile_filter", "CaptureFilterError", "FILTER_KEYS"]
+__all__ = ["EventPredicate", "compile_filter", "CaptureFilterError", "FILTER_KEYS"]
 
-Predicate = Callable[[PacketEvent], bool]
+EventPredicate = Callable[[PacketEvent], bool]
 FILTER_KEYS = ("op", "host", "src", "dst", "port", "file", "block", "code", "session", "leg", "direction")
 _AND = re.compile(r"\s+and\s+", re.IGNORECASE)
 
@@ -83,7 +83,7 @@ def _address_matcher(text: str) -> Callable[[Tuple[Any, ...]], bool]:
     return match
 
 
-def _clause(key: str, values: List[str]) -> Predicate:
+def _clause(key: str, values: List[str]) -> EventPredicate:
     if key == "op":
         names = {v.upper() for v in values}
         return lambda e: e.opcode_name in names
@@ -128,11 +128,11 @@ def _clause(key: str, values: List[str]) -> Predicate:
     raise CaptureFilterError("unknown filter key %r (known: %s)" % (key, ", ".join(FILTER_KEYS)))
 
 
-def compile_filter(text: Optional[str]) -> Predicate:
+def compile_filter(text: Optional[str]) -> EventPredicate:
     """A predicate over :class:`PacketEvent`; empty or ``None`` matches everything."""
     if not text or not text.strip():
         return lambda event: True
-    predicates: List[Predicate] = []
+    predicates: List[EventPredicate] = []
     for raw in _AND.split(text.strip()):
         clause = raw.strip()
         negate = "!=" in clause

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Callable, Optional, Union
 
 from ..exceptions import WouldBlock
 from ..options._handler import Negotiated
-from ._engine import _ACK, _ACK_HDR, _DATA, _ERROR, _OACK, SendFn, Transfer
+from ._engine import _ACK, _ACK_HDR, _DATA, _ERROR, _OACK, SendFunction, Transfer
 
 __all__ = ["Receiver"]
 
@@ -51,16 +51,28 @@ class Receiver(Transfer):
 
     def __init__(
         self,
-        send: SendFn,
-        write: Callable[[memoryview], object],
+        send: SendFunction,
+        write: Callable[[Union[bytes, memoryview]], object],
         negotiated: Negotiated,
         retries: int,
         now: float,
         reply: Optional[bytes] = None,
         complete: Optional[Callable[[], object]] = None,
-        **kwargs: Any,
+        *,
+        backoff: float = 2.0,
+        max_timeout: Optional[float] = None,
+        expires: Optional[float] = None,
+        max_idle: Optional[float] = None,
     ) -> None:
-        super().__init__(send, negotiated, retries, **kwargs)
+        super().__init__(
+            send,
+            negotiated,
+            retries,
+            backoff=backoff,
+            max_timeout=max_timeout,
+            expires=expires,
+            max_idle=max_idle,
+        )
         self._write = write
         self._complete = complete
         self._expected = 1
@@ -86,7 +98,9 @@ class Receiver(Transfer):
         else:
             self._send(_ACK_HDR.pack(_ACK, self._wire(block)))
 
-    def _accept(self, payload, wire: int, size: int, now: float, written: bool = False) -> None:
+    def _accept(
+        self, payload: Union[bytes, memoryview], wire: int, size: int, now: float, written: bool = False
+    ) -> None:
         """Write one in-order block and acknowledge as the window requires."""
         if size and not written:
             try:
@@ -125,7 +139,7 @@ class Receiver(Transfer):
             self._send(_ACK_HDR.pack(_ACK, wire))
         self._arm(now)
 
-    def _hold(self, payload, wire: int, size: int, written: bool) -> None:
+    def _hold(self, payload: Union[bytes, memoryview], wire: int, size: int, written: bool) -> None:
         # Copy: the payload is usually a view of a reused receive buffer.
         self._pending = (bytes(payload), wire, size, written)
         self.is_stalled = True

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import io
 import threading
-from typing import Any, Dict, Mapping, Optional
+from typing import Dict, Mapping, Optional, Union
 
 from ..exceptions import TFTPError
 from ..packet._enums import TFTPErrorCode
+from ..server._handler import TFTPRequestContext
 
 __all__ = ["MemoryBackend", "normalize_name"]
 
@@ -68,14 +69,14 @@ class MemoryBackend:
         self.max_entries = _bound("max_entries", max_entries)
         self._lock = threading.Lock()
 
-    def open_read(self, context: Any) -> io.BytesIO:
+    def open_read(self, context: TFTPRequestContext) -> io.BytesIO:
         with self._lock:
             data = self.files.get(normalize_name(context.filename))
         if data is None:
             raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND)
         return io.BytesIO(data)
 
-    def open_write(self, context: Any, size: Optional[int]) -> "_MemoryUpload":
+    def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> "_MemoryUpload":
         if not self.writable:
             raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION, "server is read-only")
         name = normalize_name(context.filename)
@@ -108,8 +109,9 @@ class _MemoryUpload:
         self._owner = owner
         self._name = name
         self._buffer = bytearray()
+        self._open = True
 
-    def write(self, data) -> int:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
         limit = self._owner.max_upload
         if limit is not None and len(self._buffer) + len(data) > limit:
             raise TFTPError(TFTPErrorCode.DISK_FULL, "file too large")
@@ -117,9 +119,10 @@ class _MemoryUpload:
         return len(data)
 
     def close(self) -> None:
-        if self._buffer is not None:
-            data, self._buffer = bytes(self._buffer), None  # type: ignore[assignment]
-            self._owner._store(self._name, data)
+        if self._open:
+            self._open = False
+            self._owner._store(self._name, bytes(self._buffer))
 
     def abort(self) -> None:
-        self._buffer = None  # type: ignore[assignment]
+        self._open = False
+        self._buffer.clear()

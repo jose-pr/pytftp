@@ -104,6 +104,7 @@ class RelayCmd(Traced):
             return 1
         logger = _logging.getLogger("tftp")
         address = relay.server_address
+        assert address is not None  # bound above
         logger.info("relaying on %s port %d", address[0], address[1])
         try:
             with shutdown_on_signal(relay):

@@ -236,3 +236,9 @@ def test_from_exception_maps_what_a_transfer_failed_with():
     assert TFTPError.from_exception(PermissionError(13, "/secret")).code == 2
     assert type(TFTPError.from_exception(KeyError("x"))) is TFTPError
     assert TFTPError.from_exception(KeyError("x")).code == 0
+
+
+def test_a_remote_error_without_a_code_carries_the_undefined_code():
+    err = RemoteError()
+    assert err.code == tftp.TFTPErrorCode.NOT_DEFINED
+    assert RemoteError(message="odd").message == "odd"

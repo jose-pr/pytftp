@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from ..exceptions import WouldBlock
 from ..options._handler import Negotiated
-from ._engine import _ACK, _DATA, _ERROR, _OACK, SendFn, Transfer, _pack_header
+from ._engine import _ACK, _DATA, _ERROR, _OACK, SendFunction, Transfer, _pack_header
 
 __all__ = ["Sender"]
 
@@ -39,15 +39,27 @@ class Sender(Transfer):
 
     def __init__(
         self,
-        send: SendFn,
+        send: SendFunction,
         read: Callable[[memoryview], int],
         negotiated: Negotiated,
         retries: int,
         now: float,
         oack: Optional[bytes] = None,
-        **kwargs: Any,
+        *,
+        backoff: float = 2.0,
+        max_timeout: Optional[float] = None,
+        expires: Optional[float] = None,
+        max_idle: Optional[float] = None,
     ) -> None:
-        super().__init__(send, negotiated, retries, **kwargs)
+        super().__init__(
+            send,
+            negotiated,
+            retries,
+            backoff=backoff,
+            max_timeout=max_timeout,
+            expires=expires,
+            max_idle=max_idle,
+        )
         self._read = read
         # Slots are allocated when their block is first read, so a transfer
         # costs what it has sent, not the window it negotiated.

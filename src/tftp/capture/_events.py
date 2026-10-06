@@ -5,12 +5,12 @@ from __future__ import annotations
 import datetime
 import itertools
 import struct
-from typing import Any, Dict, NamedTuple, Optional, Tuple
+from typing import Any, Dict, Mapping, NamedTuple, Optional, Tuple
 
 from ..exceptions import TFTPDecodeError
 from .._text import escape
 from ..packet._enums import TFTPOpcode
-from ..packet._codec import decode
+from ..packet._codec import ErrorPacket, OptionAckPacket, RequestPacket, decode
 
 __all__ = ["PacketEvent", "summarize", "new_session_id"]
 
@@ -29,7 +29,7 @@ def _endpoint(address: Any) -> str:
     return "[%s]:%s" % (host, port) if ":" in str(host) else "%s:%s" % (host, port)
 
 
-def _options(options: Dict[str, str], lead: str) -> str:
+def _options(options: Mapping[str, str], lead: str) -> str:
     """``" name=value ..."`` with every name and value escaped; empty for no options."""
     return "".join("%s%s=%s" % (lead, escape(name), escape(value)) for name, value in options.items())
 
@@ -52,17 +52,17 @@ def summarize(data: bytes) -> str:
         packet = decode(data)
     except TFTPDecodeError as exc:
         return "malformed (%s)" % escape(str(exc))
-    if op in (TFTPOpcode.RRQ, TFTPOpcode.WRQ):
+    if isinstance(packet, RequestPacket):
         return "%s %r %s%s" % (
             TFTPOpcode(op).name,
-            packet.filename,  # type: ignore[union-attr]
-            escape(packet.mode),  # type: ignore[union-attr]
-            _options(packet.options, " "),  # type: ignore[union-attr]
+            packet.filename,
+            escape(packet.mode),
+            _options(packet.options, " "),
         )
-    if op == TFTPOpcode.ERROR:
-        return "ERROR %d %r" % (packet.code, packet.message)  # type: ignore[union-attr]
-    if op == TFTPOpcode.OACK:
-        return "OACK" + _options(packet.options, " ")  # type: ignore[union-attr]
+    if isinstance(packet, ErrorPacket):
+        return "ERROR %d %r" % (packet.code, packet.message)
+    if isinstance(packet, OptionAckPacket):
+        return "OACK" + _options(packet.options, " ")
     return "opcode %d" % op
 
 

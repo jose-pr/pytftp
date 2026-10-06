@@ -9,8 +9,9 @@ Elsewhere, pipe a capture tool into :func:`tftp.capture.read_datagrams`::
 from __future__ import annotations
 
 import socket
+import sys
 import time
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Optional
 
 from .frames import FrameDecoder, UDPDatagram
 
@@ -25,15 +26,17 @@ def live_capture_supported() -> bool:
     return hasattr(socket, "AF_PACKET")
 
 
-def sniff(interface: Optional[str] = None, *, stop: Optional[callable] = None) -> Iterator[UDPDatagram]:  # type: ignore[valid-type]
+def sniff(
+    interface: Optional[str] = None, *, stop: Optional[Callable[[], object]] = None
+) -> Iterator[UDPDatagram]:
     """UDP datagrams seen on ``interface`` (all interfaces when ``None``).
 
     ``stop()``, when given, is checked between datagrams (and at least once a
     second); returning true ends the iteration.
     """
-    if not live_capture_supported():
+    if sys.platform != "linux" or not live_capture_supported():
         raise OSError("live capture needs Linux AF_PACKET; pipe tcpdump/dumpcap output instead")
-    sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(_ETH_P_ALL))  # type: ignore[attr-defined]
+    sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(_ETH_P_ALL))
     try:
         if interface:
             sock.bind((interface, 0))

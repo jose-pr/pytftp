@@ -5,7 +5,7 @@ from __future__ import annotations
 import errno
 import io
 import struct
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 from ..exceptions import (
     TFTPProtocolError,
@@ -15,6 +15,7 @@ from ..exceptions import (
     TransferTimeoutError,
     WouldBlock,
 )
+from .._streams import SupportsRead, SupportsReadinto, SupportsWrite
 from ..options._handler import Negotiated
 from ..packet._codec import _encode_error, _error_text
 
@@ -28,10 +29,10 @@ _ACK_HDR = struct.Struct("!HH")
 _pack_header = struct.Struct("!HH").pack_into
 _MAX_WINDOW = 32767
 
-SendFn = Callable[[object], object]
+SendFunction = Callable[[Union[bytes, memoryview]], object]
 
 
-def as_readinto(source) -> Callable[[memoryview], int]:
+def as_readinto(source: Union[SupportsReadinto, SupportsRead]) -> Callable[[memoryview], int]:
     """A ``readinto``-style callable for ``source``, filling the view fully.
 
     Short reads are retried until the view is full or the source is
@@ -39,11 +40,11 @@ def as_readinto(source) -> Callable[[memoryview], int]:
     ``readinto`` or ``read``; either returning ``None`` is "nothing ready"
     and raises :class:`WouldBlock`.
     """
-    readinto = getattr(source, "readinto", None)
+    readinto: Optional[Callable[[memoryview], Optional[int]]] = getattr(source, "readinto", None)
     if readinto is None:
-        read = source.read
+        read = getattr(source, "read")
 
-        def readinto(view):  # type: ignore[misc]
+        def readinto(view: memoryview) -> Optional[int]:
             chunk = read(len(view))
             if chunk is None:
                 return None
@@ -77,19 +78,20 @@ def as_readinto(source) -> Callable[[memoryview], int]:
     return fill
 
 
-def _write_rest(write: Callable[[memoryview], Optional[int]], data, done: int) -> None:
+def _write_rest(write: Callable[[Any], Optional[int]], data: Union[bytes, memoryview], done: int) -> None:
     """Hand ``data`` to ``write`` again from octet ``done`` until all of it is taken."""
     rest = memoryview(data)
     while True:
         rest = rest[done:]
         if not rest:
             return
-        done = write(rest)  # type: ignore[assignment]
-        if not done:
+        taken = write(rest)
+        if not taken:
             raise OSError(errno.EIO, "the sink took none of the %d octets left of a block" % len(rest))
+        done = taken
 
 
-def as_write(sink) -> Callable[[memoryview], object]:
+def as_write(sink: SupportsWrite) -> Callable[[Union[bytes, memoryview]], object]:
     """A ``write`` callable that is safe to hand a reused receive buffer.
 
     Standard file objects copy what they are given, so they get the buffer
@@ -108,7 +110,7 @@ def as_write(sink) -> Callable[[memoryview], object]:
         return write
     raw = isinstance(sink, io.RawIOBase)
 
-    def write_all(view: memoryview) -> None:
+    def write_all(view: Union[bytes, memoryview]) -> None:
         data = view if copies else bytes(view)
         done = write(data)
         if done is None:
@@ -171,7 +173,7 @@ class Transfer:
 
     def __init__(
         self,
-        send: SendFn,
+        send: SendFunction,
         negotiated: Negotiated,
         retries: int,
         *,

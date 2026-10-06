@@ -11,7 +11,7 @@ handled correctly.
 
 from __future__ import annotations
 
-from typing import BinaryIO, Optional
+from typing import BinaryIO, Optional, Union
 
 __all__ = ["NetasciiReader", "NetasciiWriter", "encode", "decode", "encoded_size"]
 
@@ -75,7 +75,7 @@ class NetasciiReader:
         got = self._readinto(chunk) or 0
         return bytes(chunk[:got])
 
-    def readinto(self, buffer) -> int:
+    def readinto(self, buffer: Union[bytearray, memoryview]) -> int:
         view = memoryview(buffer)
         want = len(view)
         filled = 0
@@ -116,7 +116,7 @@ class NetasciiWriter:
         self._raw = raw
         self._held_cr = False
 
-    def write(self, data) -> int:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
         size = len(data)
         chunk = bytes(data)
         if self._held_cr:

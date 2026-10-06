@@ -14,10 +14,11 @@ closes the stream it was given.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 from .exceptions import TFTPError
 from .exceptions import WouldBlock
+from ._streams import AsyncSink, AsyncSource
 
 __all__ = ["AsyncReaderBridge", "AsyncWriterBridge"]
 
@@ -41,7 +42,7 @@ class AsyncReaderBridge:
     _CHUNK = 65536
 
     def __init__(
-        self, source: Any, *, capacity: int = 1 << 20, size: Optional[int] = None, start: bool = True
+        self, source: AsyncSource, *, capacity: int = 1 << 20, size: Optional[int] = None, start: bool = True
     ) -> None:
         self.source = source
         self.capacity = capacity
@@ -51,7 +52,7 @@ class AsyncReaderBridge:
         self._error: Optional[BaseException] = None
         self._space = asyncio.Event()
         self._space.set()
-        self._wakeup: Optional[Callable[[], None]] = None
+        self._wakeup: Optional[Callable[[], object]] = None
         self._task: Optional["asyncio.Task[None]"] = None
         if start:
             self.start()
@@ -61,7 +62,7 @@ class AsyncReaderBridge:
         if self._task is None:
             self._task = asyncio.get_running_loop().create_task(self._pump())
 
-    def set_wakeup(self, callback: Callable[[], None]) -> None:
+    def set_wakeup(self, callback: Callable[[], object]) -> None:
         self._wakeup = callback
 
     def _wake(self) -> None:
@@ -90,7 +91,7 @@ class AsyncReaderBridge:
             self._space.clear()
         self._wake()
 
-    def readinto(self, view) -> int:
+    def readinto(self, view: Union[bytearray, memoryview]) -> int:
         if self._buffer:
             n = min(len(view), len(self._buffer))
             view[:n] = self._buffer[:n]
@@ -107,7 +108,7 @@ class AsyncReaderBridge:
     def close(self) -> None:
         if self._task is not None:
             self._task.cancel()
-        asyncio.ensure_future(self.source.close())
+        asyncio.ensure_future(self.source.close())  # type: ignore[attr-defined]  # a server's reader has close()
 
     async def aclose(self) -> None:
         """End the task, waiting for it; the source is left open."""
@@ -130,7 +131,7 @@ class AsyncWriterBridge:
     copies_writes = True
 
     def __init__(
-        self, sink: Any, *, capacity: int = 1 << 20, close_sink: bool = True, start: bool = True
+        self, sink: AsyncSink, *, capacity: int = 1 << 20, close_sink: bool = True, start: bool = True
     ) -> None:
         self.sink = sink
         self.capacity = capacity
@@ -140,7 +141,7 @@ class AsyncWriterBridge:
         self._finished = False
         self._error: Optional[BaseException] = None
         self._data = asyncio.Event()
-        self._wakeup: Optional[Callable[[], None]] = None
+        self._wakeup: Optional[Callable[[], object]] = None
         self._done = asyncio.get_running_loop().create_future()
         self._task: Optional["asyncio.Task[None]"] = None
         if start:
@@ -151,7 +152,7 @@ class AsyncWriterBridge:
         if self._task is None:
             self._task = asyncio.get_running_loop().create_task(self._pump())
 
-    def set_wakeup(self, callback: Callable[[], None]) -> None:
+    def set_wakeup(self, callback: Callable[[], object]) -> None:
         self._wakeup = callback
 
     def _wake(self) -> None:
@@ -172,7 +173,7 @@ class AsyncWriterBridge:
                     break
                 self._data.clear()
             if self.close_sink:
-                await self.sink.close()
+                await self.sink.close()  # type: ignore[attr-defined]  # close_sink is for a sink with close()
         except asyncio.CancelledError:
             raise
         except BaseException as exc:
@@ -183,7 +184,7 @@ class AsyncWriterBridge:
             self._done.set_result(None)
         self._wake()
 
-    def write(self, data) -> int:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
         if self._error is not None:
             raise self._error
         if self._buffer and len(self._buffer) + len(data) > self.capacity:

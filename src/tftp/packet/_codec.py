@@ -16,7 +16,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import List, Mapping, Optional, Tuple, Union
+from typing import Any, List, Mapping, Optional, Tuple, Type, TypeVar, Union
 
 from ..exceptions import TFTPDecodeError
 from ._enums import TFTPErrorCode, TFTPOpcode
@@ -36,6 +36,8 @@ __all__ = [
     "encode_oack",
     "FILENAME_ENCODING",
 ]
+
+_P = TypeVar("_P")
 
 #: Filenames and option text are bytes on the wire. UTF-8 with
 #: ``surrogateescape`` round-trips any byte string losslessly while still
@@ -86,8 +88,11 @@ class _Packet:
 
     __slots__ = ()
 
+    def encode(self) -> bytes:
+        raise NotImplementedError
+
     def __bytes__(self) -> bytes:
-        return self.encode()  # type: ignore[attr-defined]
+        return self.encode()
 
 
 @dataclass(frozen=True, repr=False)
@@ -134,7 +139,7 @@ class RequestPacket(_Packet):
     def __hash__(self) -> int:
         return hash((self.opcode, self.filename, self.mode, frozenset(self.options.items())))
 
-    def __reduce__(self):
+    def __reduce__(self) -> Tuple[Any, ...]:
         return (type(self), (self.opcode, self.filename, self.mode, dict(self.options), self.raw))
 
     @property
@@ -250,7 +255,7 @@ class OptionAckPacket(_Packet):
     def __hash__(self) -> int:
         return hash(frozenset(self.options.items()))
 
-    def __reduce__(self):
+    def __reduce__(self) -> Tuple[Any, ...]:
         return (type(self), (dict(self.options),))
 
     @classmethod
@@ -429,7 +434,7 @@ def decode(packet: Union[bytes, bytearray, memoryview]) -> TFTPPacket:
     raise TFTPDecodeError("unknown opcode %d" % op)
 
 
-def _decode_kind(cls: type, data: Union[bytes, bytearray, memoryview]):
+def _decode_kind(cls: Type[_P], data: Union[bytes, bytearray, memoryview]) -> _P:
     packet = decode(data)
     if not isinstance(packet, cls):
         raise TFTPDecodeError("expected %s, got %s" % (cls.__name__, type(packet).__name__))
