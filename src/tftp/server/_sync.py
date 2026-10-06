@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, TypeVar
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
-from ..capture.events import PacketEvent
+from ..capture._events import PacketEvent
 from ..options import TFTPServerOptions
 from ..packet import TFTPErrorCode
 from ..packet._codec import _encode_error

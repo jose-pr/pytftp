@@ -1,12 +1,12 @@
 # `tftp.capture`
 
-::: tftp.capture.events
+::: tftp.capture._events
 
 ::: tftp.capture.pcap
 
-::: tftp.capture.flows
+::: tftp.capture._flows
 
-::: tftp.capture.filters
+::: tftp.capture._filters
 
 ::: tftp.capture.frames
 

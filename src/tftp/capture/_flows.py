@@ -20,7 +20,7 @@ from ..options import DEFAULT_BLKSIZE
 from ..options._handler import read_decimal
 from ..exceptions import TFTPDecodeError
 from ..packet import TFTPOpcode, decode
-from .events import PacketEvent, new_session_id
+from ._events import PacketEvent, new_session_id
 from .frames import UDPDatagram
 
 __all__ = ["CapturedTransfer", "FlowTracker"]

@@ -22,7 +22,7 @@ from ..netascii import NetasciiReader, NetasciiWriter
 from ..options import Negotiated, TFTPServerOptions, negotiate
 from ..packet import TFTPErrorCode, RequestPacket, encode_ack, encode_oack
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
-from ..capture.events import PacketEvent, new_session_id
+from ..capture._events import PacketEvent, new_session_id
 from .handler import TFTPRequestContext
 
 __all__ = [

@@ -16,9 +16,9 @@ from __future__ import annotations
 import os
 from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union
 
-from .events import PacketEvent, new_session_id, summarize
-from .filters import FILTER_KEYS, CaptureFilterError, compile_filter
-from .flows import CapturedTransfer, FlowTracker
+from ._events import PacketEvent, new_session_id, summarize
+from ._filters import FILTER_KEYS, CaptureFilterError, compile_filter
+from ._flows import CapturedTransfer, FlowTracker
 from .frames import LINKTYPES, FrameDecoder, UDPDatagram
 from .live import live_capture_supported, sniff
 from .pcap import CaptureFormatError, PcapWriter, read_datagrams, read_frames

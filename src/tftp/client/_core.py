@@ -31,7 +31,7 @@ from typing import (
 from .._arguments import check_family, check_int, check_seconds, check_source
 from .._sockets import local_towards, same_host, sockaddr
 from ..capture._hook import HookGuard, guard
-from ..capture.events import PacketEvent, new_session_id
+from ..capture._events import PacketEvent, new_session_id
 from ..exceptions import (
     RemoteError,
     TFTPDecodeError,

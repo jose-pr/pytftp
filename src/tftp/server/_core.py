@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 from .._text import Escaped
 from ..capture._hook import HookGuard, guard
-from ..capture.events import PacketEvent
+from ..capture._events import PacketEvent
 from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, TransferAbortedError
 from ..options import Negotiated, TFTPServerOptions
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode

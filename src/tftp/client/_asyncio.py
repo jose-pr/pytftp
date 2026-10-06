@@ -10,7 +10,7 @@ import socket
 import time
 from typing import Any, AsyncIterator, List, Optional, Tuple
 
-from ..capture.events import PacketEvent, new_session_id
+from ..capture._events import PacketEvent, new_session_id
 from .. import listing
 from ..listing import ListEntry
 from ..exceptions import RemoteError, TransferTimeoutError

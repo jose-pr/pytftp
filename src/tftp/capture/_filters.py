@@ -33,7 +33,7 @@ import re
 from typing import Any, Callable, List, Optional, Tuple
 
 from ..exceptions import CaptureFilterError
-from .events import PacketEvent
+from ._events import PacketEvent
 
 __all__ = ["compile_filter", "CaptureFilterError", "FILTER_KEYS"]
 

@@ -15,7 +15,7 @@ import struct
 from typing import IO, Any, BinaryIO, Iterator, List, Optional, Tuple, Union
 
 from ..exceptions import CaptureFormatError
-from .events import PacketEvent
+from ._events import PacketEvent
 from .frames import FrameDecoder, UDPDatagram
 
 __all__ = ["read_frames", "read_datagrams", "PcapWriter"]
