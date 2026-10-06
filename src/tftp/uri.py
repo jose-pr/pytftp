@@ -1,29 +1,51 @@
-"""``tftp://`` URLs (RFC 3617).
+"""``tftp://`` URLs (RFC 3617) with transfer options.
 
     tftp://host/path/file
     tftp://[2001:db8::1]:6969/file;mode=netascii
+    tftp://host/file;blksize=1428;windowsize=16
+    tftp://host/file?blksize=1428&windowsize=16
 
 RFC 3617 gives ``tftpURI = "tftp://" host "/" file [ mode ]``, where ``file``
 is percent-encoded text and ``mode`` is ``;mode=netascii`` or ``;mode=octet``.
-:class:`TFTPURL` reads that, with two additions that are universal in
-practice: an optional ``:port`` (default 69) and ``/`` inside the file name,
-which names a path. There is no place in the grammar for a query, a fragment
-or userinfo, so a URL carrying one is refused instead of read as another
-file: a literal ``?`` or ``#`` in a file name is written ``%3F`` or ``%23``.
+:class:`TFTPURL` reads that, with three additions: an optional ``:port``
+(default 69; ``0`` also means the default), ``/`` inside the file name, which
+names a path, and transfer options.
 
-The file name is bytes on the wire, so it is decoded and encoded with the
-codec's own encoding and error handler: any octet sequence survives
-``str(TFTPURL.parse(text))``.
+Options are this library's extension, in either of two spellings. Whichever of
+``?`` and ``;`` comes first after the file name decides how the rest is read:
+after ``?``, ``name=value`` pairs separated by ``&``; after ``;``,
+``name=value`` pairs separated by ``;``. ``mode`` is a name in both. The other
+spelling's delimiter must be percent-encoded inside a value. Another tool
+reads the text after ``?`` as part of the file name, and curl looks for
+``;mode=`` only, so a URL with options is for this library's own readers.
+
+``blksize``, ``windowsize``, ``timeout``, ``tsize`` and ``rollover`` are read
+as the ``TFTPClient`` keyword of that name; any other name is a wire option
+requested verbatim. Names are compared without case and stored lower-case.
+``str(url)`` writes the ``;`` spelling, ``mode`` first and only when it is not
+``octet``, then the options in name order, so a URL with a mode and no options
+is exactly RFC 3617's form.
+
+A fragment and userinfo have no place in the grammar and are refused, so a
+literal ``#`` in a file name is written ``%23``.
+
+The file name and the options are bytes on the wire, so they are decoded and
+encoded with the codec's own encoding and error handler: any octet sequence
+survives ``str(TFTPURL.parse(text))``.
 """
 
 from __future__ import annotations
 
 import ipaddress
-from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+import re
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import quote, quote_from_bytes, unquote, unquote_to_bytes
 
+from ._arguments import check_seconds
 from .exceptions import TFTPValueError
+from .options import request_options
 from .packet.codec import FILENAME_ENCODING, _ERRORS
 
 __all__ = ["TFTPURL", "download_url", "upload_url"]
@@ -69,38 +91,217 @@ def _normal_host(host: object) -> str:
     return address + percent + zone
 
 
-def _split_parameters(path: str) -> Tuple[str, Optional[str]]:
-    """``(file, mode)`` from the part of a URL after the authority's ``/``.
+def _text(text: str) -> str:
+    """``text`` if the codec can carry it and it holds no control character."""
+    if _has_control(text):
+        raise TFTPValueError("a control character in %r" % text)
+    try:
+        text.encode(FILENAME_ENCODING, _ERRORS)
+    except UnicodeEncodeError:
+        raise TFTPValueError("not carried by the %s codec: %r" % (FILENAME_ENCODING, text)) from None
+    return text
 
-    The first ``;`` starts the parameters; ``mode`` is the one parameter
-    RFC 3617 defines. ``None`` when it is absent. A repeated, empty or unknown
-    parameter raises :class:`TFTPValueError`.
+
+def _decode(text: str) -> str:
+    return unquote_to_bytes(text).decode(FILENAME_ENCODING, _ERRORS)
+
+
+def _encode(text: str) -> str:
+    return quote_from_bytes(text.encode(FILENAME_ENCODING, _ERRORS), safe="")
+
+
+def _split_parameters(path: str) -> Tuple[str, Optional[str], Dict[str, str]]:
+    """``(file, mode, options)`` from the part of a URL after the authority's ``/``.
+
+    ``file`` is returned as written. The first ``?`` or ``;`` starts the
+    parameters: after ``?`` they are ``name=value`` pairs split on ``&``, after
+    ``;`` split on ``;``, each name and value percent-decoded. ``mode`` is
+    ``None`` when absent; the option names are lower-case. A literal ``?`` or
+    ``;`` of the other spelling, a repeated name, an empty pair or name and a
+    pair with no ``=`` raise :class:`TFTPValueError`.
     """
-    file, semicolon, params = path.partition(";")
-    if not semicolon:
-        return file, None
+    cuts = [i for i in (path.find("?"), path.find(";")) if i >= 0]
+    if not cuts:
+        return path, None, {}
+    cut = min(cuts)
+    delimiter = path[cut]
+    text = path[cut + 1 :]
+    separator = "&" if delimiter == "?" else ";"
+    refused = "?;" if delimiter == "?" else "?"
+    if any(c in text for c in refused):
+        raise TFTPValueError(
+            "a tftp:// URL list is separated by %r (after '?', pairs split on '&'; after ';', on ';'): "
+            "write %s in a value as %s"
+            % (separator, " or ".join(refused), " or ".join(quote(c) for c in refused))
+        )
     mode: Optional[str] = None
-    for param in params.split(";"):
-        key, equals, value = param.partition("=")
-        if key.lower() != "mode" or not equals:
-            raise TFTPValueError("unknown tftp:// parameter %r" % param)
-        if mode is not None:
-            raise TFTPValueError("the mode parameter is repeated")
-        mode = value
-    return file, mode
+    options: Dict[str, str] = {}
+    seen = set()
+    for pair in text.split(separator):
+        name, equals, value = pair.partition("=")
+        if not pair:
+            raise TFTPValueError("an empty parameter in a tftp:// URL")
+        if not equals:
+            raise TFTPValueError("a tftp:// URL parameter needs name=value, not %r" % pair)
+        name = _decode(name)
+        if not name:
+            raise TFTPValueError("a tftp:// URL parameter has no name: %r" % pair)
+        key = name.lower()
+        if key in seen:
+            raise TFTPValueError("the %r parameter is repeated" % key)
+        seen.add(key)
+        if key == "mode":
+            mode = _decode(value)
+        else:
+            options[key] = _decode(value)
+    return path[:cut], mode, options
+
+
+def _whole(name: str, text: str) -> int:
+    if not (text.isascii() and text.isdigit()):
+        raise TFTPValueError("option %s is a whole number in ASCII digits, not %r" % (name, text))
+    return int(text)
+
+
+def _refuse_out_of_range(name: str, text: str, **keyword: Any) -> None:
+    try:
+        request_options(**keyword)
+    except ValueError as exc:
+        raise TFTPValueError("option %s=%s: %s" % (name, text, exc)) from None
+
+
+def _read_blksize(name: str, text: str) -> Any:
+    if text.lower() == "mtu":
+        return "mtu"
+    value = _whole(name, text)
+    _refuse_out_of_range(name, text, blksize=value)
+    return value
+
+
+def _read_windowsize(name: str, text: str) -> int:
+    value = _whole(name, text)
+    _refuse_out_of_range(name, text, windowsize=value)
+    return value
+
+
+def _read_rollover(name: str, text: str) -> int:
+    value = _whole(name, text)
+    _refuse_out_of_range(name, text, rollover=value)
+    return value
+
+
+_SECONDS = re.compile(r"[0-9]+(\.[0-9]+)?\Z", re.ASCII)
+
+
+def _read_timeout(name: str, text: str) -> float:
+    if not _SECONDS.match(text):
+        raise TFTPValueError("option %s is a number of seconds in ASCII digits, not %r" % (name, text))
+    try:
+        return check_seconds("timeout", float(text))
+    except ValueError as exc:
+        raise TFTPValueError("option %s=%s: %s" % (name, text, exc)) from None
+
+
+def _read_tsize(name: str, text: str) -> bool:
+    flag = {"1": True, "true": True, "0": False, "false": False}.get(text.lower())
+    if flag is None:
+        raise TFTPValueError("option %s is 1, 0, true or false, not %r" % (name, text))
+    return flag
+
+
+#: The options read as the ``TFTPClient`` keyword of the same name; each reader
+#: returns the keyword's value or raises :class:`TFTPValueError`.
+_READERS: Dict[str, Callable[[str, str], Any]] = {
+    "blksize": _read_blksize,
+    "windowsize": _read_windowsize,
+    "timeout": _read_timeout,
+    "tsize": _read_tsize,
+    "rollover": _read_rollover,
+}
+
+
+def _normal_options(options: Any) -> "Mapping[str, str]":
+    """A read-only copy of ``options``: lower-case names, text values, each checked."""
+    if options is None:
+        return MappingProxyType({})
+    if not isinstance(options, Mapping):
+        raise TypeError("URL options are a mapping of name to text, not %s" % type(options).__name__)
+    checked: Dict[str, str] = {}
+    for name, value in options.items():
+        if not isinstance(name, str):
+            raise TypeError("a URL option name is text, not %s" % type(name).__name__)
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise TypeError(
+                "the value of URL option %r is text or an int, not %s" % (name, type(value).__name__)
+            )
+        if not name:
+            raise TFTPValueError("a URL option name cannot be empty")
+        key = _text(name).lower()
+        text = _text(str(value))
+        if key == "mode":
+            raise TFTPValueError("mode is the URL's mode, not an option")
+        if key in checked:
+            raise TFTPValueError("the URL option %r is repeated" % key)
+        reader = _READERS.get(key)
+        if reader is not None:
+            reader(key, text)
+        checked[key] = text
+    return MappingProxyType(checked)
+
+
+def _client_keywords(url: "TFTPURL") -> Dict[str, Any]:
+    """The ``TFTPClient`` keywords ``url``'s options stand for.
+
+    The known names become the keyword of the same name, with its type; every
+    other option goes into ``extra_options``, verbatim.
+    """
+    keywords: Dict[str, Any] = {}
+    extra: Dict[str, str] = {}
+    for name, text in url.options.items():
+        reader = _READERS.get(name)
+        if reader is None:
+            extra[name] = text
+        else:
+            keywords[name] = reader(name, text)
+    if extra:
+        keywords["extra_options"] = extra
+    return keywords
+
+
+def _client_keywords_over(url: "TFTPURL", explicit: Mapping[str, Any]) -> Dict[str, Any]:
+    """``url``'s keywords, each replaced by ``explicit``'s keyword of the same name.
+
+    ``extra_options`` merge name by name, ``explicit`` winning.
+    """
+    merged = _client_keywords(url)
+    extra = dict(merged.pop("extra_options", {}))
+    given = explicit.get("extra_options") or {}
+    for name in given:
+        extra.pop(str(name).lower(), None)
+    extra.update(given)
+    merged.update(explicit)
+    if extra:
+        merged["extra_options"] = extra
+    elif "extra_options" in merged:
+        del merged["extra_options"]
+    return merged
 
 
 @dataclass(frozen=True)
 class TFTPURL:
-    """The ``tftp://`` URL of one file: ``host``, ``port``, ``filename``, ``mode``.
+    """The ``tftp://`` URL of one file: ``host``, ``port``, ``filename``, ``mode``, ``options``.
 
     Immutable and hashable. The constructor validates and normalises: the
     host is lower-cased (an IPv6 literal in its compressed form, its zone
-    kept), the port is an ``int`` in 1..65535, the mode is ``"octet"`` or
-    ``"netascii"`` and the file name is non-empty text without a NUL. A host
-    given as an ``ipaddress`` address or interface or a ``netimps.Host`` is
-    reduced to its text. ``str(url)`` is the URL, and ``TFTPURL.parse(str(url))
-    == url``.
+    kept), the port is an ``int`` in 1..65535 (``0`` is the default, 69), the
+    mode is ``"octet"`` or ``"netascii"`` and the file name is non-empty text
+    without a NUL. ``options`` is a mapping of option name to text, kept as a
+    read-only mapping with lower-case names: ``blksize``, ``windowsize``,
+    ``timeout``, ``tsize`` and ``rollover`` must be readable as the
+    ``TFTPClient`` keyword of that name, any other name is a wire option, and
+    ``mode`` is not an option. A host given as an ``ipaddress`` address or
+    interface or a ``netimps.Host`` is reduced to its text. ``str(url)`` is
+    the URL, in the ``;`` spelling, and ``TFTPURL.parse(str(url)) == url``.
 
     :raises TypeError: an argument of the wrong type.
     :raises TFTPValueError: a value no URL can carry.
@@ -110,6 +311,7 @@ class TFTPURL:
     port: int
     filename: str
     mode: str = "octet"
+    options: "Mapping[str, str]" = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if isinstance(self.port, bool) or not isinstance(self.port, int):
@@ -118,8 +320,8 @@ class TFTPURL:
             raise TypeError("a URL file name is text, not %s" % type(self.filename).__name__)
         if not isinstance(self.mode, str):
             raise TypeError("a URL mode is text, not %s" % type(self.mode).__name__)
-        if not 1 <= self.port <= 65535:
-            raise TFTPValueError("a URL port is 1 to 65535, not %d" % self.port)
+        if not 0 <= self.port <= 65535:
+            raise TFTPValueError("a URL port is 0 to 65535, not %d" % self.port)
         if not self.filename:
             raise TFTPValueError("a tftp:// URL needs a file name")
         if "\0" in self.filename:
@@ -128,16 +330,35 @@ class TFTPURL:
         if mode not in _MODES:
             raise TFTPValueError("unsupported mode %r: use octet or netascii" % self.mode)
         object.__setattr__(self, "host", _normal_host(self.host))
+        object.__setattr__(self, "port", self.port or 69)
         object.__setattr__(self, "mode", mode)
+        object.__setattr__(self, "options", _normal_options(self.options))
+
+    def __repr__(self) -> str:
+        options = ", options=%r" % dict(self.options) if self.options else ""
+        return "TFTPURL(host=%r, port=%r, filename=%r, mode=%r%s)" % (
+            self.host,
+            self.port,
+            self.filename,
+            self.mode,
+            options,
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.host, self.port, self.filename, self.mode, frozenset(self.options.items())))
+
+    def __reduce__(self) -> Tuple[Any, ...]:
+        return (type(self), (self.host, self.port, self.filename, self.mode, dict(self.options)))
 
     @classmethod
     def parse(cls, text: str) -> "TFTPURL":
         """The URL ``text`` spells; the inverse of ``str(url)``.
 
         :raises TypeError: ``text`` is not a ``str``.
-        :raises TFTPValueError: not a ``tftp://`` URL, or one with a query, a
-            fragment, userinfo, port 0, a repeated or unknown parameter or a
-            mode other than ``octet`` and ``netascii``.
+        :raises TFTPValueError: not a ``tftp://`` URL, or one with a
+            fragment, userinfo, both parameter delimiters unencoded, a
+            repeated name, an empty or malformed pair, an option value its
+            name cannot read, or a mode other than ``octet`` and ``netascii``.
         """
         if not isinstance(text, str):
             raise TypeError("a URL is parsed from text, not %s" % type(text).__name__)
@@ -146,9 +367,9 @@ class TFTPURL:
         if _has_control(text):
             raise TFTPValueError("a control character in the URL: %r" % text)
         rest = text[7:]
-        if "?" in rest or "#" in rest:
+        if "#" in rest:
             raise TFTPValueError(
-                "a tftp:// URL has no query or fragment (write %%3F or %%23 in a file name): %r" % text
+                "a tftp:// URL has no fragment (write %%23 in a file name or value): %r" % text
             )
         authority, slash, path = rest.partition("/")
         if not slash:
@@ -181,11 +402,10 @@ class TFTPURL:
             if not (port_text.isascii() and port_text.isdigit()):
                 raise TFTPValueError("bad port in %r" % text)
             port = int(port_text)
-            if not 1 <= port <= 65535:
+            if not 0 <= port <= 65535:
                 raise TFTPValueError("bad port in %r" % text)
-        quoted, mode = _split_parameters(path)
-        filename = unquote_to_bytes(quoted).decode(FILENAME_ENCODING, _ERRORS)
-        return cls(host, port, filename, "octet" if mode is None else mode)
+        quoted, mode, options = _split_parameters(path)
+        return cls(host, port, _decode(quoted), "octet" if mode is None else mode, options)
 
     @classmethod
     def try_parse(cls, text: str, default: Optional["TFTPURL"] = None) -> Optional["TFTPURL"]:
@@ -205,24 +425,36 @@ class TFTPURL:
             host = "[%s%s]" % (address, "%25" + quote(zone, safe="") if percent else "")
         authority = host if self.port == 69 else "%s:%d" % (host, self.port)
         file = quote_from_bytes(self.filename.encode(FILENAME_ENCODING, _ERRORS), safe="/")
-        return "tftp://%s/%s%s" % (authority, file, "" if self.mode == "octet" else ";mode=" + self.mode)
+        parameters: List[str] = [] if self.mode == "octet" else ["mode=" + self.mode]
+        parameters.extend(
+            "%s=%s" % (_encode(name), _encode(self.options[name])) for name in sorted(self.options)
+        )
+        return "tftp://%s/%s%s" % (authority, file, "".join(";" + parameter for parameter in parameters))
 
 
 def download_url(url: str, dst: Any, /, *, progress: Optional[Any] = None, **client_options: Any):
-    """Download the file a ``tftp://`` URL names; ``client_options`` go to ``TFTPClient``."""
+    """Download the file a ``tftp://`` URL names; ``client_options`` go to ``TFTPClient``.
+
+    The URL's options become ``TFTPClient`` keywords; a keyword in
+    ``client_options`` wins over the URL's option of the same name, and
+    ``extra_options`` merge name by name.
+    """
     from .client import TFTPClient
 
     target = TFTPURL.parse(url)
-    return TFTPClient(target.host, target.port, **client_options).download(
+    return TFTPClient(target.host, target.port, **_client_keywords_over(target, client_options)).download(
         target.filename, dst, mode=target.mode, progress=progress
     )
 
 
 def upload_url(url: str, src: Any, /, *, progress: Optional[Any] = None, **client_options: Any):
-    """Upload to the file a ``tftp://`` URL names; ``client_options`` go to ``TFTPClient``."""
+    """Upload to the file a ``tftp://`` URL names; ``client_options`` go to ``TFTPClient``.
+
+    The URL's options and the precedence are as for :func:`download_url`.
+    """
     from .client import TFTPClient
 
     target = TFTPURL.parse(url)
-    return TFTPClient(target.host, target.port, **client_options).upload(
+    return TFTPClient(target.host, target.port, **_client_keywords_over(target, client_options)).upload(
         target.filename, src, mode=target.mode, progress=progress
     )
