@@ -43,7 +43,7 @@ cli = ["duho>=0.6.0,<0.7"]
 # pathlib-style paths: TFTPPath, and the tftp:// scheme for pathlib_next's
 # UriPath (its "uri" extra). Importing tftp never requires it.
 path = ["pathlib-next[uri]>=0.9.0,<0.10"]
-dev = ["black", "build", "pytest", "duho>=0.6.0,<0.7", "pathlib-next[uri]>=0.9.0,<0.10"]
+dev = ["black", "build", "mypy>=1.19,<3", "pytest", "duho>=0.6.0,<0.7", "pathlib-next[uri]>=0.9.0,<0.10"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]
@@ -87,3 +87,14 @@ markers = [
     "slow: long transfers (block-number rollover); deselect with -m 'not slow'",
     "interop: talks to another TFTP implementation found on PATH",
 ]
+
+[tool.mypy]
+# mypy 2 no longer accepts a 3.9 target, so the checker runs at 3.10 and the
+# 3.9 floor is verified by running the test suite there, with a test that
+# resolves every public annotation on it. Default settings, plus a complete
+# annotation on every function and no ignore or cast that does nothing.
+# `tests/typing/consumer.ini` is the configuration of a consumer of the package.
+python_version = "3.10"
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true

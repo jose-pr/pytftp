@@ -27,6 +27,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    # The gate behind the shipped type promise: formatting, the package's own
+    # type contract on every platform, and the documented API checked as a
+    # consumer would check it. `py.typed` tells every consumer's checker to
+    # trust the annotations, so something has to check them.
+    name: Lint and type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          # The newest Python, and so the newest mypy. The checker targets 3.10
+          # (`[tool.mypy] python_version`, the oldest mypy 2 accepts); the 3.9
+          # floor is what the test matrix below runs.
+          python-version: "3.14"
+      - name: Install netimps 0.4 from its branch (until 0.4.0 is on PyPI)
+        # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
+        # yet, and mypy needs netimps installed to see its types. Remove this
+        # step when netimps 0.4.0 is on PyPI.
+        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
+      - name: Install package with all extras
+        run: python -m pip install -e ".[dev]"
+      - name: Check formatting
+        run: python -m black --check src tests benchmarks examples
+      - name: Type-check the package for every target platform
+        # mypy checks every per-platform branch whatever host it runs on, but
+        # resolves names such as `socket.AF_PACKET` against the platform it is
+        # told to target: a clean run for one platform says nothing about the
+        # others, and an ignore one platform needs is an error on another.
+        run: |
+          python -m mypy --platform linux src/tftp
+          python -m mypy --platform darwin src/tftp
+          python -m mypy --platform win32 src/tftp
+      - name: Type-check the documented API as a consumer
+        # tests/typing/api.py is not a pytest module: nothing runs it, and this
+        # step is the only thing that checks it. It uses its own configuration,
+        # the one a consumer has, and no cache: two runs on one configuration
+        # share `.mypy_cache`, and the second reads the first's package back.
+        run: python -m mypy --no-incremental --config-file tests/typing/consumer.ini tests/typing/api.py
+
   test:
     name: Test (py${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}

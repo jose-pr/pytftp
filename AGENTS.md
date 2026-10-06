@@ -39,8 +39,9 @@ src/tftp/
 ├── _bridge.py         # async streams <-> engine (used by both asyncio drivers)
 ├── _loggers.py        # the loggers, named for their role (tftp.client, tftp.server, tftp.relay, tftp.backends)
 ├── _sockets.py        # window-sized socket buffers (everything else is netimps)
+├── _streams.py        # the Protocols for the streams a transfer reads and writes
 └── _text.py           # escaping what a peer wrote before it is printed
-tests/                 # pytest; engine tests need no sockets
+tests/                 # pytest; engine tests need no sockets; typing/ holds the consumer-side type check
 benchmarks/            # run.py, compare_tftpy.py + committed results/*.json
 examples/              # runnable scripts
 docs/                  # mkdocs site (hand-written index + mkdocstrings API pages)
@@ -77,7 +78,17 @@ py -3.14 -m venv .venv/3.14-nt-arm64
 .venv/3.14-nt-arm64/Scripts/pip install -e ".[dev]"
 .venv/3.14-nt-arm64/Scripts/python -m pytest -q          # ~500 tests, under 30 s
 .venv/3.14-nt-arm64/Scripts/python -m black src tests benchmarks examples
+.venv/3.14-nt-arm64/Scripts/python -m mypy --platform linux src/tftp    # then darwin, then win32
+.venv/3.14-nt-arm64/Scripts/python -m mypy --no-incremental --config-file tests/typing/consumer.ini tests/typing/api.py
 ```
+
+- mypy checks every platform branch whatever the host, but resolves names against the platform
+  it is told to target (`--platform`): a clean run for one says nothing about the others, and a
+  `# type: ignore` one platform needs is an `unused-ignore` error on another, so narrow with
+  `sys.platform` instead. The checker targets 3.10 (mypy 2 refuses 3.9); the 3.9 floor is the
+  test run on it, with `tests/test_hints.py`. `tests/typing/api.py` is the documented API used
+  as a consumer would, never executed; it has its own configuration and no cache, because two
+  runs on one configuration share `.mypy_cache` and the second reads a degraded package.
 
 - `-m "not slow"` skips the 70,000-block rollover tests; `interop` tests need
   curl with TFTP on `PATH` and skip otherwise.
@@ -89,7 +100,7 @@ py -3.14 -m venv .venv/3.14-nt-arm64
 
 ## CI and release
 
-Three workflows: `test.yml` (manual or `ci-*` tag; full matrix plus a job at
+Three workflows: `test.yml` (manual or `ci-*` tag; a lint and type-check job, the full matrix and a job at
 the declared dependency floors), `release.yml` (`v*` tag: tests → build →
 strict docs gate → GitHub release → PyPI → docs dispatch) and `docs.yml`
 (Pages). PyPI publishing uses Trusted Publishing (OIDC): the project and the
