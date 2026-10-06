@@ -8,6 +8,7 @@ client used (``Listener.reply_socket``, on netimps' ``UDPEndpoint``).
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
 import socket
@@ -35,6 +36,10 @@ __all__ = [
 ]
 
 log = logging.getLogger("tftp.server")
+
+#: Send failures that are loss: the buffer or the stack is busy, not the transfer broken.
+#: 10055 is WSAENOBUFS, which Python reports as the errno on Windows.
+_LOSS = frozenset({errno.EAGAIN, errno.EWOULDBLOCK, errno.EINTR, errno.ENOBUFS, 10055})
 
 
 def stream_size(stream: Any) -> Optional[int]:
@@ -256,12 +261,20 @@ class Session:
         return self.transfer.deadline if self.transfer is not None else None
 
     def send(self, packet) -> None:
+        """Send one datagram to the peer.
+
+        A full send buffer or a busy network stack drops it, which the
+        transfer's timeout recovers from. Any other ``OSError`` (``EMSGSIZE``
+        for a datagram the host cannot send, an unreachable peer) is raised:
+        the caller ends this transfer with it.
+        """
         try:
             self.sock.sendto(packet, self.peer)
-        except OSError:
-            # A full send buffer or a transient route error is loss, which
-            # the transfer's timeout already recovers from.
-            return
+        except OSError as exc:
+            if exc.errno in _LOSS or isinstance(exc, (BlockingIOError, InterruptedError)):
+                log.debug("%r: a datagram was dropped by the host: %s", self.context, exc)
+                return
+            raise
         if self.trace is not None:
             self.emit(packet, "out", self.peer)
 

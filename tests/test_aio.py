@@ -993,3 +993,66 @@ def test_async_transfers_in_flight_at_shutdown_are_reported(root):
     assert all(isinstance(r.error, tftp.TransferAbortedError) for r in results)
     assert (stats[0]["failed"], stats[0]["completed"], stats[0]["active"]) == (2, 0, 0)
     assert not (root / "unfinished.bin").exists()
+
+
+def _loop_factories():
+    if sys.platform == "win32":
+        return [asyncio.SelectorEventLoop, asyncio.ProactorEventLoop]
+    return [None]
+
+
+@pytest.mark.parametrize("loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default"))
+@pytest.mark.parametrize("last", ["final ACK", "ERROR"])
+def test_async_server_last_datagram_reaches_the_peer_when_the_transfer_is_released_at_once(
+    root, loop_factory, last
+):
+    """The transfer's transport is aborted right after its last send; the peer must still get it.
+
+    ``dally=False`` ends an upload at its final ACK, and a datagram that is not
+    TFTP ends it with an ERROR: both leave nothing to wait for.
+    """
+    import socket
+
+    async def scenario(server):
+        loop = asyncio.get_running_loop()
+        raw = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        raw.settimeout(5)
+        raw.bind(("127.0.0.1", 0))
+        try:
+            raw.sendto(tftp.packet.encode_request(tftp.TFTPOpcode.WRQ, "last.bin"), server.server_address)
+            data, tid = await loop.run_in_executor(None, raw.recvfrom, 2048)
+            assert tftp.decode(data) == tftp.AckPacket(0)
+            if last == "final ACK":
+                raw.sendto(tftp.packet.encode_data(1, b"short"), tid)
+                data, _ = await loop.run_in_executor(None, raw.recvfrom, 2048)
+                assert tftp.decode(data) == tftp.AckPacket(1)
+            else:
+                raw.sendto(b"\x00\x09garbage", tid)  # an opcode that does not exist
+                data, _ = await loop.run_in_executor(None, raw.recvfrom, 2048)
+                assert isinstance(tftp.decode(data), tftp.ErrorPacket)
+            deadline = time.monotonic() + 5
+            while server.active_sessions and time.monotonic() < deadline:
+                await asyncio.sleep(0.01)
+            assert server.active_sessions == 0
+        finally:
+            raw.close()
+
+    serve(str(root), scenario, loop_factory, writable=True, dally=False)
+    assert (root / "last.bin").exists() == (last == "final ACK")
+
+
+@pytest.mark.parametrize("loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default"))
+def test_the_largest_block_size_arrives_in_full_between_the_asyncio_peers(root, tmp_path, loop_factory):
+    payload = os.urandom(2 * 65464 + 17)
+    (root / "largest.bin").write_bytes(payload)
+
+    async def scenario(server):
+        client = async_client(server, blksize=65464, timeout=2)
+        down = await client.download("largest.bin", tmp_path / "down.bin")
+        assert down.negotiated.blksize == 65464 and down.retransmits == 0
+        up = await client.upload("largest-up.bin", payload)
+        assert up.negotiated.blksize == 65464 and up.retransmits == 0
+
+    serve(str(root), scenario, loop_factory, writable=True, overwrite=True, timeout=2)
+    assert (tmp_path / "down.bin").read_bytes() == payload
+    assert (root / "largest-up.bin").read_bytes() == payload

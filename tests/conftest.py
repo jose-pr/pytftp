@@ -197,3 +197,34 @@ BAD_FIRST_ANSWERS = [
     ("wrq-ack-block-7", False, b"\x00\x04\x00\x07"),
     ("wrq-data-1", False, b"\x00\x03\x00\x01x"),
 ]
+
+
+class _RefusingSocket(socket.socket):
+    """A UDP socket whose ``sendto`` fails as a host does for a datagram it cannot send.
+
+    Datagrams longer than ``limit`` octets fail with ``OSError(EMSGSIZE)``
+    once ``allowed`` of them have gone out. ``sent`` holds the length of every
+    datagram that did.
+    """
+
+    limit = 0
+    allowed = 0
+
+    def sendto(self, data, *address):
+        import errno
+
+        if len(data) > self.limit:
+            if self.allowed <= 0:
+                raise OSError(errno.EMSGSIZE, "refused by the stand-in")
+            self.allowed -= 1
+        self.sent.append(len(data))
+        return super().sendto(data, *address)
+
+
+def refusing(sock: socket.socket, *, limit: int = 100, allowed: int = 0) -> socket.socket:
+    """``sock`` (consumed) as a socket that refuses datagrams over ``limit`` octets after ``allowed`` big ones."""
+    timeout = sock.gettimeout()
+    fake = _RefusingSocket(sock.family, sock.type, sock.proto, fileno=sock.detach())
+    fake.settimeout(timeout)
+    fake.limit, fake.allowed, fake.sent = limit, allowed, []
+    return fake

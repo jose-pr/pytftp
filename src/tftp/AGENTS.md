@@ -304,8 +304,19 @@ Behaviour worth knowing:
   reply** (no reflection). A malformed RRQ/WRQ gets ERROR 4.
 - A v4 client of a dual-stack listener is served from a plain IPv4 socket, so
   `result.peer` shows `"192.0.2.7"`, never `"::ffff:192.0.2.7"`.
-- Socket buffers are grown to hold two windows (Windows defaults to 64 KiB,
-  which a large window overflows).
+- Socket buffers are grown to hold two windows of the negotiated `blksize`
+  (Windows defaults to 64 KiB, which a large window overflows; FreeBSD and
+  macOS refuse a datagram above the sender's `SO_SNDBUF`, 57344 and 9216 by
+  default), on the server's transfer sockets and on both clients'. The server
+  agrees to the `blksize` its policy allows and does not cap it by the host's
+  defaults: it cannot know the peer's receive buffer, and **a client that asks
+  for a block larger than its own receive buffer gets no data on FreeBSD**
+  (default 42080), where the kernel drops the oversized datagram without a
+  report. A client that raises its buffer or asks for less is served.
+- A send the host refuses (`EMSGSIZE`, an unreachable peer) ends that transfer:
+  the peer gets ERROR 0, `on_complete` gets a result whose `error` is set, the
+  reason is logged at warning, and the server goes on. A full send buffer
+  drops the datagram, which the retransmission timer recovers.
 
 **`PortRange(low, high)`** — a frozen, hashable value (`low`, `high`; equal
 to another `PortRange` only): `len()` counts the ports, iteration and `in`

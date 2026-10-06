@@ -393,6 +393,8 @@ class AsyncTFTPServer(ServerBase):
             if timer.handle is not None:
                 timer.handle.cancel()
             if timer.transport is not None:
+                # The transport only receives: every datagram goes out on the socket itself
+                # (Session.send), so abort() cannot discard a last ERROR or ACK still queued.
                 timer.transport.abort()
                 return
         session.sock.close()

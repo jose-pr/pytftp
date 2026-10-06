@@ -262,10 +262,14 @@ class ServerBase:
         error = TFTPError.from_exception(exc)
         if not isinstance(exc, (TFTPError, OSError)):
             log.error("handler failed for %r", session.context, exc_info=exc)
-        log.info("%s refused: %s", session.context, error)
+        # An OSError is the host's reason (a refused send, a file system error) and stays in the log.
+        log.info("%s refused: %s", session.context, exc if isinstance(exc, OSError) else error)
         self.stats.add("refused")
         try:
-            session.send(_encode_error(error.code, error.message))
+            try:
+                session.send(_encode_error(error.code, error.message))
+            except OSError:
+                pass  # the peer cannot be reached either
             session.close_stream(ok=False)
         finally:
             self._release(session)
@@ -300,11 +304,15 @@ class ServerBase:
         Logged once, with its traceback, so a bug is seen; the client gets
         ERROR 0 and every other transfer carries on.
         """
-        log.error(
-            "unexpected failure in the event loop%s",
-            " (ending that transfer)" if session else "",
-            exc_info=exc,
-        )
+        if session is not None and isinstance(exc, OSError):
+            # The host refused a send or reset the socket: this transfer ends, the loop is fine.
+            log.warning("%r ended: %s", session.context, exc)
+        else:
+            log.error(
+                "unexpected failure in the event loop%s",
+                " (ending that transfer)" if session else "",
+                exc_info=exc,
+            )
         if session is None or session.closed:
             return
         try:

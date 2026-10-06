@@ -331,6 +331,13 @@ Old names are not kept as aliases.
 
 ### Fixed
 
+- **A send the host refuses ends that transfer, with its reason.** A server dropped it
+  without a word (a `blksize` the host could not send left the client waiting out every
+  retry); on both servers the peer now gets ERROR 0, `on_complete` gets a result with the
+  error, the reason is logged and the server goes on. A full send buffer is still loss.
+  The clients already raised the `OSError`; tests now pin it. The server does not cap
+  `blksize` by the host's defaults: on FreeBSD a client whose own receive buffer is smaller
+  than the block gets no data (the kernel drops the datagram), which the header states.
 - **Transfers in flight when a server stops are reported.** `shutdown()` sent them ERROR 0
   but called `on_complete` for none of them and left `completed` and `failed` where they
   were, on both servers; each now yields a `TransferResult` whose `error` is
