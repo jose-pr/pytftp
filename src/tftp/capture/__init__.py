@@ -63,12 +63,13 @@ def analyze(
     """Read a whole capture (path, stream, or datagrams) and reconstruct its transfers.
 
     ``filter`` (see :func:`compile_filter`) selects events; transfers are
-    always reconstructed from everything.
+    always reconstructed from everything, and every one is kept: the result
+    holds what the capture holds.
     """
     datagrams = source if not isinstance(source, (str, os.PathLike)) and not hasattr(source, "read") else None
     if datagrams is None:
         datagrams = read_datagrams(source)  # type: ignore[arg-type]
-    tracker = FlowTracker(ports, keep_payloads=keep_payloads)
+    tracker = FlowTracker(ports, keep_payloads=keep_payloads, max_tracked=None)
     wanted = compile_filter(filter)
     events = [e for e in tracker.feed_all(datagrams) if wanted(e)]  # type: ignore[arg-type]
     return Analysis(events, tracker.transfers)

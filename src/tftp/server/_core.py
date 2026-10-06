@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
+from .._text import Escaped
 from ..capture._hook import HookGuard, guard
 from ..capture.events import PacketEvent
 from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, TransferAbortedError
@@ -263,7 +264,7 @@ class ServerBase:
         if not isinstance(exc, (TFTPError, OSError)):
             log.error("handler failed for %r", session.context, exc_info=exc)
         # An OSError is the host's reason (a refused send, a file system error) and stays in the log.
-        log.info("%s refused: %s", session.context, exc if isinstance(exc, OSError) else error)
+        log.info("%s refused: %s", session.context, Escaped(exc if isinstance(exc, OSError) else error))
         self.stats.add("refused")
         try:
             try:
@@ -394,7 +395,13 @@ class ServerBase:
             stats.add("bytes_sent" if request.is_read else "bytes_received", transfer.bytes)
             stats.add("retransmits", transfer.retransmits)
         if declined:
-            log.info("%s %r: %s declined the options (%s)", result.operation, request.filename, session.peer[0], error.message)  # type: ignore[union-attr]
+            log.info(
+                "%s %r: %s declined the options (%s)",
+                result.operation,
+                request.filename,
+                session.peer[0],
+                Escaped(error.message),  # type: ignore[union-attr]
+            )
         elif error is None:
             log.info(
                 "%s %r %s %s: %d bytes in %.3fs",
@@ -407,7 +414,11 @@ class ServerBase:
             )
         elif transfer is not None:
             log.warning(
-                "%s %r with %s failed: %s", result.operation, request.filename, session.peer[0], error
+                "%s %r with %s failed: %s",
+                result.operation,
+                request.filename,
+                session.peer[0],
+                Escaped(error),
             )
         if self.on_complete is not None:
             try:

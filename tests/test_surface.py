@@ -315,6 +315,7 @@ POSITIONAL = {
     "tftp.AsyncTFTPClient": 2,
     "tftp.server.PortRange": 2,
     "tftp.relay.Upstream": 2,
+    "tftp.capture.FlowTracker": 1,
 }
 
 

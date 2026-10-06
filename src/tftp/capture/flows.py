@@ -10,8 +10,10 @@ options, retransmissions, errors, completion -- and the file itself.
 from __future__ import annotations
 
 import ipaddress
+import os
+import re
 import struct
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 from ..netascii import decode as netascii_decode
 from ..options import DEFAULT_BLKSIZE
@@ -25,6 +27,12 @@ __all__ = ["CapturedTransfer", "FlowTracker"]
 
 Endpoint = Tuple[str, int]
 _ANSWER_WINDOW = 10.0  # seconds within which a reply from another address counts
+#: How far ahead of the highest block seen a DATA may be placed when the transfer's window is not
+#: known (and the least it may be otherwise): a capture that lost packets still follows the transfer.
+_REACH = 64
+_UNSAFE_NAME = re.compile(r"[^A-Za-z0-9_.-]+")
+#: Octets of a requested name kept in the name of a file written from a transfer.
+_NAME_LENGTH = 100
 
 
 def _plain(endpoint: Endpoint) -> Endpoint:
@@ -52,6 +60,8 @@ class CapturedTransfer:
     :ivar error: ``(code, message, sent_by)`` of an ERROR, or ``None``.
     :ivar is_complete: the final DATA was seen and acknowledged.
     :ivar retransmissions: DATA packets seen more than once.
+    :ivar missing_blocks: ``(first, last)`` ranges (inclusive) of the blocks never
+        seen, up to the highest one placed; :attr:`missing_count` counts them.
     """
 
     def __init__(self, session: str, time: float, client: Endpoint, server: Endpoint, request: Any) -> None:
@@ -96,9 +106,19 @@ class CapturedTransfer:
             distance -= period  # behind: a retransmission
         return max(0, hi + distance)
 
+    def _reach(self) -> int:
+        """The most one DATA may move the highest block number: the window, and at least ``_REACH``."""
+        return max(self.windowsize, _REACH)
+
     def add_data(self, wire: int, payload: bytes, keep: bool = True) -> None:
-        """Account for one DATA: always its size, and its payload when ``keep``."""
+        """Account for one DATA: always its size, and its payload when ``keep``.
+
+        A block further ahead of the highest one seen than a window can be is not
+        placed: it is counted as a packet and nothing else.
+        """
         block = self._logical(wire)
+        if block - self._logical_hi > self._reach():
+            return
         if block in self._sizes:
             self.retransmissions += 1
         else:
@@ -118,11 +138,42 @@ class CapturedTransfer:
         return sum(self._sizes.values())
 
     @property
-    def missing_blocks(self) -> List[int]:
-        """Logical block numbers never seen, up to the highest one seen."""
-        if not self._sizes:
-            return []
-        return [n for n in range(1, max(self._sizes) + 1) if n not in self._sizes]
+    def missing_blocks(self) -> Tuple[Tuple[int, int], ...]:
+        """``(first, last)`` ranges of the logical block numbers never seen, up to the highest one seen."""
+        ranges: List[Tuple[int, int]] = []
+        expected = 1
+        for block in sorted(self._sizes):
+            if block > expected:
+                ranges.append((expected, block - 1))
+            expected = block + 1
+        return tuple(ranges)
+
+    @property
+    def missing_count(self) -> int:
+        """How many blocks :attr:`missing_blocks` names."""
+        return sum(last - first + 1 for first, last in self.missing_blocks)
+
+    def write_to(self, directory: "Union[str, os.PathLike[str]]") -> Optional[str]:
+        """Write the transferred bytes into ``directory`` and return the path, or ``None`` if there is nothing.
+
+        The file is named ``<session>-<name>``, with ``.partial`` added when the
+        transfer is not complete or has gaps. ``<name>`` is the last component of
+        the requested name with every character outside ``A-Za-z0-9_.-`` replaced
+        by ``_`` and at most 100 octets long, so a capture cannot name a file
+        outside ``directory``. The directory is created when it does not exist.
+        Without kept payloads (``keep_payloads=False``) there is nothing to write.
+        """
+        data = self.data()
+        if not data and not self.is_complete:
+            return None
+        base = self.filename.replace("\\", "/").rsplit("/", 1)[-1]
+        name = _UNSAFE_NAME.sub("_", base)[:_NAME_LENGTH] or "file"
+        partial = "" if self.is_complete and not self.missing_blocks else ".partial"
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "%s-%s%s" % (self.session, name, partial))
+        with open(path, "wb") as handle:
+            handle.write(data)
+        return path
 
     def data(self, decode_netascii: bool = True) -> bytes:
         """The transferred bytes, in order; a gap ends what can be returned.
@@ -162,7 +213,8 @@ class CapturedTransfer:
             "bytes": self.size,
             "packets": self.packets,
             "retransmissions": self.retransmissions,
-            "missing_blocks": len(self.missing_blocks),
+            "missing_blocks": [list(span) for span in self.missing_blocks],
+            "missing_count": self.missing_count,
             "complete": self.is_complete,
             "error": (
                 None
@@ -195,11 +247,33 @@ class FlowTracker:
     :param keep_payloads: keep DATA payloads (for :meth:`CapturedTransfer.data`).
         Turn off for long captures where only metadata matters: sizes,
         retransmissions and missing blocks are counted either way.
+    :param on_complete: ``on_complete(transfer)`` for each transfer the tracker
+        stops following (see ``max_tracked``).
+    :param max_tracked: at most this many transfers are followed; ``None``
+        follows every one, as a whole file's analysis wants. When a request would
+        make one more, the transfer that is finished (complete or ended by an
+        ERROR) and quietest goes first, else the quietest one: it is handed to
+        ``on_complete`` and dropped, so a live capture holds a bounded number of
+        transfers however long it runs. A datagram of a dropped transfer is no
+        longer attributed to it.
+    :raises ValueError: ``max_tracked`` below 1.
     """
 
-    def __init__(self, ports: Iterable[int] = (69,), keep_payloads: bool = True) -> None:
+    def __init__(
+        self,
+        ports: Iterable[int] = (69,),
+        *,
+        keep_payloads: bool = True,
+        on_complete: "Optional[Callable[[CapturedTransfer], Any]]" = None,
+        max_tracked: Optional[int] = 1024,
+    ) -> None:
+        if max_tracked is not None and max_tracked < 1:
+            raise ValueError("max_tracked is at least 1, or None for no bound")
         self.ports = frozenset(ports)
         self.keep_payloads = keep_payloads
+        self.on_complete = on_complete
+        self.max_tracked = max_tracked
+        #: The transfers being followed, oldest request first.
         self.transfers: List[CapturedTransfer] = []
         self._by_client: Dict[Endpoint, CapturedTransfer] = {}
 
@@ -228,6 +302,7 @@ class FlowTracker:
                     transfer = CapturedTransfer(
                         new_session_id("c"), datagram.time, source, destination, request
                     )
+                    self._make_room()
                     self.transfers.append(transfer)
                     self._by_client[source] = transfer
         else:
@@ -238,8 +313,24 @@ class FlowTracker:
             return None
         transfer.packets += 1
         transfer.ended = datagram.time
-        self._observe(transfer, datagram)
+        try:
+            self._observe(transfer, datagram)
+        except Exception as exc:  # a packet this reading cannot take fails its transfer, not the capture
+            if transfer.error is None:
+                transfer.error = (0, "unreadable packet: %s" % type(exc).__name__, "capture")
         return PacketEvent(datagram.time, "seen", destination, source, payload, "capture", transfer.session)
+
+    def _make_room(self) -> None:
+        """Drop the transfer to forget (finished first, then the quietest) when one more would pass the bound."""
+        if self.max_tracked is None:
+            return
+        while len(self.transfers) >= self.max_tracked:
+            victim = min(self.transfers, key=lambda t: (not (t.is_complete or t.error), t.ended))
+            self.transfers.remove(victim)
+            if self._by_client.get(victim.client) is victim:
+                del self._by_client[victim.client]
+            if self.on_complete is not None:
+                self.on_complete(victim)
 
     def _match(self, datagram: UDPDatagram) -> Optional[CapturedTransfer]:
         source, destination = datagram.source, datagram.destination

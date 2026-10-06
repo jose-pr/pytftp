@@ -33,9 +33,21 @@ from tftp.capture import analyze
 analysis = analyze("boot.pcapng", filter="op=RRQ,WRQ,ERROR")
 for transfer in analysis.transfers:
     print(transfer)                     # CapturedTransfer(c1 read 'bootx64.efi' ..., complete)
-    print(transfer.acknowledged, transfer.retransmissions, transfer.missing_blocks)
-    open(transfer.filename.rsplit("/", 1)[-1], "wb").write(transfer.data())
+    print(transfer.acknowledged, transfer.retransmissions, transfer.missing_blocks)   # gaps as (first, last) ranges
+    transfer.write_to("recovered")      # recovered/c1-bootx64.efi, whatever the capture called it
 ```
+
+`write_to(directory)` names the file `<session>-<name>`, adds `.partial` when the
+transfer is incomplete or has gaps, replaces every character outside
+`A-Za-z0-9_.-` in `<name>`, and cannot leave `directory`: a capture is input
+from the network, and the name in it is the peer's choice.
+
+A live capture holds a bounded number of transfers (`FlowTracker(max_tracked=1024)`):
+past it, the finished one that has been quiet longest (else the quietest) is handed
+to `on_complete(transfer)` and dropped. `analyze()` keeps every transfer. Text a peer
+chose (a mode, an option, an ERROR message) is escaped in a summary, so a capture
+cannot send escape sequences to your terminal; a timestamp the platform cannot
+convert is printed as the number.
 
 A transfer is followed from its RRQ/WRQ to the request port, through the
 server's new port, to the end: negotiated options, retransmissions, errors,

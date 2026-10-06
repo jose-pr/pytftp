@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json as _json
 import os as _os
-import re as _re
 import sys as _sys
 import typing as _ty
 
@@ -25,8 +24,6 @@ from ..capture import (
 from .common import Base, error
 
 __all__ = ["CaptureCmd"]
-
-_UNSAFE = _re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 class CaptureCmd(Base):
@@ -88,7 +85,14 @@ class CaptureCmd(Base):
         except (ValueError, CaptureFilterError) as exc:
             error("error: %s" % exc)
             return 2
-        tracker = FlowTracker(self.port, keep_payloads=bool(self.extract))
+        # A transfer the tracker lets go of (a live capture holds a bounded number) is
+        # summarised and written when it goes, the rest at the end.
+        written = []
+        tracker = FlowTracker(
+            self.port,
+            keep_payloads=bool(self.extract),
+            on_complete=lambda transfer: self._finish(transfer, written),
+        )
         try:
             for event in tracker.feed_all(datagrams):
                 if self.no_packets or not wanted(event):
@@ -102,29 +106,24 @@ class CaptureCmd(Base):
             return 2
         except KeyboardInterrupt:
             pass
-        if self.transfers:
-            for transfer in tracker.transfers:
-                if self.json_out:
-                    print(_json.dumps({"transfer": transfer.to_dict()}))
-                else:
-                    print(transfer)
-        if self.extract:
-            self._extract(tracker)
+        for transfer in list(tracker.transfers):
+            self._finish(transfer, written)
+        if self.extract and not written:
+            error("no transfer data to extract")
         return None
 
-    def _extract(self, tracker: FlowTracker) -> None:
-        _os.makedirs(self.extract, exist_ok=True)  # type: ignore[arg-type]
-        written = 0
-        for transfer in tracker.transfers:
-            data = transfer.data()
-            if not data and not transfer.is_complete:
-                continue
-            name = _UNSAFE.sub("_", transfer.filename.replace("\\", "/").rsplit("/", 1)[-1]) or "file"
-            suffix = "" if transfer.is_complete and not transfer.missing_blocks else ".partial"
-            path = _os.path.join(self.extract, "%s-%s%s" % (transfer.session, name, suffix))  # type: ignore[arg-type]
-            with open(path, "wb") as handle:
-                handle.write(data)
-            written += 1
-            error("wrote %s (%d bytes%s)" % (path, len(data), ", incomplete" if suffix else ""))
-        if not written:
-            error("no transfer data to extract")
+    def _finish(self, transfer: _ty.Any, written: list) -> None:
+        """The transfer is complete as far as this capture goes: summarise it, write its file."""
+        if self.transfers:
+            if self.json_out:
+                print(_json.dumps({"transfer": transfer.to_dict()}))
+            else:
+                print(transfer)
+        if self.extract:
+            path = transfer.write_to(self.extract)
+            if path is not None:
+                written.append(path)
+                error(
+                    "wrote %s (%d bytes%s)"
+                    % (path, _os.path.getsize(path), ", incomplete" if path.endswith(".partial") else "")
+                )

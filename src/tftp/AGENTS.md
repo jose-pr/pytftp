@@ -783,7 +783,7 @@ reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
 - **`read_frames(source) -> Iterator[(time, linktype, frame)]`**,
   **`read_datagrams(source) -> Iterator[UDPDatagram(time, source, destination, payload)]`**
   — `CaptureFormatError` (a `TFTPValueError`) for anything that is not a capture.
-- **`FlowTracker(ports=(69,), keep_payloads=True)`** — `feed(datagram) ->
+- **`FlowTracker(ports=(69,), *, keep_payloads=True, on_complete=None, max_tracked=1024)`** — `feed(datagram) ->
   PacketEvent | None` (role `"capture"`, direction `"seen"`; `None` for UDP
   that is neither TFTP traffic of a known transfer nor to/from a request
   port), `feed_all(datagrams)`, `.transfers`. A transfer starts at an
@@ -792,16 +792,31 @@ reassembled (a large `blksize` fragments on the wire). Non-UDP is skipped.
   address/port. `::ffff:a.b.c.d` and `a.b.c.d` count as one host.
   `keep_payloads=False` drops the DATA payloads (`CapturedTransfer.data()` is
   then empty); `size`, `retransmissions` and `missing_blocks` are counted
-  either way.
+  either way. At most `max_tracked` transfers are followed (`None`: every one;
+  `analyze()` and a bound of `None` keep the whole capture): when a request
+  would make one more, the finished transfer (complete or ended by an ERROR)
+  quiet for longest, else the quietest, goes to `on_complete(transfer)` and is
+  dropped, and a datagram of it is no longer attributed. One DATA moves a
+  transfer's highest block by at most its window (64 when that is smaller): a
+  block further ahead is counted as a packet and not placed. A packet the
+  reading cannot take sets that transfer's `error` to
+  `(0, "unreadable packet: <ExceptionType>", "capture")` and the capture goes on.
 - **`CapturedTransfer`** — `session`, `client`, `server`, `server_tid`,
   `filename`, `mode`, `operation`, `requested`, `acknowledged`, `blksize`,
   `windowsize`, `tsize`, `error` (`(code, message, "client"|"server")`),
   `is_complete` (final DATA seen and ACKed), `packets`, `retransmissions` (DATA
   seen again), `request_retransmissions`, `size` (the DATA bytes; `"bytes"`
-  in `to_dict()`), `missing_blocks`,
-  `started`, `ended`, `duration`; `data(decode_netascii=True)` returns the
-  file up to the first gap (block numbers followed across rollover);
-  `to_dict()`.
+  in `to_dict()`), `missing_blocks` (a tuple of inclusive `(first, last)`
+  ranges of the blocks never seen, up to the highest placed; `missing_count`
+  counts them), `started`, `ended`, `duration`; `data(decode_netascii=True)`
+  returns the file up to the first gap (block numbers followed across
+  rollover); `write_to(directory) -> str | None` writes it as
+  `<session>-<name>` (`.partial` appended for an incomplete transfer or one
+  with gaps; `<name>` is the last component of the requested name with every
+  character outside `A-Za-z0-9_.-` replaced by `_`, at most 100 long, so the
+  file is always inside `directory`, which is created) and returns the path,
+  or `None` when there is nothing to write; `to_dict()` (`"missing_blocks"` is
+  a list of `[first, last]` pairs, `"missing_count"` their total).
 - **`analyze(source, *, ports=(69,), filter=None, keep_payloads=True) -> Analysis(events, transfers)`**
   — a whole capture (path, stream, or datagrams) at once.
 - **`sniff(interface=None, *, stop=None) -> Iterator[UDPDatagram]`** — live,

@@ -280,6 +280,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `PUT` carries `Content-Type: application/octet-stream` where urllib's form
   content type went. A header in `headers` wins over either default.
 
+- **Capture: `CapturedTransfer.missing_blocks` is a tuple of `(first, last)` ranges**,
+  where it was a list with one number per missing block (a capture of 400 DATA packets
+  made 13 million, 0.5 GiB); `missing_count` counts them, and `to_dict()` has
+  `"missing_blocks"` as `[first, last]` pairs and `"missing_count"`. A DATA more than a
+  window (at least 64 blocks) ahead of the highest block seen is counted as a packet and
+  not placed.
+- **Capture: `FlowTracker(ports=(69,), *, keep_payloads=True, on_complete=None, max_tracked=1024)`.**
+  `keep_payloads` is keyword-only. A live capture no longer holds every transfer it ever
+  saw: past `max_tracked`, the finished transfer quiet for longest (else the quietest) is
+  handed to `on_complete` and dropped. `analyze()` and `max_tracked=None` keep everything.
+  `pytftp capture` summarises and writes a transfer when the tracker lets it go.
+- **`CapturedTransfer.write_to(directory)`** writes a transfer's file under `directory`
+  whatever the capture called it, replacing the example in the capture guide that opened
+  the peer's file name and the command's own private copy.
+
 ### Renamed
 
 Old names are not kept as aliases.
@@ -331,6 +346,15 @@ Old names are not kept as aliases.
 
 ### Fixed
 
+- **Text a peer chose is escaped before it reaches a terminal or a log.** `summarize()` and
+  `str(event)` wrote a request's mode and every option name and value (and an OACK's)
+  as received, so a client's escape sequences reached the terminal of `pytftp serve --trace`
+  and `pytftp capture`; they are written as Python escapes now, as the file name and an ERROR
+  message already were, and so is a peer's text in the server's log lines.
+- **A capture timestamp the platform cannot convert no longer ends `pytftp capture` with a
+  traceback**: `str(event)` prints the number itself.
+- **One packet a capture reading cannot take fails its transfer's record**, with an
+  `unreadable packet` error, and not the decoding of the whole file.
 - **A send the host refuses ends that transfer, with its reason.** A server dropped it
   without a word (a `blksize` the host could not send left the client waiting out every
   retry); on both servers the peer now gets ERROR 0, `on_complete` gets a result with the

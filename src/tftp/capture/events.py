@@ -8,6 +8,7 @@ import struct
 from typing import Any, Dict, NamedTuple, Optional, Tuple
 
 from ..exceptions import TFTPDecodeError
+from .._text import escape
 from ..packet import TFTPOpcode, decode
 
 __all__ = ["PacketEvent", "summarize", "new_session_id"]
@@ -27,8 +28,18 @@ def _endpoint(address: Any) -> str:
     return "[%s]:%s" % (host, port) if ":" in str(host) else "%s:%s" % (host, port)
 
 
+def _options(options: Dict[str, str], lead: str) -> str:
+    """``" name=value ..."`` with every name and value escaped; empty for no options."""
+    return "".join("%s%s=%s" % (lead, escape(name), escape(value)) for name, value in options.items())
+
+
 def summarize(data: bytes) -> str:
-    """A one-line description of a TFTP datagram (never raises)."""
+    """A one-line description of a TFTP datagram (never raises).
+
+    Text the peer chose (the mode, the options) is escaped, and a file name or an
+    ERROR message is shown as ``repr`` shows it, so the line holds no control
+    character.
+    """
     if len(data) < 2:
         return "short datagram (%d bytes)" % len(data)
     op = (data[0] << 8) | data[1]
@@ -39,19 +50,18 @@ def summarize(data: bytes) -> str:
     try:
         packet = decode(data)
     except TFTPDecodeError as exc:
-        return "malformed (%s)" % exc
+        return "malformed (%s)" % escape(str(exc))
     if op in (TFTPOpcode.RRQ, TFTPOpcode.WRQ):
-        options = " ".join("%s=%s" % item for item in packet.options.items())  # type: ignore[union-attr]
         return "%s %r %s%s" % (
             TFTPOpcode(op).name,
             packet.filename,  # type: ignore[union-attr]
-            packet.mode,  # type: ignore[union-attr]
-            " " + options if options else "",
+            escape(packet.mode),  # type: ignore[union-attr]
+            _options(packet.options, " "),  # type: ignore[union-attr]
         )
     if op == TFTPOpcode.ERROR:
         return "ERROR %d %r" % (packet.code, packet.message)  # type: ignore[union-attr]
     if op == TFTPOpcode.OACK:
-        return "OACK " + " ".join("%s=%s" % item for item in packet.options.items())  # type: ignore[union-attr]
+        return "OACK" + _options(packet.options, " ")  # type: ignore[union-attr]
     return "opcode %d" % op
 
 
@@ -122,7 +132,10 @@ class PacketEvent(NamedTuple):
 
     def __str__(self) -> str:
         """A human line: ``12:00:00.123456 [t3] 10.0.0.5:2000 > 10.0.0.1:69 RRQ 'f' octet``."""
-        stamp = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
+        try:
+            stamp = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
+        except (OverflowError, OSError, ValueError):  # a time the platform cannot convert
+            stamp = "%.6f" % self.time
         tags = " ".join(t for t in (self.session and "[%s]" % self.session, self.leg) if t)
         return "%s %s%s > %s %s" % (
             stamp,

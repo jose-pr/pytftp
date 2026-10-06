@@ -201,7 +201,7 @@ def test_capture_command(root, make_server, tmp_path_factory, capsys):
     assert [r["transfer"]["filename"] for r in records] == ["1428x3.bin", "missing"]
     assert records[0]["transfer"]["complete"] and records[1]["transfer"]["error"]["code"] == 1
     assert records[0]["transfer"]["bytes"] == 1428 * 3  # counted with payloads off, as here
-    assert records[0]["transfer"]["retransmissions"] == 0 and records[0]["transfer"]["missing_blocks"] == 0
+    assert records[0]["transfer"]["retransmissions"] == 0 and records[0]["transfer"]["missing_blocks"] == []
     target = out / "extracted"
     assert run(["capture", str(pcap), "-p", port, "--no-packets", "--extract", str(target)]) in (None, 0)
     (written,) = list(target.iterdir())

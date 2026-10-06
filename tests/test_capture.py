@@ -113,7 +113,7 @@ def test_pcap_roundtrip_reconstructs_transfers(root, make_server, tmp_path_facto
     big = by_name["big.bin"]
     assert big.is_complete and big.data() == (root / "big.bin").read_bytes()
     assert (big.blksize, big.windowsize, big.tsize) == (1024, 4, 300_001)
-    assert big.acknowledged["blksize"] == "1024" and big.missing_blocks == []
+    assert big.acknowledged["blksize"] == "1024" and big.missing_blocks == ()
     up = by_name["uploaded.bin"]
     assert up.operation == "write" and up.is_complete and up.data() == b"u" * 3000
     missing = by_name["missing"]
@@ -249,7 +249,7 @@ def test_flow_rollover_and_netascii():
     for datagram in _flow(*packets):
         tracker.feed(datagram)
     (transfer,) = tracker.transfers
-    assert transfer.is_complete and transfer.missing_blocks == []
+    assert transfer.is_complete and transfer.missing_blocks == ()
     assert len(transfer.data(decode_netascii=False)) == (count - 1) * 8 + 2
     assert transfer.data().count(b"\n") == count - 1 + 0  # CR LF -> LF
 
@@ -327,10 +327,10 @@ def test_flow_counters_are_the_same_with_or_without_payloads(keep):
     tracker = FlowTracker(keep_payloads=keep)
     list(tracker.feed_all(_lossy_capture()))
     (transfer,) = tracker.transfers
-    assert (transfer.size, transfer.retransmissions, transfer.missing_blocks) == (1546, 1, [3])
+    assert (transfer.size, transfer.retransmissions, transfer.missing_blocks) == (1546, 1, ((3, 3),))
     assert transfer.is_complete
     record = transfer.to_dict()
-    assert (record["bytes"], record["retransmissions"], record["missing_blocks"]) == (1546, 1, 1)
+    assert (record["bytes"], record["retransmissions"], record["missing_blocks"]) == (1546, 1, [[3, 3]])
 
 
 # -- a failing hook, and the observer's address ---------------------------------------------------
@@ -421,3 +421,255 @@ def test_a_pcap_taken_by_the_client_carries_the_address_the_server_saw(root, mak
     request = [e for e in seen if e.opcode_name == "RRQ"][0]
     first = datagrams[0]
     assert first.source == (request.remote[0], request.remote[1]), "the pcap names another client address"
+
+
+# -- what a capture costs is bounded by its size ---------------------------------------------------
+
+
+def _tracked(*packets):
+    tracker = FlowTracker()
+    list(tracker.feed_all(_flow(*packets)))
+    return tracker
+
+
+def test_missing_blocks_are_ranges_and_missing_count_counts_them():
+    tracker = _tracked(
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")),
+        (T, C, encode_data(1, b"a" * 512)),
+        (T, C, encode_data(2, b"a" * 512)),
+        (T, C, encode_data(10, b"a" * 512)),
+        (T, C, encode_data(13, b"a" * 512)),
+    )
+    (transfer,) = tracker.transfers
+    assert transfer.missing_blocks == ((3, 9), (11, 12))
+    assert transfer.missing_count == 9
+    record = transfer.to_dict()
+    assert (record["missing_blocks"], record["missing_count"]) == ([[3, 9], [11, 12]], 9)
+
+
+def test_a_capture_that_jumps_half_the_block_space_costs_nothing():
+    """Fifty DATA, 32768 blocks apart: a list of the missing blocks held 1,638,350 numbers (63 MiB)."""
+    import tracemalloc
+
+    packets = [(C, S, encode_request(TFTPOpcode.RRQ, "f"))]
+    for index in range(50):
+        packets.append((T, C, encode_data((32768 * (index + 1)) % 65536, b"x" * 512)))
+    tracemalloc.start()
+    try:
+        tracker = _tracked(*packets)
+        (transfer,) = tracker.transfers
+        transfer.to_dict()
+        transfer.missing_blocks, transfer.missing_count
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 8 * 1024 * 1024, peak
+    assert transfer.packets == 51  # every datagram is counted, a block that cannot be placed is not stored
+    assert transfer.missing_count < 64
+
+
+@pytest.mark.parametrize(
+    "window,ahead,placed", [(1, 64, True), (1, 65, False), (128, 128, True), (128, 129, False)]
+)
+def test_a_data_is_placed_at_most_a_window_ahead(window, ahead, placed):
+    packets = [(C, S, encode_request(TFTPOpcode.RRQ, "f", options={"windowsize": window}))]
+    packets.append((T, C, encode_oack({"windowsize": window})))
+    packets.append((T, C, encode_data(1, b"a" * 512)))
+    packets.append((T, C, encode_data(1 + ahead, b"a" * 512)))
+    (transfer,) = _tracked(*packets).transfers
+    assert (transfer.size == 1024) is placed, transfer.size
+
+
+# -- a time the platform cannot convert, text from the wire --------------------------------------
+
+
+def test_a_timestamp_the_platform_cannot_convert_is_printed_as_the_number():
+    event = PacketEvent(2.0**40, "seen", S, C, encode_ack(1))
+    assert str(event).startswith("1099511627776.000000 ")
+    assert str(PacketEvent(float("nan"), "seen", S, C, encode_ack(1))).startswith("nan ")
+
+
+ESCAPES = "\x1b[2J\x1b]0;owned\x07\n\r" + chr(0x202E)  # ESC sequences, a newline, a right-to-left override
+
+
+def _raw_request(filename, mode="octet", **options):
+    """A request as a hostile client writes it: nothing checks what it holds."""
+    fields = [filename, mode] + [item for pair in options.items() for item in pair]
+    return b"\x00\x01" + b"".join(field.encode("utf-8", "surrogateescape") + b"\x00" for field in fields)
+
+
+def test_text_a_peer_chose_is_escaped_in_a_summary():
+    request = _raw_request("f" + ESCAPES, "oc" + ESCAPES, **{"x" + ESCAPES: "v" + ESCAPES})
+    for data in (
+        request,
+        encode_oack({"blk" + ESCAPES: "1" + ESCAPES}),
+        encode_error(1, "no" + ESCAPES),
+        b"\x00\x01f\x00o\xff\x00",
+    ):
+        line = summarize(data)
+        assert line.isprintable(), repr(line)
+        assert str(PacketEvent(1.0, "seen", S, C, data)).isprintable()
+    assert "\\x1b[2J" in summarize(request) and "\\u202e" in summarize(request)
+
+
+def test_a_log_line_about_a_request_holds_no_control_character(root, make_server, caplog):
+    import logging
+
+    caplog.set_level(logging.DEBUG, logger="tftp.server")
+    import socket
+    import time
+
+    server = make_server(root)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as raw:
+        raw.settimeout(2)
+        raw.bind(("127.0.0.1", 0))
+        raw.sendto(_raw_request("one.bin", "oc" + ESCAPES), server.server_address)
+        raw.recvfrom(2048)
+        raw.sendto(_raw_request("one.bin" + ESCAPES), server.server_address)
+        raw.recvfrom(2048)
+        raw.sendto(encode_request(TFTPOpcode.RRQ, "big.bin"), server.server_address)
+        _, tid = raw.recvfrom(2048)
+        raw.sendto(encode_error(0, "bye" + ESCAPES), tid)
+        deadline = time.monotonic() + 3
+        while server.stats_snapshot()["failed"] < 1 and time.monotonic() < deadline:
+            time.sleep(0.01)
+    lines = [r.getMessage() for r in caplog.get_records("call") if r.name == "tftp.server"]
+    assert len(lines) >= 3, lines
+    assert all(line.isprintable() for line in lines), lines
+
+
+# -- finished transfers of a live capture ---------------------------------------------------------
+
+
+def _request_from(port):
+    return (("10.1.%d.%d" % (port // 250, port % 250), 2000), S, encode_request(TFTPOpcode.RRQ, "f%d" % port))
+
+
+def test_a_tracker_holds_at_most_max_tracked_transfers_and_hands_over_the_rest():
+    gone = []
+    tracker = FlowTracker(on_complete=gone.append, max_tracked=3)
+    list(tracker.feed_all(_flow(*[_request_from(port) for port in range(10)])))
+    assert len(tracker.transfers) == 3 and len(tracker._by_client) == 3
+    assert [t.filename for t in gone] == ["f%d" % n for n in range(7)]  # the quietest first
+    assert [t.filename for t in tracker.transfers] == ["f7", "f8", "f9"]
+
+
+def test_a_finished_transfer_goes_before_an_older_unfinished_one():
+    gone = []
+    tracker = FlowTracker(on_complete=gone.append, max_tracked=2)
+    older, finished = _request_from(1), _request_from(2)
+    server_tid = ("10.0.0.1", 41000)
+    packets = [
+        older,
+        finished,
+        (server_tid, finished[0], encode_data(1, b"x")),
+        (finished[0], server_tid, encode_ack(1)),
+        _request_from(3),
+    ]
+    list(tracker.feed_all(_flow(*packets)))
+    assert [t.filename for t in gone] == ["f2"] and gone[0].is_complete
+    assert [t.filename for t in tracker.transfers] == ["f1", "f3"]
+
+
+def test_a_tracker_without_a_bound_keeps_every_transfer():
+    packets = _flow(*[_request_from(port) for port in range(1100)])
+    tracker = FlowTracker(max_tracked=None)
+    list(tracker.feed_all(packets))
+    assert len(tracker.transfers) == 1100
+    assert len(analyze(iter(packets)).transfers) == 1100
+    with pytest.raises(ValueError):
+        FlowTracker(max_tracked=0)
+
+
+# -- writing a transfer's file -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["../../outside.bin", "..", ".", "con", "a\x00b", "\\\\host\\share\\x", "sub/x\x1b[2J", "x" * 400, ""],
+)
+def test_a_transfer_is_written_under_the_directory_whatever_its_name(tmp_path, name):
+    tracker = _tracked(
+        (C, S, encode_request(TFTPOpcode.RRQ, "x")),
+        (T, C, encode_data(1, b"payload")),
+        (C, T, encode_ack(1)),
+    )
+    (transfer,) = tracker.transfers
+    transfer.filename = name
+    target = tmp_path / "recovered"
+    path = transfer.write_to(target)
+    assert os.path.dirname(os.path.realpath(path)) == os.path.realpath(target)
+    assert os.path.basename(path).startswith(transfer.session + "-") and len(os.path.basename(path)) < 130
+    assert open(path, "rb").read() == b"payload" and not path.endswith(".partial")
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["recovered"]
+
+
+def test_a_transfer_with_gaps_is_written_as_partial_and_one_without_data_is_not_written(tmp_path):
+    tracker = _tracked(
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")),
+        (T, C, encode_data(1, b"a" * 512)),
+        (T, C, encode_data(3, b"b")),
+    )
+    (transfer,) = tracker.transfers
+    assert transfer.write_to(tmp_path).endswith("-f.partial")
+    bare = FlowTracker(keep_payloads=False)
+    list(bare.feed_all(_flow((C, S, encode_request(TFTPOpcode.RRQ, "f")), (T, C, encode_data(1, b"x")))))
+    assert bare.transfers[0].write_to(tmp_path) is None
+
+
+# -- a seeded fuzz --------------------------------------------------------------------------------
+
+
+def test_nothing_a_capture_holds_raises_or_prints_a_control_character():
+    import random
+
+    rng = random.Random(20261006)
+    seeds = [
+        encode_request(TFTPOpcode.RRQ, "f", options={"blksize": 8, "windowsize": 4}),
+        encode_request(TFTPOpcode.WRQ, "g", mode="netascii"),
+        encode_oack({"blksize": 1428, "tsize": 5, "windowsize": 2, "rollover": 1}),
+        encode_data(1, b"payload"),
+        encode_ack(7),
+        encode_error(1, "no such file"),
+    ]
+    tracker = FlowTracker(max_tracked=16)
+    clock = 0.0
+    for _ in range(4000):
+        data = bytearray(
+            rng.choice(seeds)
+            if rng.random() < 0.8
+            else bytes(rng.randrange(256) for _ in range(rng.randrange(0, 40)))
+        )
+        for _ in range(rng.randrange(0, 4)):
+            if data:
+                data[rng.randrange(len(data))] = rng.randrange(256)
+        if rng.random() < 0.2 and data:
+            del data[rng.randrange(len(data)) :]
+        clock += 0.001
+        source, destination = rng.choice([(C, S), (T, C), (C, T), (S, C)])
+        event = tracker.feed(UDPDatagram(clock, source, destination, bytes(data)))
+        assert summarize(bytes(data)).isprintable()
+        if event is not None:
+            assert str(event).isprintable()
+    for transfer in tracker.transfers:
+        transfer.to_dict(), transfer.missing_blocks, transfer.data(), repr(transfer)
+
+
+def test_one_packet_that_cannot_be_read_fails_its_transfer_and_not_the_capture(monkeypatch):
+    real = FlowTracker._observe
+
+    def observe(self, transfer, datagram):
+        if datagram.payload[:4] == b"\x00\x04\x00\x09":
+            raise ValueError("a reading nobody expected")
+        return real(self, transfer, datagram)
+
+    monkeypatch.setattr(FlowTracker, "_observe", observe)
+    tracker = _tracked(
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")),
+        (T, C, encode_data(1, b"a" * 512)),
+        (C, T, encode_ack(9)),
+        (T, C, encode_data(2, b"b")),
+    )
+    (transfer,) = tracker.transfers
+    assert transfer.error == (0, "unreadable packet: ValueError", "capture")
+    assert transfer.size == 513 and transfer.packets == 4
