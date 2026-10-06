@@ -34,7 +34,9 @@ A client whose request is answered with ERROR 8, 4 or 0 retries once with no
 options (`fallback=True`), for servers that reject what they do not understand.
 
 `tsize` is answered for any file whose size is known, except an empty one:
-curl rejects `tsize 0` in an OACK, and the transfer shows the size anyway.
+curl rejects `tsize 0` in an OACK, and the transfer shows the size anyway. A
+netascii read request's `tsize` is left out: its size needs the whole file
+read, which a server does not do before it answers (tftp-hpa does the same).
 
 ## Extensions and profiles
 

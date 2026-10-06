@@ -376,6 +376,15 @@ def _strings(body: bytes) -> list:
     return [f.decode(FILENAME_ENCODING, _ERRORS) for f in fields]
 
 
+def _error_text(message: Union[bytes, bytearray, memoryview]) -> str:
+    """The text of an ERROR from the octets after its code: up to the first NUL.
+
+    It is read by people, so an octet that is not UTF-8 shows as U+FFFD; unlike
+    a file name it need not round-trip.
+    """
+    return bytes(message).split(b"\0", 1)[0].decode(FILENAME_ENCODING, "replace")
+
+
 def _parse_options(fields: list) -> "dict[str, str]":
     options: "dict[str, str]" = {}
     # An odd trailing name with no value is dropped rather than fatal: the
@@ -414,8 +423,7 @@ def decode(packet: Union[bytes, bytearray, memoryview]) -> TFTPPacket:
     if op == TFTPOpcode.ERROR:
         if len(buf) < 4:
             raise TFTPDecodeError("ERROR shorter than its header")
-        text = _strings(buf[4:])
-        return ErrorPacket(_HDR.unpack_from(buf)[1], text[0] if text else "")
+        return ErrorPacket(_HDR.unpack_from(buf)[1], _error_text(buf[4:]))
     if op == TFTPOpcode.OACK:
         return OptionAckPacket(_parse_options(_strings(buf[2:])))
     raise TFTPDecodeError("unknown opcode %d" % op)

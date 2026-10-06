@@ -54,7 +54,7 @@ takes every field by keyword.
 | RFC 1123 4.2.3.4 | broadcast requests ignored | server, when pktinfo reports the destination |
 | RFC 2347 | option extension, OACK, ERROR 8 | unknown options are ignored, as the RFC requires |
 | RFC 2348 | `blksize` 8..65464 | server clamps to its `max_blksize` |
-| RFC 2349 | `timeout` (1..255 s), `tsize` | `tsize` 0 is never sent in an OACK (curl rejects it) |
+| RFC 2349 | `timeout` (1..255 s), `tsize` | `tsize` 0 is never sent in an OACK (curl rejects it), and a netascii read request's `tsize` is left out (its size needs the whole file read; tftp-hpa does the same) |
 | RFC 7440 | `windowsize` 1..65535 | server clamps to its `max_windowsize` (default 64); the engine runs a window of at most 32767 whatever was negotiated, so an old ACK is never mistaken for a new one |
 | tftp-hpa | `blksize2`, `utimeout`, `rollover`, `cookie` | **off unless a server allows them** (`TFTPServerOptions(allowed=...)`, a profile) |
 | Microsoft | `mstfwindow` (bootmgr/WDS variable window) | off unless allowed; runs a fixed window of 4 (the in-transfer resize is unpublished) |
@@ -814,7 +814,9 @@ options untouched. `repr()` of a packet is a constructor call.
   an error message over 512 octets; `TypeError` for a wrong type, an option
   value that is not text or an `int` (`None`, `True`, a float) included.
 - Strings are UTF-8 with `surrogateescape`, so any byte sequence round-trips
-  and real UTF-8 names decode naturally.
+  and real UTF-8 names decode naturally. An ERROR's message is the exception:
+  it is read up to its first NUL with `replace`, so an octet that is not UTF-8
+  shows as U+FFFD, in `decode` and in a transfer's `error` alike.
 - Constants: `DEFAULT_BLKSIZE` 512, `MIN_BLKSIZE` 8, `MAX_BLKSIZE` 65464,
   `MAX_WINDOWSIZE` 65535, `STANDARD_OPTIONS`, `EXTENSION_OPTIONS`,
   `LISTING_OPTIONS` (`x-list`, `x-mtime`), `SUPPORTED_OPTIONS` (standard and

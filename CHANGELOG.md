@@ -343,6 +343,15 @@ Old names are not kept as aliases.
   nothing ready holds the block), and `as_readinto` takes `None` from
   `readinto` or `read` as "nothing ready", where a non-blocking source ended
   the transfer after 512 octets of 10247.
+- **A netascii read request asking `tsize` no longer makes the server read
+  the whole file before it answers.** The size of a netascii transfer needs
+  the file scanned, on the loop that serves every other transfer: after eight
+  such 27-octet requests for a 768 MiB file, a small download took 4.3 s
+  where an idle server takes 0.01 s. The OACK leaves `tsize` out for
+  netascii, as tftp-hpa does; an octet transfer still answers it.
+- An ERROR's text is read one way: up to its first NUL, with an octet that is
+  not UTF-8 shown as U+FFFD, whether the ERROR answers a request (`decode`)
+  or arrives mid-transfer. The first read left a lone surrogate in the text.
 - **A windowed receiver follows a sender that wraps to block 1** (rollover
   not negotiated); at `windowsize=4` both ends timed out at block 65536. The
   engine runs a window of at most 32767 blocks whatever was negotiated: with a

@@ -110,6 +110,8 @@ class NetasciiWriter:
     :meth:`close` flushes it as a plain CR.
     """
 
+    copies_writes = True  # write() copies what it is given, so the engine hands it a reused buffer
+
     def __init__(self, raw: BinaryIO) -> None:
         self._raw = raw
         self._held_cr = False

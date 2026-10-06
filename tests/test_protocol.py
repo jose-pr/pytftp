@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 import socket
 import sys
@@ -661,3 +662,68 @@ def test_stat_probes_again_for_the_size_after_an_error_for_its_options(code):
         assert tftp.TFTPClient(*fake.address, timeout=0.5).stat("f").size == 2
     finally:
         fake.close()
+
+
+# -- a netascii read request that asks for tsize ------------------------------------------------------------
+
+
+class CountingSource(io.BytesIO):
+    """A readable stream that counts how often the server reads from it."""
+
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.reads = 0
+
+    def readinto(self, buffer):
+        self.reads += 1
+        return super().readinto(buffer)
+
+    def read(self, size=-1):
+        self.reads += 1
+        return super().read(size)
+
+
+class CountingHandler:
+    opens_fast = True
+
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+        self.source = None
+
+    def open_read(self, context):
+        self.source = CountingSource(self.data)
+        return self.source
+
+    def open_write(self, context, size):
+        raise tftp.AccessViolation
+
+
+def test_a_netascii_read_request_asking_tsize_is_answered_without_reading_the_file(make_server):
+    """RFC 2349: tsize is the file's size; in netascii it depends on the whole file, so it is left out.
+
+    The OACK arrives before the server has read one octet, and carries only what was asked besides.
+    """
+    handler = CountingHandler(b"line\n" * 10_000)
+    server = make_server(handler)
+    with raw_socket() as client:
+        request = encode_request(TFTPOpcode.RRQ, "f", mode="netascii", options={"tsize": 0, "blksize": 1024})
+        client.sendto(request, server.server_address)
+        oack, tid = expect(client)
+        assert oack == tftp.OptionAckPacket({"blksize": "1024"})
+        assert handler.source.reads == 0
+        client.sendto(encode_ack(0), tid)
+        data, _ = expect(client)
+        assert data.block == 1 and data.data.startswith(b"line\r\nline\r\n")
+        client.sendto(encode_error(TFTPErrorCode.NOT_DEFINED, "done"), tid)
+
+
+def test_an_octet_read_request_asking_tsize_is_still_answered_with_the_size(make_server):
+    handler = CountingHandler(b"x" * 3000)
+    server = make_server(handler)
+    with raw_socket() as client:
+        client.sendto(
+            encode_request(TFTPOpcode.RRQ, "f", options={"tsize": 0, "blksize": 1024}), server.server_address
+        )
+        oack, tid = expect(client)
+        assert oack == tftp.OptionAckPacket({"blksize": "1024", "tsize": "3000"})
+        client.sendto(encode_error(TFTPErrorCode.NOT_DEFINED, "done"), tid)

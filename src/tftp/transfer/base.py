@@ -15,9 +15,8 @@ from ..exceptions import (
     TransferTimeoutError,
     WouldBlock,
 )
-from ..netascii import NetasciiWriter
 from ..options import Negotiated
-from ..packet.codec import _encode_error
+from ..packet.codec import _encode_error, _error_text
 
 __all__ = ["Transfer", "as_readinto", "as_write"]
 
@@ -78,9 +77,6 @@ def as_readinto(source) -> Callable[[memoryview], int]:
     return fill
 
 
-_COPYING_WRITERS = (io.IOBase, NetasciiWriter)
-
-
 def _write_rest(write: Callable[[memoryview], Optional[int]], data, done: int) -> None:
     """Hand ``data`` to ``write`` again from octet ``done`` until all of it is taken."""
     rest = memoryview(data)
@@ -107,7 +103,7 @@ def as_write(sink) -> Callable[[memoryview], object]:
     :class:`WouldBlock`. Any other sink's ``None`` is "all of it".
     """
     write = sink.write
-    copies = isinstance(sink, _COPYING_WRITERS) or getattr(sink, "copies_writes", False)
+    copies = isinstance(sink, io.IOBase) or getattr(sink, "copies_writes", False)
     if isinstance(sink, io.BufferedIOBase):
         return write
     raw = isinstance(sink, io.RawIOBase)
@@ -255,8 +251,7 @@ class Transfer:
 
     def _remote_error(self, packet: memoryview, n: int) -> None:
         code = (packet[2] << 8) | packet[3] if n >= 4 else 0
-        raw = bytes(packet[4:n]).split(b"\0", 1)[0]
-        self.fail(RemoteError.from_code(code, raw.decode("utf-8", "replace")), notify=False)
+        self.fail(RemoteError.from_code(code, _error_text(packet[4:n])), notify=False)
 
     def _illegal(self, what: str) -> None:
         self.fail(TFTPProtocolError(what), notify=True)

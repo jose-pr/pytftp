@@ -105,7 +105,7 @@ def test_netascii_both_ways(root, make_server):
     result = client.download("text.txt", raw, mode="netascii")
     assert raw.getvalue() == text
     assert result.bytes == len(encode(text))
-    assert result.negotiated.tsize == len(encode(text))
+    assert result.negotiated.tsize is None  # a netascii size needs the whole file read
     client.upload("text-up.txt", text, mode="netascii")
     assert (root / "text-up.txt").read_bytes() == text
 

@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterator, List, Optional, Tuple, Union
 
 from .._sockets import fit_window
 from ..exceptions import TFTPError, TFTPValueError
-from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
+from ..netascii import NetasciiReader, NetasciiWriter
 from ..options import Negotiated, TFTPServerOptions, negotiate
 from ..packet import TFTPErrorCode, RequestPacket, encode_ack, encode_oack
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
@@ -321,7 +321,9 @@ class Session:
             self.stream = stream
             wants_size = "tsize" in request.options and policy.accepts("tsize")
             if request.mode == "netascii":
-                size = encoded_size(stream) if wants_size else None
+                # The encoded size needs the whole file read, on the loop that serves every
+                # other transfer: tsize is left out, as tftp-hpa does.
+                size = None
                 reader: Any = NetasciiReader(stream)
             else:
                 size = stream_size(stream) if wants_size else None

@@ -17,7 +17,7 @@ import pytest
 
 from tftp import Receiver, Sender, TFTPError
 from tftp.options import Negotiated
-from tftp.packet import encode_ack, encode_oack
+from tftp.packet import decode, encode_ack, encode_oack
 from tftp.transfer import as_readinto, as_write
 
 DATA, ACK, ERROR, OACK = 3, 4, 5, 6
@@ -545,6 +545,38 @@ def test_a_windowed_receiver_follows_a_sender_that_wraps_to_one_end_to_end(windo
     sender_neg = neg(blksize=blksize, windowsize=windowsize, rollover=1)
     got, sender, receiver, _ = run(data, sender_neg, receiver_neg=neg(blksize=blksize, windowsize=windowsize))
     assert sender.error is None and receiver.error is None and got == data
+
+
+# -- an ERROR's text has one reading -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tail,text",
+    [
+        (b"caf\xe9 not found\x00", "caf\ufffd not found"),
+        (b"no terminator", "no terminator"),
+        (b"first\x00second\x00", "first"),
+    ],
+)
+def test_an_error_text_reads_the_same_when_it_answers_a_request_and_mid_transfer(tail, text):
+    """RFC 1350: the message is a string of octets ended by a zero; it is read for people, so bad UTF-8 becomes U+FFFD."""
+    wire = struct.pack("!HH", ERROR, 1) + tail
+    assert decode(wire).message == text
+    receiver = Receiver(lambda packet: None, as_write(io.BytesIO()), neg(), 5, 0.0)
+    receiver.handle(memoryview(wire), len(wire), 0.0)
+    assert receiver.is_done and receiver.error.message == text
+    sender = Sender(lambda packet: None, as_readinto(io.BytesIO(b"x" * 2000)), neg(), 5, 0.0)
+    sender.handle(memoryview(wire), len(wire), 0.0)
+    assert sender.is_done and sender.error.message == text
+
+
+def test_the_engine_does_not_import_the_netascii_writer_to_tell_it_copies():
+    """as_write reads the marker every writer declares, NetasciiWriter included."""
+    import tftp.transfer.base as base
+    from tftp.netascii import NetasciiWriter
+
+    assert NetasciiWriter.copies_writes is True
+    assert not hasattr(base, "NetasciiWriter")
 
 
 # -- traffic after one event, with delay and reordering --------------------------------------
