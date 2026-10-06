@@ -113,11 +113,6 @@ _PUBLIC = {
     "tftp.transfer",
 }
 
-#: Modules public by name that are not in the role-based surface, each with why.
-_PUBLIC_FOR_NOW = {
-    "tftp.capture.pcap": "leaves for the library that writes captures",
-}
-
 #: The command line's subcommand modules, each named for the subcommand it holds. They are
 #: public by name and promise nothing: the command line is not library API, and its one entry
 #: is ``tftp.cli.main``.
@@ -187,12 +182,10 @@ def test_every_module_that_is_not_a_public_path_is_private_by_name():
         for p in _modules()
         if not any(part.startswith("_") and part != "__main__" for part in _dotted(p).split(".")[1:])
     }
-    declared = _PUBLIC | set(_PUBLIC_FOR_NOW) | _COMMAND_MODULES
+    declared = _PUBLIC | _COMMAND_MODULES
     assert public - declared == set(), "start its name with an underscore, or declare it public"
     assert declared - public == set(), "no such public module: remove it from the list"
-    assert all(reason.strip() for reason in _PUBLIC_FOR_NOW.values())
-    assert not _PUBLIC & set(_PUBLIC_FOR_NOW)
-    assert not _COMMAND_MODULES & (_PUBLIC | set(_PUBLIC_FOR_NOW))
+    assert not _COMMAND_MODULES & _PUBLIC
 
 
 def _package_of(path):

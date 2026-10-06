@@ -53,8 +53,8 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 - **Transparent relay** — forwards requests byte for byte to upstream servers
   (routed by subnet, filename or interface), so unknown extensions still work.
 - **Capture and debugging** — trace every datagram from the client, server or
-  relay; write Wireshark-readable pcaps; read pcap/pcapng files (through
-  [pktcap](https://github.com/jose-pr/pktcap)) or a live `tcpdump` pipe,
+  relay; write Wireshark-readable pcap or pcapng; read pcap/pcapng files or a
+  live `tcpdump` pipe (both through [pktcap](https://github.com/jose-pr/pktcap)),
   reconstruct each transfer and extract its file.
 - **Directory listings** — an opt-in extension between pytftp peers: `pytftp ls`,
   `TFTPClient.listdir()`, and `iterdir`/`walk`/`glob` on paths; other servers
@@ -173,12 +173,13 @@ Relay, capture and asyncio:
 ```python
 import tftp
 from tftp.relay import TFTPRelay, RouteTable, by_subnet
-from tftp.capture import PcapWriter, analyze
+import pktcap
+from tftp.capture import analyze, trace_to
 
 # Forward requests to per-subnet boot servers, recording everything.
-with PcapWriter("relay.pcap") as pcap:
+with pktcap.PcapWriter("relay.pcap") as pcap:
     route = RouteTable([by_subnet({"10.1.0.0/16": "10.1.0.5"})], default="10.0.0.20")
-    TFTPRelay(route, trace=pcap).serve_forever()
+    TFTPRelay(route, trace=trace_to(pcap)).serve_forever()
 
 # What happened in a capture (yours, or tcpdump's)?
 for transfer in analyze("boot.pcapng").transfers:
@@ -206,7 +207,7 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.server` | `TFTPServer`, `AsyncTFTPServer`, `TFTPServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
 | `tftp.backends` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` (proxy), `Pipe` |
 | `tftp.relay` | `TFTPRelay` and routing helpers |
-| `tftp.capture` | trace events, `PcapWriter`, `FlowTracker`, `analyze`, filters (reading a capture is pktcap's) |
+| `tftp.capture` | trace events, `trace_to`, `FlowTracker`, `analyze`, filters (reading and writing a capture are pktcap's) |
 | `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |

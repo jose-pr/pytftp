@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.server
 import os
+import pathlib
 import random
 import socket
 import threading
@@ -347,6 +348,10 @@ def served(tmp_path, monkeypatch):
         item.close()
 
 
+#: A committed capture that the examples' ``boot.pcapng`` stands for.
+CAPTURES = pathlib.Path(__file__).resolve().parent / "capture_cases"
+
+
 def substitute(code, server, root):
     port = str(server.server_address[1])
     pairs = [
@@ -359,7 +364,7 @@ def substitute(code, server, root):
         ("port=69", "port=0"),
         ('default="10.0.0.20"', 'default="127.0.0.1:%s"' % port),
         ('"10.0.0.20"', '"127.0.0.1"'),
-        ('"boot.pcapng"', '"relay.pcap"'),
+        ('"boot.pcapng"', repr(str(CAPTURES / "plain.pcap"))),
         (".serve_forever()", ".start()"),
     ]
     for old, new in pairs:

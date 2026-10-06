@@ -56,7 +56,11 @@ def _pattern(length: int, seed: int = 0) -> bytes:
 
 
 def plain_script() -> List[Datagram]:
-    """IPv4 datagrams of five transfers and two strays, in the order they were seen."""
+    """IPv4 datagrams of four transfers and two strays, in the order they were seen.
+
+    ``plain.pcap`` is committed as the library's own pcap writer wrote this script once;
+    a test writes it again through ``pktcap`` and compares.
+    """
     script: List[Datagram] = []
     clock = [EPOCH + 0.5]
 
@@ -102,14 +106,6 @@ def plain_script() -> List[Datagram]:
     add((STRANGER, 5555), request, b"hello")
     add((CLIENT, 9999), (SERVER, 9998), b"not tftp, not port 69")
     return script
-
-
-def write_plain(path: Path) -> None:
-    from tftp.capture import PcapWriter
-
-    with PcapWriter(path) as writer:
-        for time, src, dst, payload in plain_script():
-            writer.write(time, src, dst, payload)
 
 
 # -- frames ---------------------------------------------------------------------------------
@@ -266,7 +262,7 @@ def cut() -> bytes:
     return pcap(records, linktype=101)
 
 
-#: Captures this module writes; ``plain.pcap`` is committed as it was written once.
+#: Captures this module writes; ``plain.pcap`` is only committed.
 BUILT = {
     "vlan_fragments.pcapng": vlan_fragments,
     "cooked_v6.pcapng": cooked_v6,
@@ -277,11 +273,9 @@ BUILT = {
 CAPTURES = ("plain.pcap", *BUILT)
 
 
-def write_captures(directory: Path = HERE, plain: bool = True) -> None:
+def write_captures(directory: Path = HERE) -> None:
     for name, build in BUILT.items():
         (directory / name).write_bytes(build())
-    if plain:
-        write_plain(directory / "plain.pcap")
 
 
 # -- the command's output -----------------------------------------------------------------

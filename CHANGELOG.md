@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   through the constructor as `dataclasses.replace` does.
 - `tftp.capture.combine_hooks(*hooks)`: one `trace=` hook from several; a hook that
   raises does not keep the others from the event.
+- `tftp.capture.trace_to(writer)`: a trace hook that appends every event to a writer, and
+  `DatagramWriter`, the `Protocol` it takes (`write(time, source, destination, payload)`).
+  `pktcap.PcapWriter` and `pktcap.PcapngWriter` are both one, so a run can be recorded as
+  pcapng too.
 - `by_prefix` and `by_subnet` take `"KEY=HOST[:PORT]"` text in a sequence, in place of
   a pair.
 - `pytftp serve --max-duration SECONDS` (the longest a transfer may run),
@@ -390,12 +394,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   | `live_capture_supported()` | `pktcap.has_live_capture()` |
   | the modules `tftp.capture.frames` and `tftp.capture.live` | gone |
   | `CaptureFormatError` (`tftp.capture`, `tftp.exceptions`) | `pktcap.CaptureFormatError` |
+  | `PcapWriter`, itself a trace hook; the module `tftp.capture.pcap` | `pktcap.PcapWriter(target)` (or `pktcap.PcapngWriter`) in `trace=trace_to(writer)`; the module is gone |
 
   `CaptureFormatError` is no longer a `TFTPError`: `analyze()` and `pytftp capture` let
   pktcap's through, a `ValueError`, so `except TFTPError` does not catch an unreadable
   capture and `except ValueError` does. `FlowTracker.feed(datagram)` and `feed_all` take
   anything with `time`, `source`, `destination` and `payload` (`tftp.capture.DatagramLike`,
   new), and `analyze(source)` a path, a stream or an iterable of those.
+  The writer: a pcap file written through pktcap promises the datagrams it holds, each
+  with its time to the microsecond, both addresses and its payload, and not its octets.
+  Against the old writer's file three things differ and nothing else: the header's snap
+  length is 262,144 (it was 65,535); the IPv4 identification counts every datagram (it
+  counted the IPv4 ones), so it differs only in a trace that mixes families; and a
+  writer that wrote nothing leaves no file, so `--pcap` on a run that moved no datagram
+  leaves a file of 0 octets (it was a 24-octet header). Used from the library, the writer
+  creates its file at the first datagram, and a path that cannot be opened is that hook's
+  one logged failure, not an error at construction; `--pcap FILE` opens the file itself
+  when the command can run, so an unwritable path is the same `error:` line at the same
+  moment. It refuses with a `ValueError` naming the argument a port outside 0-65535, a
+  payload over 65,507 octets (IPv4) or 65,527 (IPv6), a time outside 0 to 2**32 and a
+  host that is not an address, where the old writer raised `struct.error` for the first
+  three (a host name was a `ValueError` in both); in a hook that is the hook's failure,
+  not the transfer's.
   What a caller sees for an input the old reader took: a frame of more than 262,144
   octets, a pcapng section with more than 4,096 interfaces and a block too short for its
   kind are a `pktcap.CaptureFormatError` (the old reader returned the first, accepted the

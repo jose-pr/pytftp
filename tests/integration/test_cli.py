@@ -178,12 +178,13 @@ def test_relay_needs_a_destination():
 
 
 def test_capture_command(root, make_server, tmp_path_factory, capsys):
-    from tftp.capture import PcapWriter
+    from pktcap import PcapWriter
+    from tftp.capture import trace_to
 
     out = tmp_path_factory.mktemp("cap")
     pcap = out / "server.pcap"
     with PcapWriter(pcap) as writer:
-        server = make_server(root, trace=writer)
+        server = make_server(root, trace=trace_to(writer))
         port = _port(server)
         client_for_cli = __import__("tftp").TFTPClient("127.0.0.1", int(port))
         client_for_cli.get("1428x3.bin")
@@ -596,7 +597,7 @@ def test_a_pcap_that_cannot_be_written_is_an_error_line(root, make_server, tmp_p
 
 
 def test_a_closed_stdout_ends_a_printing_command_quietly(tmp_path):
-    from tftp.capture import PcapWriter
+    from pktcap import PcapWriter
     from tftp.packet import encode_ack, encode_data, encode_request
 
     path = tmp_path / "long.pcap"
@@ -616,6 +617,13 @@ def test_a_closed_stdout_ends_a_printing_command_quietly(tmp_path):
     assert proc.wait(30) in (0, 1)
     proc.stderr.close()
     assert err == b"", err
+
+
+def test_a_serve_that_moved_nothing_leaves_an_empty_pcap(tmp_path):
+    pcap = tmp_path / "idle.pcap"
+    proc, _ = _serve_subprocess(["serve", str(tmp_path), "-l", "127.0.0.1", "-p", "0", "--pcap", str(pcap)])
+    _stop(proc)
+    assert pcap.exists() and pcap.stat().st_size == 0
 
 
 @pytest.mark.parametrize("command", ["serve", "relay"])

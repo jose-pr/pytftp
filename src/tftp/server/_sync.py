@@ -245,7 +245,7 @@ class TFTPServer(SelectorService, ServerBase):
     :param trace: ``trace(PacketEvent)`` for every datagram of every
         transfer, received and sent (``role="server"``, one ``session``
         id per transfer). Requests refused before a transfer exists are
-        not traced. :class:`tftp.capture.PcapWriter` is a ready hook.
+        not traced. :func:`tftp.capture.trace_to` makes a hook of a pktcap writer.
     :param open_in_thread: call the handler's ``open_read``/``open_write`` in
         a worker thread, so a handler that blocks (an HTTP request, an
         upstream server) never stalls other transfers. ``None`` decides from

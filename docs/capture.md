@@ -6,20 +6,23 @@
 `tftp.capture.PacketEvent` for every datagram sent and received:
 
 ```python
+import pktcap
 import tftp
-from tftp.capture import PcapWriter
+from tftp.capture import trace_to
 
 def show(event):
     print(str(event))          # 12:00:00.123 [s3] 10.0.0.5:2000 > 10.0.0.1:69 RRQ 'pxelinux.0' octet blksize=1432 tsize=0
 
 tftp.TFTPClient("192.0.2.1", trace=show).get("pxelinux.0")
 
-with PcapWriter("server.pcap") as pcap:                  # open it in Wireshark
-    tftp.TFTPServer("/srv/tftp", trace=pcap).serve_forever()
+with pktcap.PcapWriter("server.pcap") as pcap:           # open it in Wireshark
+    tftp.TFTPServer("/srv/tftp", trace=trace_to(pcap)).serve_forever()
 ```
 
-`trace=` takes one hook: `tftp.capture.combine_hooks(show, pcap)` joins several
-(a hook that raises does not keep the others from the event).
+`trace=` takes one hook: `tftp.capture.trace_to(writer)` makes one of a pktcap writer
+(`pktcap.PcapWriter` for pcap, `pktcap.PcapngWriter` for pcapng; the caller closes it),
+and `tftp.capture.combine_hooks(show, trace_to(pcap))` joins several (a hook that raises
+does not keep the others from the event).
 
 Events carry a `session` id per transfer, the direction, both addresses, the
 raw datagram, and decoded fields (`opcode_name`, `block`, `summary`,

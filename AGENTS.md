@@ -32,7 +32,7 @@ src/tftp/
 ├── backends/          # _filesystem, _case, _per_client, _remap, _memory, _http (urllib gateway), _proxy (upstream TFTP), _pipe
 ├── relay/             # transparent relay: _core.py (loop), _session.py (per transfer), _routing.py
 ├── path/              # pathlib-next: _local.py (TFTPPath), _uri.py (TFTPURIPath), _stream.py
-├── capture/           # _events, _filters, _flows, _hook; pcap.py (the writer) leaves for pktcap; reading, decoding and live capture are pktcap's
+├── capture/           # _events, _filters, _flows, _hook (trace_to); reading, writing, decoding and live capture are pktcap's
 ├── cli/               # pytftp (duho): main() in __init__, _root.py (the root parser), _common.py,
 │                      # _client.py, _content.py, _negotiation.py, _signals.py, one module per subcommand
 ├── _arguments.py      # constructor argument checks: TypeError for a type, ValueError for a value

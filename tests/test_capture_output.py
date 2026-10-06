@@ -8,7 +8,9 @@ what is compared, octet for octet.
 from __future__ import annotations
 
 import importlib.util
+import io
 import pathlib
+import struct
 
 import pytest
 
@@ -45,6 +47,24 @@ def test_the_command_writes_the_files_that_were_recorded(capture, tmp_path):
 @pytest.mark.parametrize("capture", sorted(build.BUILT))
 def test_the_committed_captures_are_what_the_builders_write(capture):
     assert (_CASES / capture).read_bytes() == build.BUILT[capture]()
+
+
+def test_the_plain_script_written_through_pktcap_is_the_committed_capture_but_for_its_snap_length():
+    """``plain.pcap`` was written by the library's own writer; the datagrams are the same, as are the octets."""
+    import pktcap
+    from tftp.capture import PacketEvent, trace_to
+
+    stream = io.BytesIO()
+    with pktcap.PcapWriter(stream) as writer:
+        hook = trace_to(writer)
+        for time, source, destination, payload in build.plain_script():
+            hook(PacketEvent(time, "seen", destination, source, payload))
+    written, committed = stream.getvalue(), (_CASES / "plain.pcap").read_bytes()
+    assert len(written) == len(committed)
+    assert (written[:16], written[20:]) == (committed[:16], committed[20:])
+    assert struct.unpack("<I", committed[16:20]) == (65535,) and struct.unpack("<I", written[16:20]) == (
+        262144,
+    )
 
 
 def test_every_recorded_directory_belongs_to_a_capture():

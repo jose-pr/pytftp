@@ -64,11 +64,7 @@ def _bind(host: Optional[HostLike], port: int, interface: "InterfaceLike" = None
     if host:
         host = split_host(host)[0]  # "[::1]" -> "::1"
     address = Host(host).ip() if host else None
-    if not host or (
-        is_wildcard(host)
-        and address is not None
-        and address.version == 6
-    ):
+    if not host or (is_wildcard(host) and address is not None and address.version == 6):
         try:
             sock = bind(
                 "::",

@@ -21,10 +21,10 @@ from tftp.capture import (
     CaptureFilterError,
     FlowTracker,
     PacketEvent,
-    PcapWriter,
     analyze,
     compile_filter,
     summarize,
+    trace_to,
 )
 from pktcap import CapturedDatagram, read_datagrams
 
@@ -103,8 +103,8 @@ def test_a_failing_trace_hook_does_not_break_transfers(root, make_server):
 @pytest.mark.parametrize("host", ["127.0.0.1", pytest.param("::1", marks=needs_ipv6)])
 def test_pcap_roundtrip_reconstructs_transfers(root, make_server, tmp_path_factory, host):
     path = tmp_path_factory.mktemp("cap") / "trace.pcap"
-    with PcapWriter(path) as writer:
-        server = make_server(root, host=host, trace=writer, writable=True)
+    with pktcap.PcapWriter(path) as writer:
+        server = make_server(root, host=host, trace=trace_to(writer), writable=True)
         client = client_for(server, host=host, blksize=1024, windowsize=4)
         client.get("big.bin")
         client.put("uploaded.bin", b"u" * 3000)
@@ -458,12 +458,57 @@ def test_the_clients_events_name_the_address_it_uses_towards_the_server(root, ma
         assert {e.remote[0] for e in seen} == {host}
 
 
+class _Recorder:
+    def __init__(self):
+        self.calls = []
+
+    def write(self, time, source, destination, payload):
+        self.calls.append((time, source, destination, payload))
+
+
+def test_trace_to_hands_the_writer_the_time_both_ends_and_the_datagram():
+    writer = _Recorder()
+    hook = trace_to(writer)
+    incoming = PacketEvent(5.5, "in", ("10.0.0.1", 69), ("10.0.0.5", 2000), encode_ack(1), "server")
+    outgoing = PacketEvent(6.5, "out", ("10.0.0.1", 69), ("10.0.0.5", 2000), encode_ack(2), "server")
+    hook(incoming)
+    hook(outgoing)
+    assert writer.calls == [
+        (5.5, ("10.0.0.5", 2000), ("10.0.0.1", 69), encode_ack(1)),
+        (6.5, ("10.0.0.1", 69), ("10.0.0.5", 2000), encode_ack(2)),
+    ]
+
+
+def test_trace_to_writes_a_pcapng_capture_as_well(root, make_server, tmp_path):
+    path = tmp_path / "trace.pcapng"
+    server = make_server(root)
+    with pktcap.PcapngWriter(path) as writer:
+        client_for(server, trace=trace_to(writer)).get("513.bin")
+    (transfer,) = analyze(path, ports=[server.server_address[1]]).transfers
+    assert (
+        transfer.is_complete and transfer.size == 513 and transfer.data() == (root / "513.bin").read_bytes()
+    )
+
+
+def test_a_writer_that_fails_costs_the_transfer_nothing_and_one_log_record(root, make_server, caplog):
+    class Full:
+        def write(self, *args):
+            raise OSError("no space left on device")
+
+    server = make_server(root)
+    with caplog.at_level("ERROR", logger="tftp.client"):
+        assert (
+            client_for(server, trace=trace_to(Full())).get("1428x3.bin") == (root / "1428x3.bin").read_bytes()
+        )
+    assert len([r for r in caplog.records if r.name == "tftp.client"]) == 1
+
+
 def test_a_pcap_taken_by_the_client_carries_the_address_the_server_saw(root, make_server, tmp_path):
     path = tmp_path / "client.pcap"
     seen = []
     server = make_server(root, trace=seen.append)
-    with PcapWriter(path) as writer:
-        client_for(server, trace=writer).get("one.bin")
+    with pktcap.PcapWriter(path) as writer:
+        client_for(server, trace=trace_to(writer)).get("one.bin")
     datagrams = list(read_datagrams(path))
     assert datagrams
     assert {d.source[0] for d in datagrams} | {d.destination[0] for d in datagrams} == {"127.0.0.1"}

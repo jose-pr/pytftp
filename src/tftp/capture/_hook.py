@@ -1,11 +1,13 @@
-"""Trace hooks: guarding one so that its failure costs one log record, and combining several."""
+"""Trace hooks: guarding one so that its failure costs one log record, combining several, and writing a capture."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol, Tuple
 
-__all__ = ["HookGuard", "combine_hooks", "guard"]
+from ._events import PacketEvent
+
+__all__ = ["DatagramWriter", "HookGuard", "combine_hooks", "guard", "trace_to"]
 
 
 class HookGuard:
@@ -68,3 +70,27 @@ def combine_hooks(*hooks: Optional[Callable[[Any], Any]]) -> Optional[Callable[[
             raise failure
 
     return combined
+
+
+class DatagramWriter(Protocol):
+    """What :func:`trace_to` needs of a writer: ``pktcap.PcapWriter`` and ``pktcap.PcapngWriter`` have it."""
+
+    def write(
+        self, time: float, source: Tuple[Any, ...], destination: Tuple[Any, ...], payload: bytes
+    ) -> None:
+        """Append one UDP datagram: seconds since the epoch, both ``(host, port)`` addresses, its octets."""
+        ...
+
+
+def trace_to(writer: DatagramWriter) -> Callable[[PacketEvent], None]:
+    """A trace hook that appends every datagram it is given to ``writer``.
+
+    ``writer`` stays the caller's to close. A write that raises (a full disk, a
+    port or a time the format cannot hold) is the hook's failure: the transfer
+    goes on and the first one is logged.
+    """
+
+    def hook(event: PacketEvent) -> None:
+        writer.write(event.time, event.source, event.destination, event.data)
+
+    return hook

@@ -9,7 +9,8 @@ Three sources of :class:`PacketEvent`:
   :func:`analyze` in one call;
 - live capture on Linux (``pktcap.sniff``).
 
-:class:`PcapWriter` turns trace events back into a capture for Wireshark, and
+:func:`trace_to` turns a pktcap writer (``pktcap.PcapWriter``,
+``pktcap.PcapngWriter``) into a trace hook, so a run is recorded for Wireshark, and
 :func:`combine_hooks` joins several trace hooks into the one ``trace=`` takes.
 """
 
@@ -21,8 +22,7 @@ from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union, cast
 from ._events import PacketEvent, new_session_id, summarize
 from ._filters import FILTER_KEYS, CaptureFilterError, EventPredicate, compile_filter
 from ._flows import CapturedTransfer, DatagramLike, Endpoint, FlowTracker
-from ._hook import combine_hooks
-from .pcap import PcapWriter
+from ._hook import DatagramWriter, combine_hooks, trace_to
 
 __all__ = [
     "PacketEvent",
@@ -35,9 +35,10 @@ __all__ = [
     "FILTER_KEYS",
     "CapturedTransfer",
     "DatagramLike",
+    "DatagramWriter",
     "FlowTracker",
-    "PcapWriter",
     "combine_hooks",
+    "trace_to",
     "Analysis",
     "analyze",
 ]

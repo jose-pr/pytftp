@@ -32,7 +32,7 @@ takes every field by keyword.
 | `tftp.client` | `AsyncSink`, `AsyncSource`, `AsyncTFTPClient`, `MODES`, `ProgressFunction`, `RemoteStat`, `SinkLike`, `SourceLike`, `TFTPClient`, `download`, `upload` |
 | `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
 | `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `UpstreamLike`, `by_interface`, `by_prefix`, `by_subnet` |
-| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CapturedTransfer`, `DatagramLike`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `PcapWriter`, `analyze`, `combine_hooks`, `compile_filter`, `new_session_id`, `summarize` |
+| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CapturedTransfer`, `DatagramLike`, `DatagramWriter`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `analyze`, `combine_hooks`, `compile_filter`, `new_session_id`, `summarize`, `trace_to` |
 | `tftp.options` | `BUILTIN_OPTIONS`, `Blksize2Option`, `BlksizeOption`, `ClientOptionContext`, `CookieOption`, `DEFAULT_BLKSIZE`, `DEFAULT_REGISTRY`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS`, `MAX_BLKSIZE`, `MAX_UTIMEOUT`, `MAX_WINDOWSIZE`, `MIN_BLKSIZE`, `MIN_UTIMEOUT`, `MstfwindowOption`, `Negotiated`, `OptionHandler`, `OptionRegistry`, `PROFILES`, `Profile`, `RolloverOption`, `STANDARD_OPTIONS`, `SUPPORTED_OPTIONS`, `ServerOptionContext`, `TFTPServerOptions`, `TimeoutOption`, `TsizeOption`, `UtimeoutOption`, `WindowsizeOption`, `XListOption`, `XMtimeOption`, `accept_oack`, `negotiate`, `refuse`, `register_option`, `request_options` |
 | `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
 | `tftp.backends` | `CaseInsensitive`, `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `PerClient`, `Pipe`, `Remap`, `UpstreamBackend`, `normalize_name` |
@@ -60,6 +60,7 @@ Windows. Public aliases, each exported from the module named:
 | `EventPredicate` | `tftp.capture` | what `compile_filter` returns: `predicate(event) -> bool` |
 | `Endpoint` | `tftp.capture` | `(host, port)` |
 | `DatagramLike` | `tftp.capture` | what `FlowTracker.feed` takes: anything with `time`, `source`, `destination` and `payload`, as `pktcap.CapturedDatagram` has |
+| `DatagramWriter` | `tftp.capture` | what `trace_to` takes: anything with `write(time, source, destination, payload)`, as the pktcap writers have |
 | `PortRangeLike` | `tftp.server` | what `port_range=` takes |
 
 `host=` of the servers and the relay is a netimps `HostLike`: text, an
@@ -831,11 +832,26 @@ when one is). A hook that raises does not keep the others from seeing the
 event: the first exception is raised after all have been called, for the
 guard around the combined hook to count.
 
-**`PcapWriter(path_or_binary_file)`** — writes events (it is a ready trace
-hook: `TFTPServer(..., trace=PcapWriter("t.pcap"))`) or `write(time, source,
-destination, payload)` as pcap, link type RAW, with synthesized IPv4/IPv6 and
-UDP headers and valid checksums, so Wireshark/tshark decode it as TFTP
-(v4-mapped addresses are written as IPv4). Context manager; `close()`.
+**`trace_to(writer) -> Callable[[PacketEvent], None]`** — a trace hook that
+appends each event to `writer`, a **`DatagramWriter`** (a `Protocol`: anything
+with `write(time, source, destination, payload)`; `pktcap.PcapWriter(target)`
+and `pktcap.PcapngWriter(target)` are two): it calls
+`writer.write(event.time, event.source, event.destination, event.data)`.
+`with pktcap.PcapWriter("t.pcap") as w: TFTPServer(..., trace=trace_to(w))`.
+The writer stays the caller's to close. pktcap's writer creates its file at the
+first datagram, so a path that cannot be opened is that hook's one logged
+failure (see the trace hooks above) and not an error at construction;
+`pytftp ... --pcap FILE` opens the file itself once the command can run, so an
+unwritable path is its `error:` line, and a run that moved no datagram leaves a
+file of 0 octets. What a pcap file written this way promises is its datagrams,
+each with its time to the microsecond, both addresses and its payload, as raw IP
+(link type 101) under synthesised IPv4 or IPv6 and UDP headers with valid
+checksums, so Wireshark and tshark decode TFTP; a v4-mapped address is written
+as IPv4. It does not promise its octets: the header's snap length is 262,144 and
+the IPv4 identification counts every datagram. A write the format cannot hold (a
+port outside 0-65535, a time outside 0 to 2**32, a payload over 65,507 octets
+on IPv4 or 65,527 on IPv6, a host that is not an address) is a `ValueError`
+naming the argument, raised in the hook, so it costs the transfer nothing.
 
 **Reading captures** is pktcap's (a dependency, imported inside the functions
 that use it; <https://github.com/jose-pr/pktcap>): pcap and pcapng of any

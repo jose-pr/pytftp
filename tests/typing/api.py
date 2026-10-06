@@ -43,7 +43,8 @@ from tftp import (
     upload,
 )
 from tftp.backends import CaseInsensitive, FilesystemBackend, PerClient, Remap
-from tftp.capture import PacketEvent, combine_hooks
+from pktcap import PcapWriter, PcapngWriter
+from tftp.capture import PacketEvent, combine_hooks, trace_to
 from tftp.client import ProgressFunction, RemoteStat, SinkLike, SourceLike
 from tftp.listing import ListEntry
 from tftp.relay import TFTPRelay, Upstream, UpstreamLike, by_prefix, by_subnet
@@ -244,6 +245,11 @@ def a_combined_hook_takes_an_event(event: PacketEvent) -> None:
     hook = combine_hooks(print)
     if hook is not None:
         hook(event)
+
+
+def a_pktcap_writer_is_a_trace_hook(path: str) -> None:
+    assert_type(trace_to(PcapWriter(path)), Callable[[PacketEvent], None])
+    TFTPServer(".", trace=trace_to(PcapngWriter(path)))
 
 
 # -- where a name lives -------------------------------------------------------------------------

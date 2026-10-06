@@ -10,8 +10,7 @@ import typing as _ty
 from duho import Cmd, LoggingArgs
 
 from .._text import escape
-from ..capture._hook import combine_hooks
-from ..capture.pcap import PcapWriter
+from ..capture._hook import combine_hooks, trace_to
 from ..options._profiles import PROFILES
 
 __all__ = [
@@ -108,12 +107,21 @@ class Traced(Base):
         The pcap file is created here, so a command calls this last: after its
         arguments are accepted and its sockets bound, never before.
         """
+        from pktcap import PcapWriter
+
         show = _show if self.trace else None
+        record = None
         if self.pcap:
-            self._writer = PcapWriter(self.pcap)
-        return combine_hooks(show, getattr(self, "_writer", None))
+            self._stream = open(self.pcap, "wb")
+            self._writer = PcapWriter(self._stream)
+            record = trace_to(self._writer)
+        return combine_hooks(show, record)
 
     def _close_trace(self) -> None:
-        writer = getattr(self, "_writer", None)
-        if writer is not None:
-            writer.close()
+        writer, stream = getattr(self, "_writer", None), getattr(self, "_stream", None)
+        try:
+            if writer is not None:
+                writer.close()
+        finally:
+            if stream is not None:
+                stream.close()
