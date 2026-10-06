@@ -88,10 +88,15 @@ def _start(work: Callable[[Callable[..., Any]], Any], path: Any) -> "tuple[threa
     """Run ``work(on_negotiated)`` in a thread; return once the server answered."""
     answered = threading.Event()
     outcome: list = []  # [exception] on failure
+    accepted: list = []  # [True] once the transfer was negotiated
+
+    def negotiated(_negotiated: Any, _peer: Any) -> None:
+        accepted.append(True)
+        answered.set()
 
     def run() -> None:
         try:
-            work(lambda negotiated, peer: answered.set())
+            work(negotiated)
         except BaseException as exc:
             outcome.append(exc)
         finally:
@@ -100,7 +105,10 @@ def _start(work: Callable[[Callable[..., Any]], Any], path: Any) -> "tuple[threa
     thread = threading.Thread(target=run, name="tftp-path", daemon=True)
     thread.start()
     answered.wait()
-    if outcome and not thread.is_alive():
+    # Judged by what the thread recorded, not by whether it has exited yet: it
+    # sets the event a moment before it ends.
+    if outcome and not accepted:
+        thread.join(STALL_TIMEOUT)
         raise os_error(outcome[0], path)
     return thread, outcome
 
