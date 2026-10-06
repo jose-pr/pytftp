@@ -1,5 +1,5 @@
 site_name: tftp
-site_description: Pure-Python TFTP client and server for IPv4 and IPv6
+site_description: Pure-Python TFTP client, server, relay and capture decoder for IPv4 and IPv6
 site_url: https://jose-pr.github.io/pytftp/
 repo_url: https://github.com/jose-pr/pytftp
 repo_name: jose-pr/pytftp

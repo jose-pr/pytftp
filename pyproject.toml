@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tftp"
-version = "0.0.0"
+version = "0.1.0"
 authors = [{ name = "jose-pr", email = "jose-pr@coqui.dev" }]
-description = "Pure-Python TFTP client and server for IPv4 and IPv6: RFC 1350, 2347, 2348, 2349 and 7440"
+description = "Pure-Python TFTP client, server, relay and capture decoder for IPv4 and IPv6"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
@@ -29,12 +29,10 @@ classifiers = [
 ]
 # netimps supplies pktinfo (replying from the address a request was sent to),
 # reply sockets, host:port parsing, socket binding and bind-error hints, and has
-# no dependencies of its own. The 0.4 series: it renamed what 0.3 called
-# UdpEndpoint, normalize_host, get_ip and interface_for (UDPEndpoint,
-# split_host, Host.ip, get_interface) without aliases, and made options
-# keyword-only (Backoff, max_udp_payload), so no range spans both. It also
-# carries the link-local IPv6 bind fixes that TFTPServer/TFTPRelay interface= with host
-# '::' and replies to a link-local IPv6 client need.
+# no dependencies of its own. The code uses its 0.4 names (`UDPEndpoint`,
+# `split_host`, `Host.ip`, `get_interface`) and its keyword-only options
+# (`Backoff`, `max_udp_payload`), and needs its link-local IPv6 bind fixes for
+# `interface=` with host '::' and for replies to a link-local IPv6 client.
 dependencies = ["netimps>=0.4.0,<0.5"]
 
 [project.optional-dependencies]
@@ -43,7 +41,8 @@ cli = ["duho>=0.6.0,<0.7"]
 # pathlib-style paths: TFTPPath, and the tftp:// scheme for pathlib_next's
 # UriPath (its "uri" extra). Importing tftp never requires it.
 path = ["pathlib-next[uri]>=0.9.0,<0.10"]
-dev = ["black", "build", "mypy>=1.19,<3", "pytest", "duho>=0.6.0,<0.7", "pathlib-next[uri]>=0.9.0,<0.10"]
+# Tooling only: the extras the tests need are named here, their ranges are above.
+dev = ["black", "build", "coverage", "mypy>=1.19,<3", "pytest", "tftp[cli,path]"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]
@@ -78,6 +77,7 @@ exclude = ["*.local.*", "CLAUDE*"]
 
 [tool.black]
 target-version = ["py39"]
+# The project's choice, not the reference's default: lines of up to 110 columns.
 line-length = 110
 
 [tool.pytest.ini_options]
