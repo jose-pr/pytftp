@@ -9,7 +9,7 @@ import pytest
 
 import tftp
 from tftp.relay import TFTPRelay
-from conftest import client_for
+from conftest import client_for, wait_until
 
 
 def _free_ports(count: int) -> range:
@@ -176,7 +176,7 @@ def test_full_range_answers_busy(root, make_server):
             sock.bind(("127.0.0.1", port))
         with pytest.raises(tftp.RemoteError, match="busy"):
             client_for(server, retries=0, fallback=False).get("one.bin")
-        assert server.stats_snapshot()["refused"] == 1
+        assert wait_until(lambda: server.stats_snapshot()["refused"] == 1)
     finally:
         for sock in held:
             sock.close()

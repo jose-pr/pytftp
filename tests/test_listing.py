@@ -8,7 +8,7 @@ import os
 import pytest
 
 import tftp
-from conftest import client_for
+from conftest import client_for, wait_until
 from tftp.listing import DirectoryListing, ListEntry, dumps, loads
 
 LISTING = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS)
@@ -54,8 +54,8 @@ def test_client_listdir(root, server):
         client.listdir("one.bin")
     with pytest.raises(tftp.FileNotFound):
         client.listdir("missing")
-    stats = server.stats_snapshot()
-    assert stats["failed"] == 0 and stats["declined"] == 1  # the file refused as a listing
+    assert wait_until(lambda: server.stats_snapshot()["declined"] == 1)  # the file refused as a listing
+    assert server.stats_snapshot()["failed"] == 0
 
 
 def test_client_stat(root, server):
