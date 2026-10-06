@@ -56,6 +56,31 @@ upstream's errors reach the client with the same code and message, and its
 `tsize` passes through. `upstream` may be a callable choosing the server per
 request. For forwarding packets unchanged instead, see [Relaying](relay.md).
 
+## Handlers that wrap a directory
+
+Three handlers compose with each other and with `FilesystemBackend`; none can
+take a request out of the directory it serves.
+
+```python
+from tftp.backends import CaseInsensitive, FilesystemBackend, PerClient, Remap
+
+# Names rewritten by the first matching regular expression, then served.
+Remap(FilesystemBackend("/srv/tftp"), [r"^/?pxelinux/=boot/", (r"[.]BIN$", ".bin")])
+
+# /srv/clients/<client address>/ for a client that has one (an IPv6 ':' is written '-').
+PerClient("/srv/clients", lambda d: FilesystemBackend(d, writable=True), fallback=False)
+
+# Firmware asking for \Boot\BCD finds boot/bcd; the exact name wins.
+CaseInsensitive("/srv/tftp", writable=True)
+```
+
+`PerClient` is a convenience, not isolation: with the default `fallback=True` a
+client that has no directory of its own is served the whole root, **every other
+client's directory included**. With `fallback=False` it is answered "file not
+found" to everything, and a client can reach only its own directory.
+`Remap` takes `"REGEX=REPLACEMENT"` text or `(pattern, replacement)` pairs, and a
+replacement may name a group (`\1`).
+
 ## Writing your own
 
 A handler returns a reader or writer. If it can be slow, return a

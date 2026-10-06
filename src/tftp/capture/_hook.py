@@ -1,11 +1,11 @@
-"""Calling a trace hook so that its failure costs one log record, not one per datagram."""
+"""Trace hooks: guarding one so that its failure costs one log record, and combining several."""
 
 from __future__ import annotations
 
 import logging
 from typing import Any, Callable, Optional
 
-__all__ = ["HookGuard", "guard"]
+__all__ = ["HookGuard", "combine_hooks", "guard"]
 
 
 class HookGuard:
@@ -41,3 +41,30 @@ def guard(
     if current is not None and current.hook is hook:
         return current
     return HookGuard(hook, logger)
+
+
+def combine_hooks(*hooks: Optional[Callable[[Any], Any]]) -> Optional[Callable[[Any], None]]:
+    """One trace hook that calls each of ``hooks`` in order; ``None`` entries are skipped.
+
+    Returns ``None`` when no hook is left, and the hook itself when one is. A
+    hook that raises does not keep the others from seeing the event: the first
+    exception is raised once all have been called, for the guard around the
+    combined hook to count.
+    """
+    present = [hook for hook in hooks if hook is not None]
+    if not present:
+        return None
+    if len(present) == 1:
+        return present[0]
+
+    def combined(event: Any) -> None:
+        failure: Optional[Exception] = None
+        for hook in present:
+            try:
+                hook(event)
+            except Exception as exc:
+                failure = failure or exc
+        if failure is not None:
+            raise failure
+
+    return combined

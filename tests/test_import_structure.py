@@ -287,3 +287,17 @@ def test_importing_the_package_loads_no_optional_dependency():
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
     assert ast.literal_eval(out.strip()) == []
+
+
+def test_a_command_module_defines_only_commands_and_their_bases():
+    """Nothing is reachable only from the command line: a class there is a command, or a base of one."""
+    classes = {}
+    for path in _modules():
+        if _name(path).startswith("cli/"):
+            for node in ast.parse(path.read_text(encoding="utf-8")).body:
+                if isinstance(node, ast.ClassDef):
+                    classes[node.name] = [base.id for base in node.bases if isinstance(base, ast.Name)]
+    assert classes, "no command classes found"
+    commands = {"Cmd", "Cli", "LoggingArgs"}
+    stray = {name for name, bases in classes.items() if not set(bases) & (commands | set(classes))}
+    assert stray == set()

@@ -836,3 +836,59 @@ def test_the_largest_block_size_arrives_in_full_between_this_library_s_own_peers
     up = client.upload("largest-up.bin", payload)
     assert up.negotiated.blksize == 65464 and up.retransmits == 0
     assert (root / "largest-up.bin").read_bytes() == payload
+
+
+# -- a result as a dictionary -------------------------------------------------------------------
+
+
+def test_a_result_is_a_dictionary_of_json_types(root, make_server):
+    import json
+
+    server = make_server(root, options=tftp.TFTPServerOptions(max_blksize=1000))
+    result = client_for(server, blksize=4000, windowsize=4).download("big.bin", io.BytesIO())
+    record = result.to_dict()
+    assert json.loads(json.dumps(record)) == record
+    assert list(record) == [
+        "ok",
+        "operation",
+        "filename",
+        "mode",
+        "peer",
+        "bytes",
+        "blocks",
+        "retransmits",
+        "duration",
+        "blksize",
+        "windowsize",
+        "tsize",
+        "options",
+        "error",
+    ]
+    assert record["ok"] is True and record["error"] is None
+    assert (record["operation"], record["filename"], record["mode"]) == ("read", "big.bin", "octet")
+    assert record["bytes"] == (root / "big.bin").stat().st_size  # the file's size, not the result's own
+    assert record["peer"][0] == "127.0.0.1" and isinstance(record["peer"][1], int)
+    assert (record["blksize"], record["windowsize"]) == (1000, 4)
+    assert record["tsize"] == record["bytes"] and record["options"]["blksize"] == "1000"
+    record["options"]["blksize"] = "changed"
+    assert result.negotiated.options["blksize"] == "1000"
+
+
+def test_a_failed_result_names_its_error():
+    failure = tftp.RemoteError.from_code(1, "no such file")
+    result = tftp.TransferResult(
+        "f",
+        "write",
+        "netascii",
+        ("10.0.0.2", 7000),
+        ("10.0.0.1", 69),
+        0,
+        0,
+        2,
+        0.25,
+        tftp.options.Negotiated(),
+        failure,
+    )
+    record = result.to_dict()
+    assert record["ok"] is False and record["error"] == str(failure) and "no such file" in record["error"]
+    assert record["peer"] == ["10.0.0.2", 7000] and record["retransmits"] == 2 and record["duration"] == 0.25

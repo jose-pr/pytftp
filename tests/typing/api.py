@@ -20,7 +20,7 @@ this file never runs.
 from __future__ import annotations
 
 import io
-from typing import Any, Coroutine, List, Optional, Tuple
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
 from typing_extensions import assert_type
 
@@ -42,6 +42,8 @@ from tftp import (
     download_url,
     upload,
 )
+from tftp.backends import CaseInsensitive, FilesystemBackend, PerClient, Remap
+from tftp.capture import PacketEvent, combine_hooks
 from tftp.client import ProgressFunction, RemoteStat, SinkLike, SourceLike
 from tftp.listing import ListEntry
 from tftp.relay import TFTPRelay, Upstream, UpstreamLike, by_prefix, by_subnet
@@ -214,8 +216,34 @@ def relay() -> None:
     assert_type(Upstream.parse(target), Upstream)
     TFTPRelay(by_subnet({"10.1.0.0/16": "10.1.0.5"}), host="::", port=69)
     TFTPRelay(by_prefix({"windows/": "wds.lan", "": ("default.lan", 69)}))
+    TFTPRelay(by_prefix(["windows/=wds.lan", ("", "default.lan")]))
     TFTPRelay("upstream.lan")
     TFTPRelay(3)  # type: ignore[arg-type]
+
+
+# -- handlers that compose, a policy copied, a result as a dictionary ---------------------------
+
+
+def composed_handlers(directory: str, result: TransferResult, options: TFTPServerOptions) -> None:
+    def make(path: str) -> FilesystemBackend:
+        return FilesystemBackend(path, writable=True)
+
+    handler = Remap(PerClient(directory, make, fallback=False), ["^/?pxelinux/=boot/", (r"[.]BIN$", ".bin")])
+    TFTPServer(handler)
+    TFTPServer(CaseInsensitive(directory, writable=True))
+    assert_type(handler.rewrite("x"), str)
+    assert_type(PerClient.directory(("10.0.0.1", 69)), str)
+    PerClient(directory, make, False)  # type: ignore[call-arg]
+    assert_type(result.to_dict(), Dict[str, Any])
+    assert_type(options.replace(fit_mtu=True), TFTPServerOptions)
+    hook = combine_hooks(print, None)
+    assert_type(hook, Optional[Callable[[Any], None]])
+
+
+def a_combined_hook_takes_an_event(event: PacketEvent) -> None:
+    hook = combine_hooks(print)
+    if hook is not None:
+        hook(event)
 
 
 # -- where a name lives -------------------------------------------------------------------------

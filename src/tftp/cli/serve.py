@@ -9,43 +9,25 @@ pytftp serve /srv/tftp --per-client --ignore-case --remap '^/?pxelinux/=boot/'
 from __future__ import annotations
 
 import json as _json
-import os as _os
 import typing as _ty
 
-from duho import Choice
-
 from .._result import TransferResult
-from ..backends._filesystem import FilesystemBackend
-from ..backends._http import HTTPBackend
-from ..backends._proxy import UpstreamBackend
-from ..options._policy import LISTING_OPTIONS, STANDARD_OPTIONS, TFTPServerOptions
-from ..options._profiles import PROFILES
 from ..server._policy import TFTPServerLimits
+from ..server._session import PortRange
 from ..server._sync import TFTPServer
-from ._common import PROFILE_NAMES, Traced, bind_failure, error, port_range, result_json
-from ._handlers import CaseInsensitive, PerClient, Remap, parse_rule
+from ._common import Traced, bind_failure, error, flag
+from ._content import Content
+from ._negotiation import Negotiation
 from ._signals import shutdown_on_signal
 
 __all__ = ["Serve"]
 
 
-class Serve(Traced):
+class Serve(Content, Negotiation, Traced):
     """Serve files until interrupted."""
 
     _parsername_ = "serve"
     _parseraliases_ = ["server"]
-
-    root: str = "."
-    "Directory to serve (ignored with --http or --upstream)"
-    ("root",)
-
-    http: _ty.Optional[str] = None
-    "Serve from this HTTP(S) base URL instead of a directory"
-    ("--http",)
-
-    upstream: _ty.Optional[str] = None
-    "Serve from this TFTP server (host[:port]): a terminating proxy"
-    ("--upstream",)
 
     interface: _ty.Optional[str] = None
     "Listen on this network adapter (name, MAC or address); IPv4 unless --listen is '::'"
@@ -59,18 +41,6 @@ class Serve(Traced):
     "UDP port"
     ("--port", "-p")
 
-    write: bool = False
-    "Accept uploads"
-    ("--write", "-W")
-
-    no_create: bool = False
-    "Uploads may only replace existing files (with --overwrite)"
-    ("--no-create",)
-
-    overwrite: bool = False
-    "Uploads may replace existing files"
-    ("--overwrite",)
-
     timeout: float = 1.0
     "Seconds before retransmitting, unless a client negotiates its own"
     ("--timeout", "-t")
@@ -78,34 +48,6 @@ class Serve(Traced):
     retries: int = 5
     "Retransmissions before abandoning a transfer"
     ("--retries", "-r")
-
-    compat: _ty.Annotated[_ty.Optional[str], Choice(*PROFILE_NAMES)] = None
-    "Negotiate as this compatibility profile (replaces the option flags below)"
-    ("--compat",)
-
-    max_blksize: int = 65464
-    "Largest blksize granted"
-    ("--max-blksize",)
-
-    max_windowsize: int = 64
-    "Largest windowsize granted"
-    ("--max-windowsize",)
-
-    allow: _ty.List[str] = []
-    "Also accept this extension option (blksize2, utimeout, rollover, cookie, mstfwindow); repeatable"
-    ("--allow",)
-
-    refuse: _ty.List[str] = []
-    "Never acknowledge this option, e.g. windowsize for broken firmware; repeatable"
-    ("--refuse",)
-
-    listing: bool = False
-    "Answer directory listings and modification times (pytftp's x-list/x-mtime, for 'pytftp ls')"
-    ("--listing",)
-
-    fit_mtu: bool = False
-    "Lower blksize to fit the arrival interface's MTU (no IP fragments)"
-    ("--fit-mtu",)
 
     max_sessions: int = 500
     "Concurrent transfers; 0 is unlimited (510 at most on Windows)"
@@ -119,95 +61,41 @@ class Serve(Traced):
     "LOW:HIGH: take transfer ports from this range (for firewalls)"
     ("--port-range",)
 
-    per_client: bool = False
-    "Serve ROOT/<client address>/ to a client when it exists (IPv6 ':' written '-')"
-    ("--per-client",)
-
-    ignore_case: bool = False
-    "Find files whatever the case of the requested name"
-    ("--ignore-case",)
-
-    remap: _ty.List[str] = []
-    "REGEX=REPLACEMENT: rewrite requested names (first matching rule); repeatable"
-    ("--remap",)
-
-    def _handler(self) -> _ty.Any:
-        rules = [parse_rule(rule) for rule in self.remap]
-        handler = self._source()
-        return Remap(handler, rules) if rules else handler
-
-    def _source(self) -> _ty.Any:
-        if self.http and self.upstream:
-            raise ValueError("give --http or --upstream, not both")
-        if (self.http or self.upstream) and (self.per_client or self.ignore_case):
-            raise ValueError("--per-client and --ignore-case serve a directory")
-        if self.http:
-            return HTTPBackend(self.http, writable=self.write)
-        if self.upstream:
-            return UpstreamBackend(self.upstream, writable=self.write)
-        if not _os.path.isdir(self.root):
-            raise ValueError("not a directory: %s" % self.root)
-        kind = CaseInsensitive if self.ignore_case else FilesystemBackend
-
-        def make(directory: str) -> _ty.Any:
-            return kind(directory, writable=self.write, create=not self.no_create, overwrite=self.overwrite)
-
-        # Always a handler object: --remap wraps it.
-        return PerClient(self.root, make) if self.per_client else make(self.root)
-
-    def _options(self) -> TFTPServerOptions:
-        listing = LISTING_OPTIONS if self.listing else frozenset()
-        if self.compat:
-            profile = PROFILES[self.compat].server
-            if not listing:
-                return profile
-            return TFTPServerOptions(
-                max_blksize=profile.max_blksize,
-                max_windowsize=profile.max_windowsize,
-                max_window_bytes=profile.max_window_bytes,
-                allowed=profile.allowed | listing,
-                refused=profile.refused,
-                fit_mtu=profile.fit_mtu,
-                registry=profile.registry,
-            )
-        return TFTPServerOptions(
-            max_blksize=self.max_blksize,
-            max_windowsize=self.max_windowsize,
-            allowed=STANDARD_OPTIONS | set(self.allow) | listing,
-            refused=self.refuse,
-            fit_mtu=self.fit_mtu,
+    def _server(self) -> TFTPServer:
+        """The server the flags describe, not yet bound; ``ValueError`` for a flag it cannot honour."""
+        handler = self._handler()
+        options = self._options()
+        ports = None
+        if self.port_range:
+            with flag("--port-range"):
+                ports = PortRange.parse(self.port_range)
+        return TFTPServer(
+            handler,
+            host=self.listen,
+            port=self.port,
+            writable=self.write,
+            create=not self.no_create,
+            overwrite=self.overwrite,
+            timeout=self.timeout,
+            retries=self.retries,
+            options=options,
+            max_sessions=self.max_sessions or None,
+            limits=TFTPServerLimits(max_sessions_per_client=self.max_per_client or None),
+            on_complete=_print_json if self.json_out else None,
+            port_range=ports,
+            interface=self.interface,
         )
 
     def __call__(self) -> _ty.Optional[int]:
         try:
-            handler = self._handler()
-            options = self._options()
-            ports = port_range(self.port_range)
+            server = self._server()
         except ValueError as exc:
             error("error: %s" % exc)
             return 2
-        on_complete: _ty.Optional[_ty.Callable[[TransferResult], None]] = None
-        if self.json_out:
-            on_complete = _print_json
         try:
-            server = TFTPServer(
-                handler,
-                host=self.listen,
-                port=self.port,
-                writable=self.write,
-                create=not self.no_create,
-                overwrite=self.overwrite,
-                timeout=self.timeout,
-                retries=self.retries,
-                options=options,
-                max_sessions=self.max_sessions or None,
-                limits=TFTPServerLimits(max_sessions_per_client=self.max_per_client or None),
-                on_complete=on_complete,
-                port_range=ports,
-                interface=self.interface,
-            )
             server.bind()
         except OSError as exc:
+            server.close()
             return bind_failure(exc, self.listen or self.interface or "::", self.port)
         try:
             server.trace = self._tracer()  # last: the capture file is created once the server can run
@@ -215,13 +103,11 @@ class Serve(Traced):
             server.close()
             error("error: %s" % exc)
             return 1
-        logger = self._logger_
         address = server.server_address
         assert address is not None  # bound above
-        source = self.http or (self.upstream and "upstream " + self.upstream) or _os.path.abspath(self.root)
-        logger.info(
+        self._logger_.info(
             "serving %s on %s port %d%s%s",
-            source,
+            self._described(),
             address[0],
             address[1],
             " (dual-stack)" if server.is_dual_stack else "",
@@ -235,9 +121,9 @@ class Serve(Traced):
         finally:
             server.close()
             self._close_trace()
-            logger.info("served: %s", server.stats_snapshot())
+            self._logger_.info("served: %s", server.stats_snapshot())
         return None
 
 
 def _print_json(result: TransferResult) -> None:
-    print(_json.dumps(result_json(result)), flush=True)
+    print(_json.dumps(result.to_dict()), flush=True)

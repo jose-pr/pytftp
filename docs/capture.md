@@ -18,6 +18,9 @@ with PcapWriter("server.pcap") as pcap:                  # open it in Wireshark
     tftp.TFTPServer("/srv/tftp", trace=pcap).serve_forever()
 ```
 
+`trace=` takes one hook: `tftp.capture.combine_hooks(show, pcap)` joins several
+(a hook that raises does not keep the others from the event).
+
 Events carry a `session` id per transfer, the direction, both addresses, the
 raw datagram, and decoded fields (`opcode_name`, `block`, `summary`,
 `to_dict()`). From the command line, `--trace` prints them and `--pcap FILE`

@@ -82,6 +82,9 @@ class FilesystemBackend:
         self.backslash = backslash
         self.max_upload = max_upload
 
+    def __repr__(self) -> str:
+        return "%s(%r, writable=%r)" % (type(self).__name__, self.root, self.writable)
+
     def resolve(self, filename: str) -> str:
         """The local path for ``filename``, or :class:`TFTPError` (2) if it escapes."""
         name = filename.replace("\\", "/") if self.backslash else filename

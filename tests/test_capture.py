@@ -673,3 +673,64 @@ def test_one_packet_that_cannot_be_read_fails_its_transfer_and_not_the_capture(m
     (transfer,) = tracker.transfers
     assert transfer.error == (0, "unreadable packet: ValueError", "capture")
     assert transfer.size == 513 and transfer.packets == 4
+
+
+# -- combining trace hooks ----------------------------------------------------------------------
+
+
+def test_no_hook_and_one_hook_combine_to_themselves():
+    from tftp.capture import combine_hooks
+
+    assert combine_hooks() is None and combine_hooks(None, None) is None
+    assert combine_hooks(None, print) is print
+
+
+def test_combined_hooks_see_every_event_in_order(root, make_server):
+    from tftp.capture import combine_hooks
+
+    log = []
+    server = make_server(root)
+    client = client_for(server)
+    client.trace = combine_hooks(lambda e: log.append(("a", e)), None, lambda e: log.append(("b", e)))
+    assert client.get("one.bin") == b"x"
+    names = [name for name, _ in log]
+    assert names and len(names) % 2 == 0 and names == ["a", "b"] * (len(names) // 2)
+    assert all(log[i][1] is log[i + 1][1] for i in range(0, len(log), 2))  # the same event, to both
+
+
+def test_a_failing_hook_does_not_keep_the_others_from_the_event(caplog):
+    import logging
+
+    from tftp.capture import combine_hooks
+
+    seen = []
+
+    def failing(event):
+        raise OSError("disk full")
+
+    hook = combine_hooks(failing, seen.append, seen.append)
+    with pytest.raises(OSError, match="disk full"):
+        hook("event")
+    assert seen == ["event", "event"]
+    first = combine_hooks(seen.append, failing)
+    with pytest.raises(OSError):
+        first("again")
+    assert seen[-1] == "again"
+
+
+def test_a_combined_hook_whose_member_fails_costs_the_transfer_nothing(root, make_server, caplog):
+    import logging
+
+    from tftp.capture import combine_hooks
+
+    seen = []
+
+    def failing(event):
+        raise OSError("disk full")
+
+    client = client_for(make_server(root))
+    client.trace = combine_hooks(failing, seen.append)
+    with caplog.at_level(logging.ERROR, logger="tftp.client"):
+        assert client.get("big.bin") == (root / "big.bin").read_bytes()
+    assert seen  # the member after the failing one was still called for every datagram
+    assert len([r for r in caplog.records if "trace hook failed" in r.getMessage()]) == 1

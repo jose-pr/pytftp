@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import socket
 import struct
-from typing import Any, NamedTuple, Optional, Tuple
+from typing import Any, Dict, NamedTuple, Optional, Tuple
 
 from ..options._handler import DEFAULT_BLKSIZE
 from ..server._handler import TFTPRequestContext
@@ -42,6 +42,13 @@ class RelaySummary(NamedTuple):
     duration: float
     reason: str
     error: Optional[Tuple[int, str]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """The summary as a dictionary of JSON types: ``client`` and ``upstream`` are ``[host, port]``."""
+        record = self._asdict()
+        record["client"] = list(self.client[:2])
+        record["upstream"] = list(self.upstream[:2])
+        return record
 
 
 class RelaySession:

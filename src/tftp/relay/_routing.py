@@ -20,6 +20,24 @@ from ..server._handler import TFTPRequestContext
 __all__ = ["Upstream", "RouteTable", "by_subnet", "by_prefix", "by_interface", "RouteFunction"]
 
 
+def _items(table: Any) -> Iterable[Tuple[Any, Any]]:
+    """The ``(key, target)`` pairs of a routing table.
+
+    A dict, or a sequence of pairs and ``"KEY=HOST[:PORT]"`` text (split at the first ``=``).
+    """
+    if isinstance(table, dict):
+        return table.items()
+    pairs = []
+    for item in table:
+        if isinstance(item, str):
+            key, sep, target = item.partition("=")
+            if not sep or not target:
+                raise TFTPValueError("a route is KEY=HOST[:PORT], not %r" % item)
+            item = (key, target)
+        pairs.append(item)
+    return pairs
+
+
 @dataclass(frozen=True)
 class Upstream:
     """Where to forward: an upstream server's host and request port.
@@ -63,20 +81,22 @@ RouteFunction = Callable[[RequestPacket, TFTPRequestContext], Optional[UpstreamL
 
 
 def by_subnet(
-    table: Union[Dict[IPNetworkLike, UpstreamLike], Sequence[Tuple[IPNetworkLike, UpstreamLike]]],
+    table: Union[Dict[IPNetworkLike, UpstreamLike], Sequence[Union[str, Tuple[IPNetworkLike, UpstreamLike]]]],
 ) -> RouteFunction:
     """Route by the client's address: ``{"10.1.0.0/16": "10.1.0.5", ...}``.
 
     Keys are anything ``netimps.parse(..., IPNetwork)`` takes: CIDR strings,
     ``ipaddress`` networks, interfaces (their network) or addresses (a /32 or
     /128). The most specific (longest prefix) matching network wins. A v4
-    client seen as ``::ffff:a.b.c.d`` matches v4 networks.
+    client seen as ``::ffff:a.b.c.d`` matches v4 networks. A sequence may hold
+    ``"CIDR=HOST[:PORT]"`` text in place of a pair.
+
+    :raises TFTPValueError: text without ``=`` or without a target.
     """
     from netimps import IPNetwork, parse
 
-    items = table.items() if isinstance(table, dict) else table
     networks = sorted(
-        ((parse(net, IPNetwork), Upstream.parse(target)) for net, target in items),
+        ((parse(net, IPNetwork), Upstream.parse(target)) for net, target in _items(table)),
         key=lambda pair: pair[0].prefixlen,
         reverse=True,
     )
@@ -93,15 +113,20 @@ def by_subnet(
     return route
 
 
-def by_prefix(table: Union[Dict[str, UpstreamLike], Sequence[Tuple[str, UpstreamLike]]]) -> RouteFunction:
+def by_prefix(
+    table: Union[Dict[str, UpstreamLike], Sequence[Union[str, Tuple[str, UpstreamLike]]]],
+) -> RouteFunction:
     """Route by filename prefix: ``{"windows/": "wds.lan", "": "default.lan"}``.
 
     The longest matching prefix wins; leading ``/`` and ``\\`` are ignored
-    and ``\\`` counts as ``/``.
+    and ``\\`` counts as ``/``. A sequence may hold ``"PREFIX=HOST[:PORT]"``
+    text in place of a pair.
+
+    :raises TFTPValueError: text without ``=`` or without a target.
     """
-    items = table.items() if isinstance(table, dict) else table
     prefixes = sorted(
-        ((p.replace("\\", "/").lstrip("/"), Upstream.parse(t)) for p, t in items), key=lambda x: -len(x[0])
+        ((p.replace("\\", "/").lstrip("/"), Upstream.parse(t)) for p, t in _items(table)),
+        key=lambda x: -len(x[0]),
     )
 
     def route(request: RequestPacket, context: TFTPRequestContext) -> Optional[Upstream]:

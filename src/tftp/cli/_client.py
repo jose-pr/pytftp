@@ -13,7 +13,7 @@ from .._uri import TFTPURL, _client_keywords
 from ..client._sync import TFTPClient
 from ..exceptions import TFTPError
 from ..options._profiles import PROFILES
-from ._common import PROFILE_NAMES, Traced, error, result_json, write_line
+from ._common import PROFILE_NAMES, Traced, error, write_line
 
 __all__ = ["ClientCmd", "basename", "is_url"]
 
@@ -120,7 +120,7 @@ class ClientCmd(Traced):
 
     def _report(self, result: TransferResult) -> None:
         if self.json_out:
-            write_line(_json.dumps(result_json(result), indent=2))
+            write_line(_json.dumps(result.to_dict(), indent=2))
             return
         n = result.negotiated
         error(

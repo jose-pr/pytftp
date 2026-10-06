@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `TransferResult.to_dict()` and `RelaySummary.to_dict()`: the JSON-ready objects the
+  command line prints for `--json`, one per transfer.
+- `TFTPServerOptions.replace(**changes)`: a copy with the named fields changed, built
+  through the constructor as `dataclasses.replace` does.
+- `tftp.capture.combine_hooks(*hooks)`: one `trace=` hook from several; a hook that
+  raises does not keep the others from the event.
+- `by_prefix` and `by_subnet` take `"KEY=HOST[:PORT]"` text in a sequence, in place of
+  a pair.
+
 ### Changed
 
 - **Defaults that bound what a request can hold.** `TFTPServerLimits(max_idle=60.0)`
@@ -335,6 +346,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **`PYTFTP_MCP=stdio` no longer serves the commands as tools.** Nothing in the
   command is designed to be called as one (`serve` and `relay` never return,
   `get` replaces files); the variable is ignored.
+- **The three handlers behind `pytftp serve`'s deployment flags are library classes.**
+  `tftp.backends.Remap(inner, rules)`, `PerClient(root, make, *, fallback=True)` and
+  `CaseInsensitive(root, ...)` (a `FilesystemBackend`) are public, documented and
+  tested without a parser; the command line's `--remap`, `--per-client` and
+  `--ignore-case` build them. `Remap` takes `"REGEX=REPLACEMENT"` text or
+  `(pattern, replacement)` pairs and raises `TFTPValueError` for a rule it cannot read;
+  the helper that read the text, `parse_rule`, is no longer separate, and
+  `client_directory(peer)` is `PerClient.directory(peer)`. `FilesystemBackend` and its
+  subclasses print their root.
 
 ### Renamed
 

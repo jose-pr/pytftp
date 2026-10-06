@@ -325,3 +325,41 @@ def test_the_events_of_both_legs_name_the_address_the_relay_uses_to_each_end(roo
     client_for(relay).get("one.bin")
     assert wait_for(lambda: len(events) >= 8)
     assert {(e.leg, e.local[0]) for e in events} == {("client", "127.0.0.1"), ("upstream", "127.0.0.1")}
+
+
+# -- routes as text, a summary as a dictionary --------------------------------------------------
+
+
+def test_routes_read_as_key_equals_target_text(root, make_server, make_relay):
+    server = make_server(root)
+    target = "127.0.0.1:%d" % server.server_address[1]
+    for table in ([("sub/", target)], ["sub/=" + target], ["x/=127.0.0.1:9", "sub/=" + target]):
+        relay = make_relay(RouteTable([by_prefix(table)]))
+        assert client_for(relay).get("sub/nested.bin") == b"nested"
+    relay = make_relay(RouteTable([by_subnet(["127.0.0.0/8=" + target])]))
+    assert client_for(relay).get("one.bin") == b"x"
+    relay = make_relay(RouteTable([by_subnet(["::1/128=127.0.0.1:9", "127.0.0.1/32=" + target])]))
+    assert client_for(relay).get("one.bin") == b"x"
+
+
+@pytest.mark.parametrize("text", ["no-equals", "prefix=", ""])
+@pytest.mark.parametrize("builder", [by_prefix, by_subnet])
+def test_a_route_text_without_a_target_is_a_value_error(builder, text):
+    with pytest.raises(tftp.TFTPValueError):
+        builder([text])
+
+
+def test_a_relay_summary_is_a_dictionary_of_json_types(root, make_server, make_relay):
+    import json
+
+    server = make_server(root)
+    ends = []
+    relay = make_relay(upstream_of(server), on_session_end=ends.append, linger=0.1)
+    client_for(relay).get("513.bin")
+    assert wait_for(lambda: len(ends) == 1)
+    record = ends[0].to_dict()
+    assert json.loads(json.dumps(record)) == record
+    assert record["client"][0] == "127.0.0.1" and record["upstream"][0] == "127.0.0.1"
+    assert isinstance(record["upstream"][1], int) and record["upstream"][1] != relay.server_address[1]
+    assert (record["operation"], record["reason"], record["bytes_to_client"]) == ("read", "complete", 513)
+    assert set(record) == set(ends[0]._fields)

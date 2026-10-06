@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import FrozenSet, Iterable, Optional
+from typing import Any, FrozenSet, Iterable, Optional
 
 from ._handler import MAX_BLKSIZE, MAX_WINDOWSIZE, MIN_BLKSIZE
 from ._registry import DEFAULT_REGISTRY, OptionRegistry
@@ -92,6 +92,21 @@ class TFTPServerOptions:
 
     def accepts(self, name: str) -> bool:
         return name in self.allowed and name not in self.refused
+
+    def replace(self, **changes: Any) -> "TFTPServerOptions":
+        """A new policy with every field of this one, except those in ``changes``.
+
+        As :func:`dataclasses.replace`: the result is built through the
+        constructor, so it is validated, and this policy is not modified.
+
+        :raises TypeError: a name that is not a field.
+        """
+        unknown = sorted(set(changes) - set(self.__slots__))
+        if unknown:
+            raise TypeError("TFTPServerOptions has no field %s" % ", ".join(repr(n) for n in unknown))
+        fields = {name: getattr(self, name) for name in self.__slots__}
+        fields.update(changes)
+        return type(self)(**fields)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TFTPServerOptions):

@@ -32,10 +32,10 @@ takes every field by keyword.
 | `tftp.client` | `AsyncSink`, `AsyncSource`, `AsyncTFTPClient`, `MODES`, `ProgressFunction`, `RemoteStat`, `SinkLike`, `SourceLike`, `TFTPClient`, `download`, `upload` |
 | `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
 | `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `UpstreamLike`, `by_interface`, `by_prefix`, `by_subnet` |
-| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CaptureFormatError`, `CapturedTransfer`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `FrameDecoder`, `LINKTYPES`, `PacketEvent`, `PcapWriter`, `UDPDatagram`, `analyze`, `compile_filter`, `live_capture_supported`, `new_session_id`, `read_datagrams`, `read_frames`, `sniff`, `summarize` |
+| `tftp.capture` | `Analysis`, `CaptureFilterError`, `CaptureFormatError`, `CapturedTransfer`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `FrameDecoder`, `LINKTYPES`, `PacketEvent`, `PcapWriter`, `UDPDatagram`, `analyze`, `combine_hooks`, `compile_filter`, `live_capture_supported`, `new_session_id`, `read_datagrams`, `read_frames`, `sniff`, `summarize` |
 | `tftp.options` | `BUILTIN_OPTIONS`, `Blksize2Option`, `BlksizeOption`, `ClientOptionContext`, `CookieOption`, `DEFAULT_BLKSIZE`, `DEFAULT_REGISTRY`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS`, `MAX_BLKSIZE`, `MAX_UTIMEOUT`, `MAX_WINDOWSIZE`, `MIN_BLKSIZE`, `MIN_UTIMEOUT`, `MstfwindowOption`, `Negotiated`, `OptionHandler`, `OptionRegistry`, `PROFILES`, `Profile`, `RolloverOption`, `STANDARD_OPTIONS`, `SUPPORTED_OPTIONS`, `ServerOptionContext`, `TFTPServerOptions`, `TimeoutOption`, `TsizeOption`, `UtimeoutOption`, `WindowsizeOption`, `XListOption`, `XMtimeOption`, `accept_oack`, `negotiate`, `refuse`, `register_option`, `request_options` |
 | `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
-| `tftp.backends` | `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `Pipe`, `UpstreamBackend`, `normalize_name` |
+| `tftp.backends` | `CaseInsensitive`, `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `PerClient`, `Pipe`, `Remap`, `UpstreamBackend`, `normalize_name` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` |
 | `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `CaptureFormatError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
 | `tftp.cli` | `main` |
@@ -383,6 +383,9 @@ compare equal when every field does, are unhashable and print their fields.
   the request arrived on (IP + UDP + 4-byte header): 1468 on IPv4 and 1448
   on IPv6 for a 1500 MTU (`netimps.max_udp_payload` − 4). Needs pktinfo for
   the interface; boot ROMs often cannot reassemble fragments.
+- `replace(**changes)` — a new policy with every field of this one except
+  those named, built through the constructor (so validated), as
+  `dataclasses.replace` does; a name that is not a field is `TypeError`.
 - `accepts(name)` — `name` in `allowed` and not in `refused`.
 
 ## Options, registry and profiles
@@ -514,6 +517,33 @@ carried over.
 - Uploads go through `AtomicWriter`: **a failed or partial upload never
   appears or replaces anything**.
 - `resolve(filename) -> str` exposes the mapping (raises `TFTPError`).
+
+Three handlers in `tftp.backends` compose with it and with each other
+(`TFTPServer(Remap(PerClient(root, make), rules))`); each is a plain
+`TFTPHandler` and none can take a request outside the directory its
+`FilesystemBackend` serves:
+
+**`Remap(inner, rules)`** — rewrites each requested name with the first rule
+that matches, then asks `inner`. A rule is `"REGEX=REPLACEMENT"` text (split at
+the first `=`) or a `(pattern, replacement)` pair; the first rule whose regex
+is found in the name replaces every match in it (`re.sub`, `\1` is a group).
+The listing flag and the arrival interface of the request are kept.
+`rewrite(name)` shows the mapping; `rules` is a tuple of compiled pairs. A rule
+without `=` or a regex that does not compile is `TFTPValueError`.
+
+**`PerClient(root, make, *, fallback=True)`** — serves `root/<client
+address>/` (`:` written `-`: `fe80--1`; an IPv4 client of a dual-stack socket
+by its IPv4 address) from `make(directory)`, one handler per directory. A
+client with no directory is served `root` itself, **including every other
+client's directory, so this is a convenience and not isolation**; with
+`fallback=False` it is answered ERROR 1 to everything and a client reaches only
+its own directory. `PerClient.directory(peer)` is the name, `handler_for(context)`
+the handler.
+
+**`CaseInsensitive(root, **FilesystemBackend arguments)`** — a
+`FilesystemBackend` that finds a name whatever its case (`\Boot\BCD` finds
+`boot/bcd`): the exact name wins, else each component is matched
+case-insensitively; an upload's last component keeps the requested case.
 
 **`tftp.listing`** — the `x-list` format: UTF-8 lines `<f|d> <size> <mtime|-> <name>`
 (`%`, CR, LF in names as `%25`, `%0D`, `%0A`). **`ListEntry(name, is_dir,
@@ -792,6 +822,12 @@ Roles are `"client"`, `"server"`, `"relay"`; one `session` id per transfer
 listening address. Requests a server refuses before a transfer exists are
 not traced. Off (`None`) costs nothing per packet.
 
+**`combine_hooks(*hooks)`** — one trace hook that calls each of `hooks` in
+order (`None` entries skipped; `None` when no hook is left, the hook itself
+when one is). A hook that raises does not keep the others from seeing the
+event: the first exception is raised after all have been called, for the
+guard around the combined hook to count.
+
 **`PcapWriter(path_or_binary_file)`** — writes events (it is a ready trace
 hook: `TFTPServer(..., trace=PcapWriter("t.pcap"))`) or `write(time, source,
 destination, payload)` as pcap, link type RAW, with synthesized IPv4/IPv6 and
@@ -860,7 +896,11 @@ requests only), `block`, `code` (ERROR code), `session`, `leg`, `direction`.
 for WRQ, on both sides), `mode`, `peer`, `local`, `bytes` (payload bytes on
 the wire; netascii-encoded size in netascii mode), `blocks`, `retransmits`,
 `duration` (seconds), `negotiated`, `error` (or `None`); properties `is_ok` and
-`throughput` (bytes/s).
+`throughput` (bytes/s). `to_dict()` is the JSON-ready form (the command's `--json`
+object): `ok`, `operation`, `filename`, `mode`, `peer` (`[host, port]`), `bytes`,
+`blocks`, `retransmits`, `duration` (rounded to the microsecond), `blksize`,
+`windowsize`, `tsize`, `options` (a copy of the OACK) and `error` (text or
+`None`).
 
 **`Negotiated(*, blksize=512, windowsize=1, timeout=1.0, tsize=None, rollover=0, options=None, extra=None)`** — what a transfer ran with: `blksize`, `windowsize`,
 `timeout` (seconds), `tsize` (or `None`), `rollover`, and `options` (the OACK
@@ -1097,8 +1137,8 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
   address>/` when it exists (IPv6 `:` written `-`), else `ROOT`;
   `--ignore-case` finds names whatever their case (the exact name wins).
   `--remap REGEX=REPLACEMENT` (repeatable, split at the first `=`) rewrites
-  requested names with the first matching rule, for any source. These are
-  CLI conveniences, not library API.
+  requested names with the first matching rule, for any source. They are
+  `PerClient`, `CaseInsensitive` and `Remap` of `tftp.backends`.
 - `ls` prints `type size time name` per entry (`--json`: a list of entries);
   exit 1 for a file, a missing name, or a server without listing.
 - `relay` needs an UPSTREAM (the default route) or routes; prefix routes are

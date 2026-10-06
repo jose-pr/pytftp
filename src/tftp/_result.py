@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from .exceptions import TFTPError
 from .options._handler import Negotiated
@@ -75,6 +75,32 @@ class TransferResult:
     def throughput(self) -> float:
         """Payload bytes per second."""
         return self.bytes / self.duration if self.duration > 0 else 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        """The result as a dictionary of JSON types, one object per transfer.
+
+        ``ok`` is :attr:`is_ok`; ``peer`` is ``[host, port]``; ``duration`` is
+        seconds to the microsecond; ``blksize``, ``windowsize``, ``tsize`` and
+        ``options`` come from :attr:`negotiated`; ``error`` is the failure's
+        text, or ``None``.
+        """
+        negotiated = self.negotiated
+        return {
+            "ok": self.is_ok,
+            "operation": self.operation,
+            "filename": self.filename,
+            "mode": self.mode,
+            "peer": list(self.peer[:2]),
+            "bytes": self.bytes,
+            "blocks": self.blocks,
+            "retransmits": self.retransmits,
+            "duration": round(self.duration, 6),
+            "blksize": negotiated.blksize,
+            "windowsize": negotiated.windowsize,
+            "tsize": negotiated.tsize,
+            "options": dict(negotiated.options),
+            "error": None if self.error is None else str(self.error),
+        }
 
     def __repr__(self) -> str:
         return "TransferResult(%s %r, %d bytes in %.3fs, %d retransmits, %r%s)" % (

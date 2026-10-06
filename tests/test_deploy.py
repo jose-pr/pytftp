@@ -202,63 +202,6 @@ def test_relay_port_range(root, make_server):
     assert sent and all(e.local[1] in ports for e in sent)
 
 
-# -- pytftp serve's handler wrappers (cli extra) ---------------------------------
-
-
-@pytest.fixture
-def handlers():
-    pytest.importorskip("duho")
-    from tftp.cli import _handlers as handlers
-
-    return handlers
-
-
-def test_remap_rewrites_the_first_matching_rule(root, make_server, handlers):
-    rules = [handlers.parse_rule(r"^/?pxelinux/="), handlers.parse_rule(r"\.BIN$=.bin")]
-    server = make_server(handlers.Remap(tftp.FilesystemBackend(root), rules))
-    client = client_for(server)
-    assert client.get("/pxelinux/one.bin") == b"x"
-    assert client.get("one.BIN") == b"x"
-    with pytest.raises(ValueError):
-        handlers.parse_rule("no-equals")
-    with pytest.raises(ValueError):
-        handlers.parse_rule("(=x")
-
-
-def test_per_client_root(root, make_server, handlers):
-    (root / "127.0.0.1").mkdir()
-    (root / "127.0.0.1" / "one.bin").write_bytes(b"mine")
-    make = lambda d: tftp.FilesystemBackend(d, writable=True)  # noqa: E731
-    server = make_server(handlers.PerClient(str(root), make))
-    assert client_for(server).get("one.bin") == b"mine"
-    with pytest.raises(tftp.FileNotFound):
-        client_for(server).get("513.bin")  # only the client's own directory
-    client_for(server).put("up.bin", b"u")
-    assert (root / "127.0.0.1" / "up.bin").read_bytes() == b"u"
-    assert handlers.client_directory(("::ffff:10.0.0.1", 1)) == "10.0.0.1"
-    assert handlers.client_directory(("fe80::1%3", 1)) == "fe80--1"
-
-
-def test_per_client_fallback(root, make_server, handlers):
-    make = lambda d: tftp.FilesystemBackend(d)  # noqa: E731
-    assert client_for(make_server(handlers.PerClient(str(root), make))).get("one.bin") == b"x"
-    with pytest.raises(tftp.FileNotFound):
-        client_for(make_server(handlers.PerClient(str(root), make, fallback=False))).get("one.bin")
-
-
-def test_case_insensitive_lookup(root, make_server, handlers):
-    (root / "Boot").mkdir()
-    (root / "Boot" / "BCD").write_bytes(b"bcd")
-    server = make_server(handlers.CaseInsensitive(root, writable=True))
-    client = client_for(server)
-    assert client.get("\\boot\\bcd") == b"bcd"
-    assert client.get("ONE.BIN") == b"x"
-    client.put("boot/New.Cfg", b"n")
-    assert (root / "Boot" / "New.Cfg").read_bytes() == b"n"
-    with pytest.raises(tftp.AccessViolation):
-        client.get("../BOOT/bcd")
-
-
 def test_v4_client_of_dual_stack_listener_without_pktinfo(root, make_server):
     """No destination address: the reply must still reach a v4 client (netimps
     answers it from a v4 socket, at Datagram.reply_address)."""

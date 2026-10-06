@@ -135,11 +135,11 @@ def test_fit_window_reports_the_grant_and_leaves_the_logging_to_netimps(caplog):
 def test_a_zone_is_dropped_before_an_address_is_compared():
     from types import SimpleNamespace
 
-    from tftp.cli._handlers import client_directory
+    from tftp.backends import PerClient
     from tftp.relay import by_interface
 
-    assert client_directory(("fe80::1%eth0", 1000)) == "fe80--1"
-    assert client_directory(("::ffff:10.0.0.7", 1000)) == "10.0.0.7"
+    assert PerClient.directory(("fe80::1%eth0", 1000)) == "fe80--1"
+    assert PerClient.directory(("::ffff:10.0.0.7", 1000)) == "10.0.0.7"
     route = by_interface({"fe80::1": "10.9.9.9:70"})
     context = SimpleNamespace(interface_index=0, local_address="fe80::1%eth0")
     assert route(None, context) == Upstream.parse("10.9.9.9:70")

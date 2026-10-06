@@ -11,20 +11,12 @@ import typing as _ty
 
 from ..relay._core import TFTPRelay
 from ..relay._routing import RouteTable, by_prefix, by_subnet
-from ._common import Traced, bind_failure, error, port_range
+from ..relay._session import RelaySummary
+from ..server._session import PortRange
+from ._common import Traced, bind_failure, error, flag
 from ._signals import shutdown_on_signal
 
 __all__ = ["RelayCmd"]
-
-
-def _pairs(values: _ty.List[str], flag: str) -> _ty.List[_ty.Tuple[str, str]]:
-    pairs = []
-    for value in values:
-        key, sep, target = value.partition("=")
-        if not sep or not target:
-            raise ValueError("%s expects KEY=HOST[:PORT], got %r" % (flag, value))
-        pairs.append((key, target))
-    return pairs
 
 
 class RelayCmd(Traced):
@@ -72,13 +64,18 @@ class RelayCmd(Traced):
         try:
             routes = []
             if self.route_prefix:
-                routes.append(by_prefix(_pairs(self.route_prefix, "--route-prefix")))
+                with flag("--route-prefix"):
+                    routes.append(by_prefix(self.route_prefix))
             if self.route_subnet:
-                routes.append(by_subnet(_pairs(self.route_subnet, "--route-subnet")))
+                with flag("--route-subnet"):
+                    routes.append(by_subnet(self.route_subnet))
             if not routes and not self.upstream:
                 raise ValueError("give an upstream server, or routes")
             route = RouteTable(routes, default=self.upstream)
-            ports = port_range(self.port_range)
+            ports = None
+            if self.port_range:
+                with flag("--port-range"):
+                    ports = PortRange.parse(self.port_range)
         except ValueError as exc:
             error("error: %s" % exc)
             return 2
@@ -119,8 +116,5 @@ class RelayCmd(Traced):
         return None
 
 
-def _print_summary(summary: _ty.Any) -> None:
-    record = summary._asdict()
-    record["client"] = list(summary.client[:2])
-    record["upstream"] = list(summary.upstream[:2])
-    print(_json.dumps(record), flush=True)
+def _print_summary(summary: RelaySummary) -> None:
+    print(_json.dumps(summary.to_dict()), flush=True)

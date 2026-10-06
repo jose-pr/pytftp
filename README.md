@@ -59,7 +59,8 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
   `TFTPClient.listdir()`, and `iterdir`/`walk`/`glob` on paths; other servers
   simply ignore it.
 - **Deployment** — transfer ports pinned to a range for firewalls; per-client
-  roots, case-insensitive names and filename remapping in `pytftp serve`.
+  roots, case-insensitive names and filename remapping, as handlers
+  (`tftp.backends`) and as `pytftp serve` flags.
 - **asyncio** — `AsyncTFTPClient` and `AsyncTFTPServer` with async handlers and streams.
 - **pathlib** — `client.path("boot/x").read_bytes()`, and `tftp://` URLs in
   [pathlib-next](https://github.com/jose-pr/pathlib-next), so

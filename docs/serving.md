@@ -48,31 +48,23 @@ quickly.
 
 ## Composing handlers
 
-Handlers wrap each other: one that serves each client its own directory is
-a few lines (`pytftp serve --per-client` does the same):
+Handlers wrap each other. `tftp.backends` has three that compose over a
+directory (`pytftp serve --per-client`, `--remap` and `--ignore-case` are these
+three; see [Backends](backends.md)):
 
 ```python
-import os
 import tftp
+from tftp.backends import CaseInsensitive, PerClient, Remap
 
-class PerClientRoot:
-    def __init__(self, root, **options):
-        self.root, self.options = root, options
+def make(directory):
+    return CaseInsensitive(directory, writable=True)
 
-    def _pick(self, context):
-        own = os.path.join(self.root, context.peer[0].replace(":", "-"))
-        return tftp.FilesystemBackend(own if os.path.isdir(own) else self.root, **self.options)
-
-    def open_read(self, context):
-        return self._pick(context).open_read(context)
-
-    def open_write(self, context, size):
-        return self._pick(context).open_write(context, size)
+handler = Remap(PerClient("/srv/tftp", make, fallback=False), [r"^/?pxelinux/=boot/"])
+tftp.TFTPServer(handler).serve_forever()
 ```
 
-Renaming requests (`pytftp serve --remap`) or matching names whatever their
-case (`--ignore-case`) follow the same pattern: rewrite the request, or
-override `FilesystemBackend.resolve`.
+Your own is a class with `open_read(context)` and `open_write(context, size)`
+that picks another handler and calls it.
 
 ## Behind a firewall
 

@@ -8,7 +8,8 @@ Three sources of :class:`PacketEvent`:
   :func:`analyze`), from a file or a live ``tcpdump -w -`` pipe;
 - live capture on Linux (:func:`sniff`).
 
-:class:`PcapWriter` turns trace events back into a capture for Wireshark.
+:class:`PcapWriter` turns trace events back into a capture for Wireshark, and
+:func:`combine_hooks` joins several trace hooks into the one ``trace=`` takes.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union
 from ._events import PacketEvent, new_session_id, summarize
 from ._filters import FILTER_KEYS, CaptureFilterError, EventPredicate, compile_filter
 from ._flows import CapturedTransfer, Endpoint, FlowTracker
+from ._hook import combine_hooks
 from .frames import LINKTYPES, FrameDecoder, UDPDatagram
 from .live import live_capture_supported, sniff
 from .pcap import CaptureFormatError, PcapWriter, read_datagrams, read_frames
@@ -41,6 +43,7 @@ __all__ = [
     "read_datagrams",
     "CaptureFormatError",
     "PcapWriter",
+    "combine_hooks",
     "sniff",
     "live_capture_supported",
     "Analysis",

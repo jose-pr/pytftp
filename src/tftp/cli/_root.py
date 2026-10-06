@@ -9,7 +9,7 @@ import typing as _ty
 from duho import AUTO, Cli, LoggingArgs
 from duho import main as _duho_main
 
-from ._common import _StdoutClosed, error
+from ._common import error
 from .capture import CaptureCmd
 from .get import Get
 from .ls import Ls
@@ -44,7 +44,7 @@ def execute(argv: _ty.Optional[_ty.Sequence[str]]) -> int:
     except ValueError as exc:
         error("error: %s" % exc)
         return 2
-    except _StdoutClosed:
+    except BrokenPipeError:
         # Nobody reads stdout any more. Point it at the null device so that the flush at exit
         # does not fail again, and end without a word.
         try:

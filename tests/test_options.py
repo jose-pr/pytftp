@@ -259,3 +259,59 @@ def test_a_client_refuses_a_value_that_is_not_ascii_digits():
     for text in ("+512", "5_12", " 512", "٥١٢"):
         with pytest.raises(tftp.TFTPProtocolError):
             accept_oack({"blksize": "1024"}, {"blksize": text}, is_read=True, timeout=1.0)
+
+
+# -- replace ------------------------------------------------------------------------------------
+
+
+def test_replace_with_nothing_is_an_equal_copy_that_is_a_different_object():
+    copy = POLICY.replace()
+    assert copy == POLICY and copy is not POLICY and type(copy) is tftp.TFTPServerOptions
+
+
+def test_replace_changes_only_the_named_fields_and_leaves_the_original_alone():
+    changed = POLICY.replace(max_blksize=1428, refused=["windowsize"])
+    assert (changed.max_blksize, changed.refused) == (1428, frozenset({"windowsize"}))
+    for name in ("max_windowsize", "max_window_bytes", "allowed", "fit_mtu", "registry"):
+        assert getattr(changed, name) == getattr(POLICY, name), name
+    assert (POLICY.max_blksize, POLICY.refused) == (8192, frozenset())
+
+
+def test_replace_carries_over_every_field_the_class_has():
+    """A field added to the class is copied without the method being edited."""
+    custom = tftp.TFTPServerOptions(
+        max_blksize=1500,
+        max_windowsize=3,
+        max_window_bytes=70_000,
+        allowed={"blksize", "x-list"},
+        refused=["x-list"],
+        fit_mtu=True,
+        registry=tftp.options.DEFAULT_REGISTRY.copy(),
+    )
+    assert custom.replace() == custom
+    for name in tftp.TFTPServerOptions.__slots__:
+        assert getattr(custom.replace(), name) == getattr(custom, name), name
+    assert custom.replace().registry is custom.registry
+
+
+def test_replace_validates_like_the_constructor():
+    with pytest.raises(ValueError):
+        POLICY.replace(max_blksize=4)
+    with pytest.raises(ValueError):
+        POLICY.replace(allowed={"nonsense"})
+
+
+def test_replace_refuses_a_name_that_is_not_a_field():
+    with pytest.raises(TypeError, match="no_such"):
+        POLICY.replace(no_such=1)
+
+
+def test_replace_widens_a_profiles_policy_the_way_the_listing_flag_does():
+    profile = tftp.Profile.PXE.server
+    listed = profile.replace(allowed=profile.allowed | tftp.options.LISTING_OPTIONS)
+    assert listed.allowed == profile.allowed | tftp.options.LISTING_OPTIONS
+    assert (listed.max_blksize, listed.refused, listed.fit_mtu) == (
+        profile.max_blksize,
+        profile.refused,
+        profile.fit_mtu,
+    )
