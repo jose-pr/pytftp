@@ -396,7 +396,6 @@ class _ClientBase:
         host, port = self._target()
         want_ipv6: Dict[int, bool] = {socket.AF_INET6: True, socket.AF_INET: False}
         address = Host(host).ip(check=True, ipv6=want_ipv6.get(self.family))
-        assert address is not None  # check=True raises for a name that does not resolve
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
         return family, sockaddr(address, port), address
 
