@@ -9,7 +9,7 @@ import time
 import pytest
 
 import tftp
-from conftest import client_for, needs_ipv6
+from conftest import BAD_FIRST_ANSWERS, FakePeer, client_for, needs_ipv6
 from tftp.netascii import encode
 
 NAMES = ["empty.bin", "one.bin", "511.bin", "512.bin", "513.bin", "1428x3.bin", "big.bin"]
@@ -470,3 +470,68 @@ def test_the_constructor_accepts_what_a_transfer_takes_and_resolves_nothing(cls)
 
 def test_a_port_in_the_host_text_still_overrides_a_valid_port_argument():
     assert tftp.TFTPClient("h:70", 69)._target() == ("h", 70)
+
+
+# -- the first answer and the time limit ----------------------------------------------------------
+
+
+class CountingSource(io.BytesIO):
+    """A source that counts what the transfer reads from it."""
+
+    reads = 0
+
+    def readinto(self, view) -> int:
+        CountingSource.reads += 1
+        return super().readinto(view)
+
+
+@pytest.mark.parametrize("is_read, answer", [pytest.param(r, a, id=i) for i, r, a in BAD_FIRST_ANSWERS])
+def test_a_first_answer_a_server_may_not_send_is_a_protocol_error(is_read, answer):
+    CountingSource.reads = 0
+    with FakePeer(lambda data: [answer]) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=1.0, retries=1)
+        started = time.monotonic()
+        with pytest.raises(tftp.TFTPProtocolError):
+            if is_read:
+                client.get("f")
+            else:
+                client.upload("f", CountingSource(b"payload"))
+        assert time.monotonic() - started < 5, "the client waited for a transfer that cannot start"
+        is_error = answer[:2] == b"\x00\x05"
+        assert wait_until(lambda: len(peer.seen) >= 2 or is_error), "the server was told nothing"
+        sent = [tftp.decode(data) for _, data in peer.seen[1:]]
+    assert not any(isinstance(p, tftp.DataPacket) for p in sent), "an upload began after a bad first answer"
+    assert CountingSource.reads == 0, "the source was read for an upload that never started"
+    if not is_error:
+        assert isinstance(sent[0], tftp.ErrorPacket) and sent[0].code == tftp.TFTPErrorCode.ILLEGAL_OPERATION
+
+
+@pytest.mark.parametrize("call", ["get", "size", "stat"])
+def test_the_time_limit_bounds_every_call_that_waits_for_a_server(call):
+    with FakePeer() as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=3.0, retries=3, deadline=0.5)
+        started = time.monotonic()
+        with pytest.raises(tftp.TransferTimeoutError):
+            getattr(client, call)("f")
+        elapsed = time.monotonic() - started
+    # A second of margin over the 0.5 s limit; the wait unbounded by it is 3 s a request.
+    assert 0.4 <= elapsed < 1.5
+
+
+def test_the_time_limit_is_one_start_across_the_fallback_to_a_request_without_options():
+    from tftp.packet import encode_error
+
+    def script(data):
+        request = tftp.decode(data)
+        if isinstance(request, tftp.RequestPacket) and request.options:
+            return [(0.8, encode_error(tftp.TFTPErrorCode.OPTION_REFUSED))]
+        return []
+
+    with FakePeer(script) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=3.0, retries=3, deadline=1.5)
+        started = time.monotonic()
+        with pytest.raises(tftp.TransferTimeoutError):
+            client.get("f")
+        elapsed = time.monotonic() - started
+    # 0.8 s in the first request, so 0.7 s are left for the second; a fresh limit would end it near 2.3 s.
+    assert 1.4 <= elapsed < 2.3

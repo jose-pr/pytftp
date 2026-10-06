@@ -84,9 +84,13 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
   request too) waits `backoff` times longer, up to `max_timeout` (default
   8 × `timeout`; below `timeout` is a `ValueError`); progress resets the wait. `backoff=1` disables it; below 1 is a `ValueError`.
 - `deadline` — seconds a whole transfer may take, counted from when it
-  starts; `None` is unlimited. A relative duration: the client's
+  starts and across the retry without options; it bounds `size()`, `stat()` and
+  the wait for the server's first answer as well. `None` is unlimited. A relative duration: the client's
   `deadline` argument and attribute are not the engine's `deadline` (the
   instant it next wants `on_timeout`, see "Transfer engine").
+- The first answer to a request is an ERROR, an OACK, DATA 1 (a read) or
+  ACK 0 (a write), whole: anything else (another block, a packet cut short,
+  one that does not decode) is `TFTPProtocolError` after an ERROR 4.
 - `strict_source` — the first answer must come from the address the request
   was sent to; addresses are compared by value (packed address, and scope id
   when both sides have one), never by their text, so a link-local server named

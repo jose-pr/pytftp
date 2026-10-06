@@ -125,3 +125,75 @@ def spy_server(root, make_server):
         return spy, "tftp://127.0.0.1:%d/" % server.server_address[1]
 
     return make
+
+
+class FakePeer:
+    """A UDP server that answers by script, for what a real server never sends.
+
+    ``script(data)`` gets each datagram received and returns the datagrams to
+    send back, each ``bytes`` or ``(seconds_to_wait, bytes)``. ``seen`` holds
+    ``(seconds since the first datagram, bytes)`` for everything received, as
+    it came off the wire. The thread ends when the socket is closed.
+    """
+
+    def __init__(self, script=None) -> None:
+        import threading
+        import time
+
+        self.script = script or (lambda data: [])
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.settimeout(0.2)
+        self._closed = False
+        self.port = self.sock.getsockname()[1]
+        self.seen: list = []
+        self._clock = time.monotonic
+        self._thread = threading.Thread(target=self._run, name="fake-peer", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        import time
+
+        began = None
+        try:
+            while True:
+                try:
+                    data, peer = self.sock.recvfrom(70000)
+                except socket.timeout:
+                    if self._closed:
+                        return
+                    continue
+                began = self._clock() if began is None else began
+                self.seen.append((self._clock() - began, data))
+                for reply in self.script(data):
+                    wait, packet = reply if isinstance(reply, tuple) else (0, reply)
+                    if wait:
+                        time.sleep(wait)
+                    self.sock.sendto(packet, peer)
+        except OSError:
+            pass
+
+    def close(self) -> None:
+        self._closed = True
+        self._thread.join(5)
+        self.sock.close()
+
+    def __enter__(self) -> "FakePeer":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+
+#: ``(id, request is a read, datagram)``: first answers a server may not send.
+BAD_FIRST_ANSWERS = [
+    ("rrq-data-block-9", True, b"\x00\x03\x00\x09tail"),
+    ("rrq-data-cut-to-2", True, b"\x00\x03"),
+    ("rrq-data-cut-to-3", True, b"\x00\x03\x00"),
+    ("rrq-ack", True, b"\x00\x04\x00\x00"),
+    ("rrq-error-cut-to-2", True, b"\x00\x05"),
+    ("wrq-ack-cut-to-2", False, b"\x00\x04"),
+    ("wrq-ack-cut-to-3", False, b"\x00\x04\x00"),
+    ("wrq-ack-block-7", False, b"\x00\x04\x00\x07"),
+    ("wrq-data-1", False, b"\x00\x03\x00\x01x"),
+]

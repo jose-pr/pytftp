@@ -31,7 +31,13 @@ from typing import (
 from .._arguments import check_family, check_int, check_seconds, check_source
 from .._sockets import same_host, sockaddr
 from ..capture.events import PacketEvent, new_session_id
-from ..exceptions import RemoteError, TFTPError, TFTPProtocolError, TransferTimeoutError
+from ..exceptions import (
+    RemoteError,
+    TFTPDecodeError,
+    TFTPError,
+    TFTPProtocolError,
+    TransferTimeoutError,
+)
 from ..listing import LIST_OPTION, MTIME_OPTION
 from ..options import (
     DEFAULT_BLKSIZE,
@@ -102,6 +108,14 @@ def _digits(text: Optional[str]) -> Optional[int]:
 _OPTION_ERRORS = frozenset(
     {TFTPErrorCode.OPTION_REFUSED, TFTPErrorCode.ILLEGAL_OPERATION, TFTPErrorCode.NOT_DEFINED}
 )
+
+
+def _is_first_packet(view, n: int, is_read: bool) -> bool:
+    """The packet an option-less server starts with: DATA 1 for a read, ACK 0 for a write."""
+    if n < 4 or view[0] != 0:
+        return False
+    want_op, want_block = (TFTPOpcode.DATA, 1) if is_read else (TFTPOpcode.ACK, 0)
+    return view[1] == want_op and view[2] == 0 and view[3] == want_block
 
 
 def _repeats_without_options(exc: RemoteError) -> bool:
@@ -247,27 +261,32 @@ class _ClientBase:
         options were ignored), to be handed to the receiver. Raises for an
         ERROR (marked as a refusal of the request, for the option fallback),
         an OACK this client cannot accept (after sending ERROR 8), or any
-        other opcode (after sending ERROR 4).
+        other answer (after sending ERROR 4): a WRQ is answered by ACK 0 and
+        an RRQ by DATA 1, each whole, and a packet that does not decode is no
+        answer.
         """
         op = view[1] if n >= 2 and view[0] == 0 else -1
-        if op == TFTPOpcode.ERROR:
-            packet = decode(view[:n])
-            refused = RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
-            refused._in_request = True  # type: ignore[attr-defined]
-            raise refused
-        if op == TFTPOpcode.OACK:
-            oack = decode(view[:n]).options  # type: ignore[union-attr]
-            try:
-                negotiated = accept_oack(
-                    options, oack, is_read=is_read, timeout=self.timeout, registry=self.registry
-                )
-            except TFTPProtocolError as exc:
-                send(_encode_error(exc.code, exc.message))
-                raise
-            return negotiated, False
-        if (is_read and op == TFTPOpcode.DATA) or (
-            not is_read and op == TFTPOpcode.ACK and view[2] == 0 and view[3] == 0
-        ):
+        try:
+            if op == TFTPOpcode.ERROR:
+                packet = decode(view[:n])
+                refused = RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
+                refused._in_request = True  # type: ignore[attr-defined]
+                raise refused
+            if op == TFTPOpcode.OACK:
+                oack = decode(view[:n]).options  # type: ignore[union-attr]
+                try:
+                    negotiated = accept_oack(
+                        options, oack, is_read=is_read, timeout=self.timeout, registry=self.registry
+                    )
+                except TFTPProtocolError as exc:
+                    send(_encode_error(exc.code, exc.message))
+                    raise
+                return negotiated, False
+        except TFTPDecodeError as exc:
+            if op != TFTPOpcode.ERROR:
+                send(_encode_error(TFTPErrorCode.ILLEGAL_OPERATION, "malformed answer"))
+            raise TFTPProtocolError("malformed answer to the request: %s" % exc) from exc
+        if _is_first_packet(view, n, is_read):
             return Negotiated(timeout=self.timeout), is_read
         send(_encode_error(TFTPErrorCode.ILLEGAL_OPERATION, "unexpected opcode %d" % op))
         raise TFTPProtocolError("unexpected opcode %d in response to the request" % op)
@@ -365,16 +384,19 @@ class _ClientBase:
         timer = Backoff(self.timeout, multiplier=self.backoff, max_delay=self.max_timeout)  # RFC 1123 4.2.3.2
         deadline = clock() + timer.delay
         while True:
-            remaining = deadline - clock()
+            now = clock()
+            if expires is not None and now >= expires:
+                raise TransferTimeoutError("transfer exceeded its time limit")
+            remaining = deadline - now
             if remaining <= 0:
-                if timer.attempt >= self.retries or (expires is not None and clock() >= expires):
+                if timer.attempt >= self.retries:
                     raise TransferTimeoutError("no response from %s:%s" % server[:2])
                 sock.sendto(request, server)
                 if emit is not None:
                     emit(request, "out", server)
                 deadline = clock() + timer.advance()
                 continue
-            sock.settimeout(remaining)
+            sock.settimeout(remaining if expires is None else min(remaining, expires - now))
             try:
                 n, peer = sock.recvfrom_into(buf)
             except socket.timeout:
@@ -387,20 +409,24 @@ class _ClientBase:
                 continue  # not the server we asked
             return n, peer
 
-    def _size(self, filename: str, mode: str) -> Optional[int]:
-        oack, small = self._probe(filename, _mode(mode), {"tsize": "0"})
+    def _expires(self, started: float) -> Optional[float]:
+        """When a transfer begun at ``started`` (``time.monotonic``) must be over, or ``None``."""
+        return None if self.deadline is None else started + self.deadline
+
+    def _size(self, filename: str, mode: str, expires: Optional[float] = None) -> Optional[int]:
+        oack, small = self._probe(filename, _mode(mode), {"tsize": "0"}, expires)
         return small if oack is None else _digits(oack.get("tsize"))
 
-    def _stat(self, filename: str, mode: str) -> RemoteStat:
+    def _stat(self, filename: str, mode: str, expires: Optional[float] = None) -> RemoteStat:
         mode = _mode(mode)
         filename = filename or "."  # the root: a request needs a name
         asked = {"tsize": "0", MTIME_OPTION: "0", LIST_OPTION: "1"}
         try:
-            oack, small = self._probe(filename, mode, asked)
+            oack, small = self._probe(filename, mode, asked, expires)
         except RemoteError as exc:
             if exc.code not in _OPTION_ERRORS or not self.fallback:
                 raise
-            return RemoteStat(self._size(filename, mode))
+            return RemoteStat(self._size(filename, mode, expires))
         if oack is None:
             return RemoteStat(small)
         is_dir = oack.get(LIST_OPTION, "").strip() == "1"
@@ -408,9 +434,9 @@ class _ClientBase:
         return RemoteStat(size, _digits(oack.get(MTIME_OPTION)), is_dir)
 
     def _probe(
-        self, filename: str, mode: str, options: Mapping[str, str]
+        self, filename: str, mode: str, options: Mapping[str, str], expires: Optional[float] = None
     ) -> Tuple[Optional[Dict[str, str]], Optional[int]]:
-        """Send an RRQ and abandon it at the first answer.
+        """Send an RRQ and abandon it at the first answer, before ``expires`` (``time.monotonic``).
 
         ``(oack, None)`` when the server answered with an OACK (refused with
         ERROR 8 at once); ``(None, size)`` when it ignored the options and
@@ -423,21 +449,25 @@ class _ClientBase:
             buf = bytearray(_RECV_BUFFER)
             view = memoryview(buf)
             emit = self._emitter(sock)
-            n, peer = self._request(sock, server, request, buf, view, None, emit)
+            n, peer = self._request(sock, server, request, buf, view, expires, emit)
 
             def send(packet) -> None:
                 sock.sendto(packet, peer)
                 if emit is not None:
                     emit(packet, "out", peer)
 
-            op = view[1] if view[0] == 0 else -1
-            if op == TFTPOpcode.ERROR:
-                packet = decode(view[:n])
-                raise RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
-            if op == TFTPOpcode.OACK:
-                send(_encode_error(TFTPErrorCode.OPTION_REFUSED, "size probe only"))
-                return dict(decode(view[:n]).options), None  # type: ignore[union-attr]
-            if op == TFTPOpcode.DATA and n >= 4:
+            op = view[1] if n >= 2 and view[0] == 0 else -1
+            try:
+                if op == TFTPOpcode.ERROR:
+                    packet = decode(view[:n])
+                    raise RemoteError.from_code(packet.code, packet.message)  # type: ignore[union-attr]
+                if op == TFTPOpcode.OACK:
+                    oack = dict(decode(view[:n]).options)  # type: ignore[union-attr]
+                    send(_encode_error(TFTPErrorCode.OPTION_REFUSED, "size probe only"))
+                    return oack, None
+            except TFTPDecodeError as exc:
+                raise TFTPProtocolError("malformed answer to the request: %s" % exc) from exc
+            if _is_first_packet(view, n, True):
                 size = n - 4
                 if size < DEFAULT_BLKSIZE:
                     send(encode_ack(1))  # the whole file: finish politely

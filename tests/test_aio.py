@@ -10,7 +10,7 @@ import sys
 import pytest
 
 import tftp
-from conftest import client_for
+from conftest import BAD_FIRST_ANSWERS, FakePeer, client_for
 from tftp import AsyncTFTPClient, AsyncTFTPServer
 from tftp.backends import HTTPBackend, MemoryBackend
 from tftp.server import ThreadedHandler
@@ -434,3 +434,103 @@ def test_async_client_deadline_ends_a_transfer_before_its_retries_do():
             assert time.monotonic() - started < 10
 
     run(main())
+
+
+# -- the first answer and the time limit ----------------------------------------------------------
+
+LOOPS = pytest.mark.parametrize(
+    "loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default")
+)
+
+
+@LOOPS
+@pytest.mark.parametrize("is_read, answer", [pytest.param(r, a, id=i) for i, r, a in BAD_FIRST_ANSWERS])
+def test_a_first_answer_a_server_may_not_send_is_a_protocol_error(loop_factory, is_read, answer):
+    class Sink:
+        async def write(self, data):
+            pass
+
+    async def main():
+        with FakePeer(lambda data: [answer]) as peer:
+            client = AsyncTFTPClient("127.0.0.1", peer.port, timeout=1.0, retries=1)
+            call = client.download("f", Sink()) if is_read else client.upload("f", AsyncSource(b"payload"))
+            try:
+                await asyncio.wait_for(call, 5)
+            except asyncio.TimeoutError:
+                pytest.fail("the client waited for a transfer that cannot start")
+            except tftp.TFTPProtocolError:
+                pass
+            else:
+                pytest.fail("a first answer no server may send was accepted")
+            sent = [tftp.decode(data) for _, data in peer.seen]
+        assert not any(isinstance(p, tftp.DataPacket) for p in sent)
+
+    run(main(), loop_factory)
+
+
+@LOOPS
+@pytest.mark.parametrize("call", ["get", "size", "stat"])
+def test_the_time_limit_bounds_every_call_that_waits_for_a_server(loop_factory, call):
+    import time
+
+    async def main():
+        with FakePeer() as peer:
+            client = AsyncTFTPClient("127.0.0.1", peer.port, timeout=3.0, retries=3, deadline=0.5)
+            started = time.monotonic()
+            with pytest.raises(tftp.TransferTimeoutError):
+                await getattr(client, call)("f")
+            return time.monotonic() - started
+
+    elapsed = run(main(), loop_factory)
+    # A second of margin over the 0.5 s limit; the wait unbounded by it is 3 s a request.
+    assert 0.4 <= elapsed < 1.5
+
+
+@LOOPS
+def test_the_time_limit_is_one_start_across_the_fallback_to_a_request_without_options(loop_factory):
+    import time
+
+    from tftp.packet import encode_error
+
+    def script(data):
+        request = tftp.decode(data)
+        if isinstance(request, tftp.RequestPacket) and request.options:
+            return [(1.5, encode_error(tftp.TFTPErrorCode.OPTION_REFUSED))]
+        return []
+
+    async def main():
+        with FakePeer(script) as peer:
+            client = AsyncTFTPClient("127.0.0.1", peer.port, timeout=5.0, retries=3, deadline=2.0)
+            started = time.monotonic()
+            with pytest.raises(tftp.TransferTimeoutError):
+                await client.get("f")
+            return time.monotonic() - started
+
+    elapsed = run(main(), loop_factory)
+    # 1.5 s in the first request leave 0.5 s for the second; a fresh limit would end it near 3.5 s.
+    assert 1.9 <= elapsed < 3.0
+
+
+@LOOPS
+def test_an_engine_with_nothing_outstanding_is_woken_after_one_timeout(loop_factory):
+    from tftp.client._asyncio import _Transfer
+
+    class Idle:
+        deadline = None
+        is_done = False
+        is_stalled = False
+        woken = None
+
+        def on_timeout(self, now):
+            Idle.woken = now
+            self.is_done = True
+
+    async def main():
+        driver = _Transfer(AsyncTFTPClient("127.0.0.1", 9, timeout=0.05), asyncio.get_running_loop())
+        driver.engine = Idle()
+        driver.schedule()
+        assert driver.timer is not None, "no timer was armed for an engine with no deadline"
+        await asyncio.wait_for(asyncio.sleep(0.5), 5)
+        assert Idle.woken is not None, "the engine was never told that a timeout passed"
+
+    run(main(), loop_factory)

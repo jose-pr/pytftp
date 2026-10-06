@@ -453,6 +453,17 @@ Old names are not kept as aliases.
   construction, where the serving thread died at the first request past it.
 - The shipped API header named `NETIMPS_NO_SOCKET_PATCH`, which netimps 0.4
   rejects at import; the variable is `NETIMPS_SOCKET_PATCH=0`.
+- **The client's first answer is checked.** A write is answered by a whole ACK 0
+  and a read by a whole DATA 1 (or an OACK); a DATA of another block, an ACK
+  cut short or a packet that does not decode is `TFTPProtocolError` after an
+  ERROR 4, where the blocking client waited out its retries and
+  `AsyncTFTPClient` waited for ever (or raised `IndexError` for a cut ACK)
+  and an upload began from a cut ACK.
+- **`deadline` bounds every call.** `size()`, `stat()` and the request phase of a
+  transfer end by it (a `size()` with `deadline=0.5` took 6 seconds, a `get()`
+  with a longer `timeout` waited the whole `timeout`), and the limit has one
+  start across the retry without options in both clients, where
+  `AsyncTFTPClient` gave the second attempt a limit of its own.
 
 ## [0.0.0] - 2026-10-03
 

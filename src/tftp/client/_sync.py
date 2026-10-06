@@ -211,7 +211,7 @@ class TFTPClient(_ClientBase):
         then is the size. Raises :class:`RemoteError` (``FileNotFound``...)
         like a download would.
         """
-        return self._size(filename, mode)
+        return self._size(filename, mode, self._expires(time.monotonic()))
 
     def stat(self, filename: str, *, mode: str = "octet") -> RemoteStat:
         """Size, modification time and kind of ``filename``, in one probe.
@@ -222,7 +222,7 @@ class TFTPClient(_ClientBase):
         refuses the request over its options (ERROR 8) is probed again for
         the size alone, when ``fallback`` is on.
         """
-        return self._stat(filename, mode)
+        return self._stat(filename, mode, self._expires(time.monotonic()))
 
     def listdir(self, dirname: str = "") -> List[ListEntry]:
         """The entries of directory ``dirname`` (``""`` is the server's root).

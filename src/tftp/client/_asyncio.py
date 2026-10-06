@@ -139,8 +139,18 @@ class _Transfer:
 
     def schedule(self) -> None:
         engine = self.engine
-        due = engine.deadline if engine is not None else None
+        if engine is None or engine.is_done:
+            return
+        due = engine.deadline
         if due is None:
+            if engine.is_stalled:
+                return  # the bridge wakes the engine when its source or sink is ready
+            # Nothing outstanding: wait for a datagram as long as the blocking
+            # client does, counted from now.
+            if self.timer is not None:
+                self.timer.cancel()
+            self.timer_at = self.loop.time() + self.client.timeout
+            self.timer = self.loop.call_at(self.timer_at, self.fire)
             return
         if self.timer_at is None or due < self.timer_at:
             if self.timer is not None:
@@ -233,12 +243,14 @@ class AsyncTFTPClient(_ClientBase):
     async def size(self, filename: str, *, mode: str = "octet") -> Optional[int]:
         """:meth:`tftp.TFTPClient.size`, without blocking the loop (it runs in the executor)."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: self._size(filename, mode))
+        expires = self._expires(time.monotonic())
+        return await loop.run_in_executor(None, lambda: self._size(filename, mode, expires))
 
     async def stat(self, filename: str, *, mode: str = "octet") -> RemoteStat:
         """:meth:`tftp.TFTPClient.stat`, without blocking the loop (it runs in the executor)."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: self._stat(filename, mode))
+        expires = self._expires(time.monotonic())
+        return await loop.run_in_executor(None, lambda: self._stat(filename, mode, expires))
 
     async def listdir(self, dirname: str = "") -> List[ListEntry]:
         """:meth:`tftp.TFTPClient.listdir`, as a coroutine."""
@@ -380,23 +392,23 @@ class AsyncTFTPClient(_ClientBase):
         transport, _ = await loop.create_datagram_endpoint(lambda: _Protocol(driver), sock=sock)
         driver.transport = transport
         try:
-            expires = None if self.deadline is None else loop.time() + self.deadline
+            budget = self._expires(started)
+            expires = None if budget is None else loop.time() + (budget - time.monotonic())
             engine_kwargs = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
             # Request phase, with the same backoff as retransmissions.
             from netimps import Backoff
 
             timer = Backoff(self.timeout, multiplier=self.backoff, max_delay=self.max_timeout)
-            for attempt in range(self.retries + 1):
+            while expires is None or loop.time() < expires:
                 driver.sendto(request, server)
+                wait = timer.delay if expires is None else min(timer.delay, expires - loop.time())
                 try:
-                    data, peer = await asyncio.wait_for(asyncio.shield(driver.first), timer.delay)
+                    await asyncio.wait_for(asyncio.shield(driver.first), wait)
                     break
                 except asyncio.TimeoutError:
-                    if expires is not None and loop.time() >= expires:
+                    if timer.attempt >= self.retries:
                         break
                     timer.advance()
-            else:
-                data = None  # type: ignore[assignment]
             if not driver.first.done():
                 raise TransferTimeoutError("no response from %s:%s" % server[:2])
             data, peer = driver.first.result()
