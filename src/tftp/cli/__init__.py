@@ -10,57 +10,34 @@
     pytftp capture boot.pcapng --transfers --extract recovered/
 
 Installed by the ``cli`` extra (``pip install tftp[cli]``). Importing this
-module does not require duho: the console script is installed either way,
-and :func:`run` is what reports the missing extra.
+package does not require duho: the console script is installed either way,
+and :func:`main` is what reports the missing extra.
 """
 
 from __future__ import annotations
 
-import os as _os
-import sys as _sys
 import typing as _ty
 
-from .common import AUTO, Args, _StdoutClosed, error
-from .capture import CaptureCmd
-from .relay import RelayCmd
-from .serve import Serve
-from .transfer import Get, Ls, Put
-
-__all__ = ["run", "Pytftp", "Get", "Put", "Ls", "Serve", "RelayCmd", "CaptureCmd"]
+__all__ = ["main"]
 
 _NEEDS_EXTRA = "pytftp: the CLI needs the 'cli' extra -- pip install 'tftp[cli]'"
 
 
-class Pytftp(Args):
-    """TFTP client, server, relay and capture decoder (RFC 1350, 2347-2349, 7440) for IPv4 and IPv6."""
+def main(argv: _ty.Optional[_ty.Sequence[str]] = None) -> int:
+    """Run the command line and return its exit status.
 
-    _parsername_ = "pytftp"
-    _version_ = AUTO
-    _distribution_ = "tftp"
-    _subcommands_ = [Get, Put, Ls, Serve, RelayCmd, CaptureCmd]
+    ``0`` the command succeeded, ``1`` the transfer or the peer failed, ``2``
+    the invocation was wrong. The parser itself exits with ``2`` through
+    :class:`SystemExit` on a usage error.
 
-
-def run(argv: _ty.Optional[_ty.Sequence[str]] = None) -> _ty.Optional[int]:
-    """Console-script entry point.
-
-    A ``ValueError`` out of the library is a caller error (an out-of-range
-    ``--blksize``, an unknown mode) and becomes a usage error, exit 2.
+    Without duho installed this raises :class:`SystemExit` naming the ``cli``
+    extra.
     """
     try:
-        from duho import main
+        import duho  # noqa: F401
     except ImportError as exc:
         raise SystemExit(_NEEDS_EXTRA) from exc
 
-    try:
-        return main(Pytftp, argv)
-    except ValueError as exc:
-        error("error: %s" % exc)
-        return 2
-    except _StdoutClosed:
-        # Nobody reads stdout any more. Point it at the null device so that the flush at exit
-        # does not fail again, and end without a word.
-        try:
-            _os.dup2(_os.open(_os.devnull, _os.O_WRONLY), _sys.stdout.fileno())
-        except (OSError, ValueError):
-            pass
-        return 1
+    from ._root import execute
+
+    return execute(argv)

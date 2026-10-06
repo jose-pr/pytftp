@@ -11,7 +11,7 @@ import pytest
 
 pytest.importorskip("duho")
 
-from tftp.cli import run  # noqa: E402
+from tftp.cli import main  # noqa: E402
 
 
 def _port(server) -> str:
@@ -21,8 +21,8 @@ def _port(server) -> str:
 def test_get_to_file_and_json(root, make_server, tmp_path_factory, capsys):
     server = make_server(root)
     out = tmp_path_factory.mktemp("out") / "copy.bin"
-    code = run(["get", "127.0.0.1", "big.bin", str(out), "-p", _port(server), "--json", "-w", "4"])
-    assert code in (None, 0)
+    code = main(["get", "127.0.0.1", "big.bin", str(out), "-p", _port(server), "--json", "-w", "4"])
+    assert code == 0
     assert out.read_bytes() == (root / "big.bin").read_bytes()
     report = json.loads(capsys.readouterr().out)
     assert report["ok"] and report["bytes"] == 300_001 and report["windowsize"] == 4
@@ -32,14 +32,14 @@ def test_get_default_name_is_basename(root, make_server, tmp_path_factory, monke
     server = make_server(root)
     tmp_path = tmp_path_factory.mktemp("cwd")
     monkeypatch.chdir(tmp_path)
-    assert run(["get", "127.0.0.1", "sub/nested.bin", "-p", _port(server)]) in (None, 0)
+    assert main(["get", "127.0.0.1", "sub/nested.bin", "-p", _port(server)]) == 0
     assert (tmp_path / "nested.bin").read_bytes() == b"nested"
 
 
 def test_get_missing_file_exits_1(root, make_server, tmp_path_factory, capsys):
     server = make_server(root)
     tmp_path = tmp_path_factory.mktemp("out")
-    assert run(["get", "127.0.0.1", "nope", str(tmp_path / "x"), "-p", _port(server)]) == 1
+    assert main(["get", "127.0.0.1", "nope", str(tmp_path / "x"), "-p", _port(server)]) == 1
     assert "FILE_NOT_FOUND" in capsys.readouterr().err
     assert not (tmp_path / "x").exists()
 
@@ -49,19 +49,19 @@ def test_put_and_errors(root, make_server, tmp_path_factory):
     tmp_path = tmp_path_factory.mktemp("src")
     src = tmp_path / "up.bin"
     src.write_bytes(os.urandom(3000))
-    assert run(["put", "127.0.0.1", str(src), "-p", _port(server), "--no-options"]) in (None, 0)
+    assert main(["put", "127.0.0.1", str(src), "-p", _port(server), "--no-options"]) == 0
     assert (root / "up.bin").read_bytes() == src.read_bytes()
-    assert run(["put", "127.0.0.1", str(tmp_path / "missing"), "-p", _port(server)]) == 2
-    assert run(["put", "127.0.0.1", str(src), "-p", _port(server)]) == 1  # exists
+    assert main(["put", "127.0.0.1", str(tmp_path / "missing"), "-p", _port(server)]) == 2
+    assert main(["put", "127.0.0.1", str(src), "-p", _port(server)]) == 1  # exists
 
 
 def test_bad_blksize_is_a_usage_error(capsys):
-    assert run(["get", "127.0.0.1", "f", "-b", "4"]) == 2
+    assert main(["get", "127.0.0.1", "f", "-b", "4"]) == 2
     assert "blksize" in capsys.readouterr().err
 
 
 def test_serve_not_a_directory(tmp_path):
-    assert run(["serve", str(tmp_path / "nope")]) == 2
+    assert main(["serve", str(tmp_path / "nope")]) == 2
 
 
 def test_serve_end_to_end(root, tmp_path):
@@ -103,10 +103,7 @@ def test_get_and_put_by_url_with_trace_and_pcap(root, make_server, tmp_path_fact
     out = tmp_path_factory.mktemp("url")
     url = "tftp://127.0.0.1:%d/" % server.server_address[1]
     pcap = out / "client.pcap"
-    assert run(["get", url + "sub/nested.bin", str(out / "n.bin"), "--trace", "--pcap", str(pcap)]) in (
-        None,
-        0,
-    )
+    assert main(["get", url + "sub/nested.bin", str(out / "n.bin"), "--trace", "--pcap", str(pcap)]) == 0
     assert (out / "n.bin").read_bytes() == b"nested"
     trace = capsys.readouterr().err
     assert "RRQ 'sub/nested.bin' octet" in trace and "DATA 1 (6 bytes)" in trace
@@ -115,18 +112,15 @@ def test_get_and_put_by_url_with_trace_and_pcap(root, make_server, tmp_path_fact
     (transfer,) = analyze(pcap, ports=[server.server_address[1]]).transfers
     assert transfer.is_complete and transfer.data() == b"nested"
     (out / "up.txt").write_bytes(b"a\nb\n")
-    assert run(["put", url + "up-url.txt;mode=netascii", str(out / "up.txt")]) in (None, 0)
+    assert main(["put", url + "up-url.txt;mode=netascii", str(out / "up.txt")]) == 0
     assert (root / "up-url.txt").read_bytes() == b"a\nb\n"
-    assert run(["get", "127.0.0.1"]) == 2  # no file named
+    assert main(["get", "127.0.0.1"]) == 2  # no file named
 
 
 def test_compat_profile(root, make_server, tmp_path_factory, capsys):
     server = make_server(root)
     target = tmp_path_factory.mktemp("compat") / "513.bin"
-    assert run(["get", "127.0.0.1", "513.bin", str(target), "-p", _port(server), "--compat", "legacy"]) in (
-        None,
-        0,
-    )
+    assert main(["get", "127.0.0.1", "513.bin", str(target), "-p", _port(server), "--compat", "legacy"]) == 0
     assert target.read_bytes() == (root / "513.bin").read_bytes()
     assert "blksize 512" in capsys.readouterr().err  # legacy sends a plain RFC 1350 request
 
@@ -173,8 +167,8 @@ def test_relay_and_proxy_commands(root, make_server):
 
 
 def test_relay_needs_a_destination():
-    assert run(["relay"]) == 2
-    assert run(["relay", "--route-subnet", "nonsense"]) == 2
+    assert main(["relay"]) == 2
+    assert main(["relay", "--route-subnet", "nonsense"]) == 2
 
 
 def test_capture_command(root, make_server, tmp_path_factory, capsys):
@@ -193,27 +187,27 @@ def test_capture_command(root, make_server, tmp_path_factory, capsys):
             pass
         server.shutdown()
         assert server.wait_closed(5.0)
-    assert run(["capture", str(pcap), "-p", port, "--filter", "op=RRQ,ERROR"]) in (None, 0)
+    assert main(["capture", str(pcap), "-p", port, "--filter", "op=RRQ,ERROR"]) == 0
     lines = capsys.readouterr().out.strip().splitlines()
     assert len(lines) == 3 and "RRQ '1428x3.bin'" in lines[0] and "ERROR 1" in lines[-1]
-    assert run(["capture", str(pcap), "-p", port, "--json", "--no-packets", "--transfers"]) in (None, 0)
+    assert main(["capture", str(pcap), "-p", port, "--json", "--no-packets", "--transfers"]) == 0
     records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
     assert [r["transfer"]["filename"] for r in records] == ["1428x3.bin", "missing"]
     assert records[0]["transfer"]["complete"] and records[1]["transfer"]["error"]["code"] == 1
     assert records[0]["transfer"]["bytes"] == 1428 * 3  # counted with payloads off, as here
     assert records[0]["transfer"]["retransmissions"] == 0 and records[0]["transfer"]["missing_blocks"] == []
     target = out / "extracted"
-    assert run(["capture", str(pcap), "-p", port, "--no-packets", "--extract", str(target)]) in (None, 0)
+    assert main(["capture", str(pcap), "-p", port, "--no-packets", "--extract", str(target)]) == 0
     (written,) = list(target.iterdir())
     assert written.name.endswith("-1428x3.bin") and written.read_bytes() == (root / "1428x3.bin").read_bytes()
 
 
 def test_capture_errors(tmp_path):
-    assert run(["capture"]) == 2
-    assert run(["capture", str(tmp_path / "missing.pcap")]) == 2
+    assert main(["capture"]) == 2
+    assert main(["capture", str(tmp_path / "missing.pcap")]) == 2
     (tmp_path / "junk.pcap").write_bytes(b"not a capture at all")
-    assert run(["capture", str(tmp_path / "junk.pcap")]) == 2
-    assert run(["capture", str(tmp_path / "junk.pcap"), "--filter", "colour=red"]) == 2
+    assert main(["capture", str(tmp_path / "junk.pcap")]) == 2
+    assert main(["capture", str(tmp_path / "junk.pcap"), "--filter", "colour=red"]) == 2
 
 
 def test_serve_deployment_flags(root):
@@ -243,19 +237,19 @@ def test_serve_deployment_flags(root):
     ],
 )
 def test_serve_deployment_flag_errors(tmp_path, args):
-    assert run(["serve", str(tmp_path), *args]) == 2
+    assert main(["serve", str(tmp_path), *args]) == 2
 
 
 def test_ls_against_serve_listing(root, capsys):
     proc, port = _serve_subprocess(["serve", str(root), "-l", "127.0.0.1", "-p", "0", "--listing"])
     try:
-        assert not run(["ls", "127.0.0.1", "-p", str(port)])
+        assert not main(["ls", "127.0.0.1", "-p", str(port)])
         out = capsys.readouterr().out
         assert "sub/" in out and "big.bin" in out and "300001" in out
-        assert not run(["ls", "tftp://127.0.0.1:%d/sub" % port, "--json"])
+        assert not main(["ls", "tftp://127.0.0.1:%d/sub" % port, "--json"])
         listed = json.loads(capsys.readouterr().out)
         assert listed[0]["name"] == "nested.bin" and listed[0]["size"] == 6
-        assert run(["ls", "127.0.0.1", "one.bin", "-p", str(port)]) == 1
+        assert main(["ls", "127.0.0.1", "one.bin", "-p", str(port)]) == 1
         assert "not a directory" in capsys.readouterr().err
     finally:
         _stop(proc)
@@ -378,13 +372,13 @@ def test_an_idle_command_stops_on_a_console_event_and_reports_its_counters(tmp_p
 def test_get_url_options_move_the_transfer(root, spy_server, tmp_path_factory, capsys):
     spy, base = spy_server()
     out = tmp_path_factory.mktemp("out") / "copy.bin"
-    assert not run(["get", base + "big.bin?blksize=512&windowsize=4&cookie=abc", str(out), "--json"])
+    assert not main(["get", base + "big.bin?blksize=512&windowsize=4&cookie=abc", str(out), "--json"])
     report = json.loads(capsys.readouterr().out)
     assert out.read_bytes() == (root / "big.bin").read_bytes()
     assert report["blksize"] == 512 and report["windowsize"] == 4
     wire = spy.requests[-1].options
     assert (wire["blksize"], wire["windowsize"], wire["cookie"]) == ("512", "4", "abc")
-    assert not run(["get", base + "big.bin;blksize=1024;windowsize=2", str(out), "--json"])
+    assert not main(["get", base + "big.bin;blksize=1024;windowsize=2", str(out), "--json"])
     assert json.loads(capsys.readouterr().out)["blksize"] == 1024
 
 
@@ -392,16 +386,16 @@ def test_get_flags_win_over_the_url(root, spy_server, tmp_path_factory, capsys):
     spy, base = spy_server()
     out = tmp_path_factory.mktemp("out") / "copy.bin"
     url = base + "big.bin?blksize=512&windowsize=4"
-    assert not run(["get", url, str(out), "--json", "-b", "1024", "-w", "2"])
+    assert not main(["get", url, str(out), "--json", "-b", "1024", "-w", "2"])
     report = json.loads(capsys.readouterr().out)
     assert report["blksize"] == 1024 and report["windowsize"] == 2
     assert spy.requests[-1].options["blksize"] == "1024"
     # --no-options asks for nothing at all, whatever the URL says.
-    assert not run(["get", url + "&cookie=abc", str(out), "--json", "--no-options"])
+    assert not main(["get", url + "&cookie=abc", str(out), "--json", "--no-options"])
     capsys.readouterr()
     assert dict(spy.requests[-1].options) == {}
     # -b 0 requests no blksize.
-    assert not run(["get", url, str(out), "--json", "-b", "0"])
+    assert not main(["get", url, str(out), "--json", "-b", "0"])
     capsys.readouterr()
     assert "blksize" not in spy.requests[-1].options and spy.requests[-1].options["windowsize"] == "4"
 
@@ -409,11 +403,11 @@ def test_get_flags_win_over_the_url(root, spy_server, tmp_path_factory, capsys):
 def test_get_mode_from_the_url_unless_a_flag_says_otherwise(root, spy_server, tmp_path_factory):
     spy, base = spy_server()
     out = tmp_path_factory.mktemp("out") / "t.txt"
-    assert not run(["get", base + "text.txt?mode=netascii", str(out)])
+    assert not main(["get", base + "text.txt?mode=netascii", str(out)])
     assert spy.requests[-1].mode == "netascii"
-    assert not run(["get", base + "text.txt;mode=netascii", str(out), "-m", "octet"])
+    assert not main(["get", base + "text.txt;mode=netascii", str(out), "-m", "octet"])
     assert spy.requests[-1].mode == "octet"
-    assert not run(["get", base + "text.txt", str(out)])
+    assert not main(["get", base + "text.txt", str(out)])
     assert spy.requests[-1].mode == "octet"
 
 
@@ -421,12 +415,12 @@ def test_put_url_options_move_the_transfer(root, spy_server, tmp_path_factory, c
     spy, base = spy_server()
     src = tmp_path_factory.mktemp("src") / "up.bin"
     src.write_bytes(os.urandom(3000))
-    assert not run(["put", base + "put-opts.bin?blksize=512&windowsize=2&cookie=up", str(src), "--json"])
+    assert not main(["put", base + "put-opts.bin?blksize=512&windowsize=2&cookie=up", str(src), "--json"])
     report = json.loads(capsys.readouterr().out)
     assert (root / "put-opts.bin").read_bytes() == src.read_bytes()
     assert report["blksize"] == 512 and report["windowsize"] == 2
     assert spy.requests[-1].options["cookie"] == "up"
-    assert not run(["put", base + "put-opts.bin;blksize=512", str(src), "--json", "-b", "1024"])
+    assert not main(["put", base + "put-opts.bin;blksize=512", str(src), "--json", "-b", "1024"])
     assert json.loads(capsys.readouterr().out)["blksize"] == 1024
 
 
@@ -435,14 +429,14 @@ def test_ls_url_options_reach_the_server(root, spy_server, capsys):
     from tftp.options import LISTING_OPTIONS, STANDARD_OPTIONS
 
     spy, base = spy_server(options=TFTPServerOptions(allowed=STANDARD_OPTIONS | LISTING_OPTIONS))
-    assert not run(["ls", base + "sub?cookie=abc&blksize=512", "--json"])
+    assert not main(["ls", base + "sub?cookie=abc&blksize=512", "--json"])
     assert json.loads(capsys.readouterr().out)[0]["name"] == "nested.bin"
     wire = spy.requests[-1].options
     assert (wire["cookie"], wire["blksize"]) == ("abc", "512")
 
 
 def test_a_bad_url_option_is_a_usage_error(capsys):
-    assert run(["get", "tftp://127.0.0.1/f?blksize=abc", "-p", "9"]) == 2
+    assert main(["get", "tftp://127.0.0.1/f?blksize=abc", "-p", "9"]) == 2
     assert "blksize" in capsys.readouterr().err
 
 
@@ -494,7 +488,7 @@ def test_an_everyday_failure_is_one_error_line_and_exit_1(root, make_server, tar
         "put to no such host": ["put", "no-such-host.invalid", str(root / "one.bin"), "-t", "0.2"],
         "ls of no such host": ["ls", "no-such-host.invalid", "-t", "0.2"],
     }[case]
-    assert run(argv) == 1
+    assert main(argv) == 1
     assert len(_error_lines(capsys.readouterr().err)) == 1
     assert not (target_dir / "out").exists()
 
@@ -504,7 +498,9 @@ def test_what_a_server_wrote_in_an_error_cannot_reach_the_terminal(target_dir, c
     from tftp.packet import encode_error
 
     with FakePeer(lambda data: [encode_error(1, "gone\x1b[2J\x1b]0;owned\x07")]) as peer:
-        assert run(["get", "127.0.0.1", "f", str(target_dir / "out"), "-p", str(peer.port), "-t", "0.5"]) == 1
+        assert (
+            main(["get", "127.0.0.1", "f", str(target_dir / "out"), "-p", str(peer.port), "-t", "0.5"]) == 1
+        )
     (line,) = _error_lines(capsys.readouterr().err)
     assert line.isprintable() and "\\x1b[2J" in line
 
@@ -549,7 +545,7 @@ def test_a_command_that_cannot_run_leaves_the_pcap_it_was_given(tmp_path, capsys
                 str(path),
             ],
         }[command]
-        assert run(argv) in (1, 2)
+        assert main(argv) in (1, 2)
     assert "Traceback" not in capsys.readouterr().err
     assert path.read_bytes() == before
     path.unlink()  # nothing holds it open
@@ -558,7 +554,7 @@ def test_a_command_that_cannot_run_leaves_the_pcap_it_was_given(tmp_path, capsys
 def test_a_pcap_that_cannot_be_written_is_an_error_line(root, make_server, tmp_path, capsys):
     server = make_server(root)
     argv = ["get", "127.0.0.1", "one.bin", str(tmp_path / "out"), "-p", _port(server)]
-    assert run(argv + ["--pcap", str(tmp_path / "no" / "such" / "dir.pcap")]) == 1
+    assert main(argv + ["--pcap", str(tmp_path / "no" / "such" / "dir.pcap")]) == 1
     assert len(_error_lines(capsys.readouterr().err)) == 1
     assert not (tmp_path / "out").exists()
 
@@ -610,3 +606,54 @@ def test_serve_and_relay_record_what_they_move_when_given_a_pcap(root, make_serv
         _stop(proc)
     (transfer,) = [t for t in analyze(str(pcap), ports=[port]).transfers if t.filename == "513.bin"][:1]
     assert transfer.is_complete and transfer.size == 513
+
+
+# -- the entry point and the root --------------------------------------------------------------
+
+
+def test_the_logging_flags_work_before_the_subcommand(capsys):
+    assert main(["-v", "get", "127.0.0.1", "f", "-b", "4"]) == 2
+    assert "blksize" in capsys.readouterr().err
+    assert main(["-q", "get", "127.0.0.1", "f", "-b", "4"]) == 2
+
+
+def test_main_returns_an_int_for_every_outcome(root, make_server, tmp_path, capsys):
+    server = make_server(root)
+    status = main(["get", "127.0.0.1", "one.bin", str(tmp_path / "o"), "-p", _port(server)])
+    assert type(status) is int and status == 0
+    assert type(main(["relay"])) is int
+
+
+def _code_without_duho(body: str) -> subprocess.CompletedProcess:
+    code = "import sys\nsys.modules['duho'] = None  # an import of it raises ImportError\n" + body
+    return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+
+
+def test_without_the_extra_the_command_names_it_and_exits_1():
+    done = _code_without_duho("from tftp.cli import main\nraise SystemExit(main(['--help']))\n")
+    assert done.returncode == 1 and done.stdout == ""
+    assert done.stderr.strip() == "pytftp: the CLI needs the 'cli' extra -- pip install 'tftp[cli]'"
+
+
+def test_python_dash_m_without_the_extra_says_the_same():
+    done = _code_without_duho("import runpy\nrunpy.run_module('tftp', run_name='__main__')\n")
+    assert done.returncode == 1 and "'cli' extra" in done.stderr and "Traceback" not in done.stderr
+
+
+def test_importing_the_command_package_needs_no_duho():
+    done = _code_without_duho("import tftp, tftp.cli\nprint(tftp.cli.main.__name__)\n")
+    assert done.returncode == 0 and done.stdout.strip() == "main"
+
+
+def test_the_tool_server_is_not_started_by_the_environment():
+    request = (
+        '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", '
+        '"capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}}\n'
+        '{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}\n'
+    )
+    env = dict(os.environ, PYTFTP_MCP="stdio")
+    done = subprocess.run(
+        [sys.executable, "-m", "tftp"], input=request, capture_output=True, text=True, timeout=60, env=env
+    )
+    assert done.returncode == 2 and "jsonrpc" not in done.stdout and "tools" not in done.stdout
+    assert "required" in done.stderr  # the plain command asking for a subcommand

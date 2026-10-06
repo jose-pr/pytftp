@@ -12,16 +12,11 @@ import os as _os
 import sys as _sys
 import typing as _ty
 
-from ..capture import (
-    CaptureFormatError,
-    CaptureFilterError,
-    FlowTracker,
-    compile_filter,
-    live_capture_supported,
-    read_datagrams,
-    sniff,
-)
-from .common import Base, error, write_line
+from ..capture._filters import CaptureFilterError, compile_filter
+from ..capture._flows import FlowTracker
+from ..capture.live import live_capture_supported, sniff
+from ..capture.pcap import CaptureFormatError, read_datagrams
+from ._common import Base, error, write_line
 
 __all__ = ["CaptureCmd"]
 

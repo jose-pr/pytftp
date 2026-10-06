@@ -17,10 +17,10 @@ import os
 import re
 import typing as _ty
 
+from ..backends._filesystem import FilesystemBackend
 from ..exceptions import TFTPError
-from ..packet import TFTPErrorCode
-from ..backends import FilesystemBackend
-from ..server import TFTPRequestContext
+from ..packet._enums import TFTPErrorCode
+from ..server._handler import TFTPRequestContext
 
 __all__ = ["Remap", "PerClient", "CaseInsensitive", "parse_rule"]
 

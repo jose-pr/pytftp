@@ -215,16 +215,7 @@ EXPECTED = {
         "UnknownTransferID",
         "WouldBlock",
     ],
-    "tftp.cli": [
-        "CaptureCmd",
-        "Get",
-        "Ls",
-        "Put",
-        "Pytftp",
-        "RelayCmd",
-        "Serve",
-        "run",
-    ],
+    "tftp.cli": ["main"],
     "tftp.transfer": [
         "Receiver",
         "SendFunction",

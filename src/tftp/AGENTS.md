@@ -38,7 +38,7 @@ takes every field by keyword.
 | `tftp.backends` | `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `Pipe`, `UpstreamBackend`, `normalize_name` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` |
 | `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `CaptureFormatError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
-| `tftp.cli` | `CaptureCmd`, `Get`, `Ls`, `Put`, `Pytftp`, `RelayCmd`, `Serve`, `run` |
+| `tftp.cli` | `main` |
 | `tftp.transfer` | `Receiver`, `SendFunction`, `Sender`, `SupportsRead`, `SupportsReadinto`, `SupportsWrite`, `Transfer`, `as_readinto`, `as_write` |
 | `tftp.listing` | `DirectoryListing`, `LIST_OPTION`, `ListEntry`, `MTIME_OPTION`, `dumps`, `loads` |
 | `tftp.netascii` | `NetasciiReader`, `NetasciiWriter`, `decode`, `encode`, `encoded_size` |

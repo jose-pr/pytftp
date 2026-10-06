@@ -135,7 +135,7 @@ def test_fit_window_reports_the_grant_and_leaves_the_logging_to_netimps(caplog):
 def test_a_zone_is_dropped_before_an_address_is_compared():
     from types import SimpleNamespace
 
-    from tftp.cli.handlers import client_directory
+    from tftp.cli._handlers import client_directory
     from tftp.relay import by_interface
 
     assert client_directory(("fe80::1%eth0", 1000)) == "fe80--1"

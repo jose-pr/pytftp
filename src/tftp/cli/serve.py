@@ -9,23 +9,22 @@ pytftp serve /srv/tftp --per-client --ignore-case --remap '^/?pxelinux/=boot/'
 from __future__ import annotations
 
 import json as _json
-import logging as _logging
 import os as _os
 import typing as _ty
 
-from ..options import LISTING_OPTIONS, PROFILES, STANDARD_OPTIONS, TFTPServerOptions
+from duho import Choice
+
 from .._result import TransferResult
-from ..server import TFTPServer, TFTPServerLimits
-from .common import (
-    PROFILE_NAMES,
-    Choice,
-    Traced,
-    bind_failure,
-    error,
-    port_range,
-    result_json,
-    shutdown_on_signal,
-)
+from ..backends._filesystem import FilesystemBackend
+from ..backends._http import HTTPBackend
+from ..backends._proxy import UpstreamBackend
+from ..options._policy import LISTING_OPTIONS, STANDARD_OPTIONS, TFTPServerOptions
+from ..options._profiles import PROFILES
+from ..server._policy import TFTPServerLimits
+from ..server._sync import TFTPServer
+from ._common import PROFILE_NAMES, Traced, bind_failure, error, port_range, result_json
+from ._handlers import CaseInsensitive, PerClient, Remap, parse_rule
+from ._signals import shutdown_on_signal
 
 __all__ = ["Serve"]
 
@@ -133,8 +132,6 @@ class Serve(Traced):
     ("--remap",)
 
     def _handler(self) -> _ty.Any:
-        from .handlers import Remap, parse_rule
-
         rules = [parse_rule(rule) for rule in self.remap]
         handler = self._source()
         return Remap(handler, rules) if rules else handler
@@ -145,18 +142,11 @@ class Serve(Traced):
         if (self.http or self.upstream) and (self.per_client or self.ignore_case):
             raise ValueError("--per-client and --ignore-case serve a directory")
         if self.http:
-            from ..backends import HTTPBackend
-
             return HTTPBackend(self.http, writable=self.write)
         if self.upstream:
-            from ..backends import UpstreamBackend
-
             return UpstreamBackend(self.upstream, writable=self.write)
         if not _os.path.isdir(self.root):
             raise ValueError("not a directory: %s" % self.root)
-        from ..backends import FilesystemBackend
-        from .handlers import CaseInsensitive, PerClient
-
         kind = CaseInsensitive if self.ignore_case else FilesystemBackend
 
         def make(directory: str) -> _ty.Any:
@@ -225,7 +215,7 @@ class Serve(Traced):
             server.close()
             error("error: %s" % exc)
             return 1
-        logger = _logging.getLogger("tftp")
+        logger = self._logger_
         address = server.server_address
         assert address is not None  # bound above
         source = self.http or (self.upstream and "upstream " + self.upstream) or _os.path.abspath(self.root)

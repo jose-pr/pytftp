@@ -323,6 +323,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `SupportsWrite`, `SupportsReadinto`, `SupportsRead`; `tftp.relay`: `UpstreamLike`;
   `tftp.capture`: `EventPredicate`, `Endpoint`. `OptionRegistry.copy()` returns the
   subclass it was called on.
+- **The command line is a package with one entry, `tftp.cli.main(argv=None) -> int`.**
+  The console script maps to it (`pytftp = "tftp.cli:main"`) and `python -m tftp`
+  calls it; `run` is gone, and `main` always returns a status (0, 1 or 2), where
+  `run` returned `None` for success. `tftp.cli` exports `main` and nothing else:
+  the command classes (`Pytftp`, `Get`, `Put`, `Ls`, `Serve`, `RelayCmd`,
+  `CaptureCmd`) are no longer importable from it, and the package imports without
+  duho (a run without the `cli` extra still prints one line naming it and exits 1).
+  `-v`, `-q` and `--loglevel` are accepted before the subcommand
+  (`pytftp -v get ...`) as well as after it.
+- **`PYTFTP_MCP=stdio` no longer serves the commands as tools.** Nothing in the
+  command is designed to be called as one (`serve` and `relay` never return,
+  `get` replaces files); the variable is ignored.
 
 ### Renamed
 

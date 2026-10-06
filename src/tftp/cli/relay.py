@@ -7,11 +7,12 @@ pytftp relay --route-subnet 10.1.0.0/16=10.1.0.5 --route-prefix windows/=wds.lan
 from __future__ import annotations
 
 import json as _json
-import logging as _logging
 import typing as _ty
 
-from ..relay import TFTPRelay, RouteTable, by_prefix, by_subnet
-from .common import Traced, bind_failure, error, port_range, shutdown_on_signal
+from ..relay._core import TFTPRelay
+from ..relay._routing import RouteTable, by_prefix, by_subnet
+from ._common import Traced, bind_failure, error, port_range
+from ._signals import shutdown_on_signal
 
 __all__ = ["RelayCmd"]
 
@@ -102,7 +103,7 @@ class RelayCmd(Traced):
             relay.close()
             error("error: %s" % exc)
             return 1
-        logger = _logging.getLogger("tftp")
+        logger = self._logger_
         address = relay.server_address
         assert address is not None  # bound above
         logger.info("relaying on %s port %d", address[0], address[1])

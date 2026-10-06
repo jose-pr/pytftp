@@ -33,8 +33,8 @@ src/tftp/
 ├── relay/             # transparent relay: _core.py (loop), _session.py (per transfer), _routing.py
 ├── path/              # pathlib-next: _local.py (TFTPPath), _uri.py (TFTPURIPath), _stream.py
 ├── capture/           # _events, _filters, _flows, _hook, _text; pcap.py, frames.py, live.py leave for another package
-├── cli/               # pytftp (duho): common.py, transfer.py (get/put/ls), serve.py, relay.py,
-│                      # capture.py, handlers.py (serve's --per-client/--ignore-case/--remap)
+├── cli/               # pytftp (duho): main() in __init__, _root.py (the root parser), _common.py,
+│                      # _client.py, _signals.py, one module per subcommand (get, put, ls, serve, relay, capture)
 ├── _arguments.py      # constructor argument checks: TypeError for a type, ValueError for a value
 ├── _bridge.py         # async streams <-> engine (used by both asyncio drivers)
 ├── _loggers.py        # the loggers, named for their role (tftp.client, tftp.server, tftp.relay, tftp.backends)

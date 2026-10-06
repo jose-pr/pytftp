@@ -208,7 +208,7 @@ def test_relay_port_range(root, make_server):
 @pytest.fixture
 def handlers():
     pytest.importorskip("duho")
-    from tftp.cli import handlers
+    from tftp.cli import _handlers as handlers
 
     return handlers
 

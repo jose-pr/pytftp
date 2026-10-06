@@ -17,7 +17,7 @@ _SRC = pathlib.Path(tftp.__file__).parent
 #: module, so a split or a rename never moves one; ``getLogger(__name__)`` would.
 _LIBRARY_LOGGERS = {"tftp.backends", "tftp.client", "tftp.relay", "tftp.server"}
 
-#: The command line logs under the package's own name.
+#: The command line logs under the package's own name, through duho's ``_logger_``.
 _COMMAND_LOGGER = "tftp"
 
 
@@ -39,14 +39,17 @@ def _get_logger_calls():
 
 
 def test_the_library_creates_exactly_the_named_loggers_and_only_in_one_module():
-    library = [(path, name) for path, name in _get_logger_calls() if not path.startswith("cli/")]
-    assert sorted(name for _, name in library) == sorted(_LIBRARY_LOGGERS)
-    assert {path for path, _ in library} == {"_loggers.py"}
+    calls = _get_logger_calls()
+    assert sorted(name for _, name in calls) == sorted(_LIBRARY_LOGGERS)
+    assert {path for path, _ in calls} == {"_loggers.py"}
 
 
 def test_the_command_line_logs_under_the_package_name():
-    commands = [(path, name) for path, name in _get_logger_calls() if path.startswith("cli/")]
-    assert commands and {name for _, name in commands} == {_COMMAND_LOGGER}
+    pytest.importorskip("duho")
+    from tftp.cli._common import Base
+    from tftp.cli._root import Pytftp
+
+    assert Pytftp._logger_name_ == Base._logger_name_ == _COMMAND_LOGGER
 
 
 def test_importing_every_module_creates_no_logger_beyond_the_named_ones():
@@ -111,26 +114,31 @@ _PUBLIC = {
 }
 
 _LEAVING = "leaves for another package with the rest of the capture decoding"
-_COMMAND = "a command module of the command line package, which is laid out separately"
 
 #: Modules public by name that are not in the role-based surface, each with why.
 _PUBLIC_FOR_NOW = {
     "tftp.capture.frames": _LEAVING,
     "tftp.capture.live": _LEAVING,
     "tftp.capture.pcap": _LEAVING,
-    "tftp.cli.capture": _COMMAND,
-    "tftp.cli.common": _COMMAND,
-    "tftp.cli.handlers": _COMMAND,
-    "tftp.cli.relay": _COMMAND,
-    "tftp.cli.serve": _COMMAND,
-    "tftp.cli.transfer": _COMMAND,
+}
+
+#: The command line's subcommand modules, each named for the subcommand it holds. They are
+#: public by name and promise nothing: the command line is not library API, and its one entry
+#: is ``tftp.cli.main``.
+_COMMAND_MODULES = {
+    "tftp.cli.capture",
+    "tftp.cli.get",
+    "tftp.cli.ls",
+    "tftp.cli.put",
+    "tftp.cli.relay",
+    "tftp.cli.serve",
 }
 
 #: A name imported from a package ``__init__`` by code that is not itself one,
 #: by ``(file, package, name)``, with why. Every other internal import names the
 #: module that defines the name.
 _FROM_AN_INIT = {
-    ("__main__.py", "tftp.cli", "run"): "the entry point's only job is to call the command line's",
+    ("__main__.py", "tftp.cli", "main"): "the entry point's only job is to call the command line's",
     ("backends/_http.py", "tftp", "__version__"): "defined in the root, which has no other module for it",
 }
 
@@ -138,6 +146,10 @@ _FROM_AN_INIT = {
 #: with the cycle or the optional dependency that forces it. Every other import
 #: of a sibling is at the top of its module.
 _LOCAL_IMPORTS = {
+    ("cli/__init__.py", "tftp.cli._root"): (
+        "the root parser's base class comes from duho, the optional `cli` extra: importing "
+        "`tftp.cli` must work without it so `main` can name the extra"
+    ),
     ("backends/_http.py", "tftp.__version__"): "the root defines it after it has imported this package",
     ("client/__init__.py", "tftp.client._asyncio"): (
         "the asyncio twin is bound on first use, so importing the package does not import asyncio"
@@ -179,11 +191,12 @@ def test_every_module_that_is_not_a_public_path_is_private_by_name():
         for p in _modules()
         if not any(part.startswith("_") and part != "__main__" for part in _dotted(p).split(".")[1:])
     }
-    declared = _PUBLIC | set(_PUBLIC_FOR_NOW)
+    declared = _PUBLIC | set(_PUBLIC_FOR_NOW) | _COMMAND_MODULES
     assert public - declared == set(), "start its name with an underscore, or declare it public"
     assert declared - public == set(), "no such public module: remove it from the list"
     assert all(reason.strip() for reason in _PUBLIC_FOR_NOW.values())
     assert not _PUBLIC & set(_PUBLIC_FOR_NOW)
+    assert not _COMMAND_MODULES & (_PUBLIC | set(_PUBLIC_FOR_NOW))
 
 
 def _package_of(path):
@@ -214,8 +227,8 @@ def test_no_module_imports_a_name_from_a_package_that_re_exports_it():
     packages' own ``__init__`` files, which this test does not read."""
     used = set()
     for path in _modules():
-        if path.name == "__init__.py" or _name(path).startswith("cli/"):
-            continue  # a package's own re-exports; the command line consumes the public API
+        if path.name == "__init__.py":
+            continue  # a package's own re-exports
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not isinstance(node, ast.ImportFrom):
                 continue
@@ -261,13 +274,7 @@ def test_no_module_is_over_the_size_limit_without_a_reason():
 
 
 def test_a_sibling_is_imported_at_the_top_of_a_module_or_the_reason_is_recorded():
-    # the command line's own lazy imports belong to the package's layout, which is separate
-    used = {
-        (_name(p), target)
-        for p in _modules()
-        if not _name(p).startswith("cli/")
-        for target in _local_sibling_imports(p)
-    }
+    used = {(_name(p), target) for p in _modules() for target in _local_sibling_imports(p)}
     assert sorted(used - set(_LOCAL_IMPORTS)) == [], "lift the import to the top, or record the cycle"
     assert sorted(set(_LOCAL_IMPORTS) - used) == [], "no such function-local import: remove it from the list"
     assert all(reason.strip() for reason in _LOCAL_IMPORTS.values())
