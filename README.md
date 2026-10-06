@@ -100,6 +100,17 @@ data = client.get("pxelinux.cfg/default")          # into memory
 client.upload("logs/boot.txt", b"ok\n")            # needs a writable server
 ```
 
+A `tftp://` URL names a file, and may carry transfer options in either
+spelling: `?name=value&name=value`, or `;name=value;name=value` (RFC 3617's own
+`;mode=netascii` is the second). Options in a URL are this library's extension:
+another tool reads the text after `?` as part of the file name.
+
+```python
+tftp.download_url("tftp://boot.example.net/images/vmlinuz?blksize=1428&windowsize=16", "vmlinuz")
+tftp.download_url("tftp://boot.example.net/images/vmlinuz;blksize=1428;windowsize=16", "vmlinuz")
+tftp.download_url("tftp://boot.example.net/images/vmlinuz;blksize=1428", "vmlinuz", blksize=512)  # 512 wins
+```
+
 Server with uploads, a bounded window and a completion hook:
 
 ```python

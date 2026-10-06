@@ -71,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   or an `FQDN` (`None`, say) raises `TypeError` where it raised `ValueError`.
 - **`TFTPURL` is a validated, immutable value, not a tuple.** The constructor
   normalises (host lower-cased, mode lower-cased) and refuses what no URL can
-  carry: a port outside 1..65535, a mode other than `octet` and `netascii`,
+  carry: a port outside 0..65535, a mode other than `octet` and `netascii`,
   an empty file name or one with a NUL, a host that is empty or holds `/ ? # @`
   or a space (`TFTPValueError`), and an argument of the wrong type
   (`TypeError`). It equals another `TFTPURL` only: it no longer equals, hashes
@@ -81,14 +81,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `tftp://h/caf%E9` keeps its octet where it used to become U+FFFD, and a
   `%25` IPv6 zone decodes. `str(url)` imports nothing, so formatting a URL no
   longer imports netimps and, on Windows, patches `socket`.
-- **`TFTPURL.parse` refuses what RFC 3617's grammar has no place for**, where
-  `parse_url` dropped it: a query (`tftp://h/f?x=1` named the file `f`), a
-  fragment, userinfo, port 0 (it was read as 69), a repeated `mode`
-  parameter (the last one won), an empty parameter (`f;`), a `NUL` in the file
-  name (`%00`), a control character, and a bracketed host that is not an IPv6
-  address. A literal `?` or `#` in a file name is written `%3F` or `%23`.
-  `parse_url(None)` and `parse_url(b"...")` raised `TFTPValueError`; `parse`
-  raises `TypeError`.
+- **`TFTPURL.parse` refuses what a URL has no place for**, where `parse_url`
+  dropped it: a fragment, userinfo, a repeated `mode` parameter (the last one
+  won), an empty parameter (`f;`), a `NUL` in the file name (`%00`), a control
+  character, and a bracketed host that is not an IPv6 address. A literal `#` in
+  a file name is written `%23`, and a literal `?` or `;` is written `%3F` or
+  `%3B`. `parse_url(None)` and `parse_url(b"...")` raised `TFTPValueError`;
+  `parse` raises `TypeError`. A query is read as transfer options (below), where
+  `tftp://h/f?x=1` used to name the file `f` and drop `x=1`, and port 0 is the
+  default port, 69, as `parse_url` read it.
+- **A `tftp://` URL carries transfer options**, in either of two spellings:
+  whichever of `?` and `;` comes first after the file name decides how the rest
+  is read. After `?`, `name=value` pairs separated by `&`
+  (`tftp://h/f?blksize=1428&windowsize=16`); after `;`, `name=value` pairs
+  separated by `;` (`tftp://h/f;blksize=1428;windowsize=16`, the same URL).
+  `mode` is a name in both. `TFTPURL(host, port, filename, mode="octet",
+  options=None)` gains `options`, a read-only mapping of lower-case names to
+  text that is part of equality and the hash; `str(url)` writes the `;`
+  spelling, `mode` first and only when it is not `octet`, then the options in
+  name order, so a URL with a mode and no options is exactly RFC 3617's form and
+  `TFTPURL.parse(str(url)) == url`. `blksize`, `windowsize`, `timeout`, `tsize`
+  and `rollover` are read as the `TFTPClient` keyword of the same name and
+  refused with `TFTPValueError` when the URL is built if their value cannot be
+  read (ASCII digits only) or the client would refuse its range; any other name
+  is a wire option requested verbatim (`extra_options`). Names are compared
+  without case; a repeated name, an empty pair, a pair with no `=`, a fragment,
+  a NUL or control character and both delimiters unencoded are refused. These
+  options are this library's extension: RFC 3617 defines `;mode=` only, and
+  another tool reads the text after `?` as part of the file name.
+  `TFTPURL("h", 0, "f")` and `tftp://h:0/f` are port 69.
+- **The consumers of a URL apply its options.** `download_url`, `upload_url`,
+  `pytftp get|put|ls tftp://...` and `TFTPURIPath` turn them into `TFTPClient`
+  keywords. An explicit keyword, command flag or `with_options` argument wins
+  over the URL's option of the same name, and `extra_options` merge name by
+  name; a client given to `TFTPURIPath.with_client` is used as it is. The
+  command's `--mode`, `--blksize`, `--windowsize` and `--timeout` default to
+  nothing given (the library's defaults, 1428, none and 1.0, are unchanged), so
+  the URL's value is used unless the flag is spelled, and `--no-options` drops
+  the URL's options too. `TFTPURIPath` reads a `;` in the last path segment as
+  parameters whatever they are (a file whose name holds a `;` raises
+  `TFTPValueError`; write the `;` as `%3B` in a `?` list instead), where only
+  `;mode=` was read and anything else stayed in the file name.
 - A socket-buffer shortfall on a windowed transfer is logged by netimps, once
   per process for each distinct request and grant, at `WARNING` on the logger
   `netimps._sockets`; `tftp` no longer logs it at `DEBUG`.

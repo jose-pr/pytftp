@@ -477,7 +477,13 @@ for `pathlib_next.uri.UriPath`, registered through the
 without importing `tftp`. `filename`, `transfer_mode`;
 `with_options(**client_options)` / `with_client(client)` choose the
 `TFTPClient` (default: the URI's host and port, library defaults). The URI host
-may be an address object; `TFTPClient` accepts one.
+may be an address object; `TFTPClient` accepts one. The URI's transfer options
+(`;name=value` on the last segment, or a `?name=value&name=value` query; the
+`TFTPURL` grammar) apply to its operations: `with_options` keywords win over
+them, a client given to `with_client` is used as it is, and text that grammar
+refuses raises `TFTPValueError` from the operation. The path is decoded before
+it is read, so a `;` in a file name cannot be told from a parameter: write such
+a value in the query.
 
 Both support what TFTP can do, plus listing against a server speaking
 `x-list`:
@@ -751,30 +757,65 @@ options untouched. `repr()` of a packet is a constructor call.
 
 ## URIs (RFC 3617)
 
-- **`TFTPURL(host, port, filename, mode="octet")`** — a frozen, hashable
-  value that equals only another `TFTPURL`; it is not a tuple. The constructor
-  validates and normalises: `host` is lower-cased text (an `ipaddress` address
-  or interface, or a `netimps.Host`, is reduced to its text; an IPv6 literal
-  is compressed and its zone kept), `port` an `int` in 1..65535, `mode`
-  `"octet"` or `"netascii"` (any case), `filename` non-empty text without a NUL.
-  A wrong type raises `TypeError`, a value no URL can carry `TFTPValueError`.
-  `str(url)` is the URL (IPv6 hosts bracketed, a zone written `%25`, the port
-  only when it is not 69, `;mode=netascii` only for netascii) and imports
-  nothing: `TFTPURL.parse(str(url)) == url`.
+- **`TFTPURL(host, port, filename, mode="octet", options=None)`** — a frozen,
+  hashable value that equals only another `TFTPURL`; it is not a tuple. The
+  constructor validates and normalises: `host` is lower-cased text (an
+  `ipaddress` address or interface, or a `netimps.Host`, is reduced to its
+  text; an IPv6 literal is compressed and its zone kept), `port` an `int` in
+  0..65535 (`0` is the default port, 69), `mode` `"octet"` or `"netascii"`
+  (any case), `filename` non-empty text without a NUL, `options` a mapping of
+  option name to text (an `int` value is written in decimal), kept as a
+  read-only `Mapping[str, str]` with lower-case names, part of equality and
+  the hash and in the `repr` only when not empty. A wrong type raises
+  `TypeError`, a value no URL can carry `TFTPValueError`. `str(url)` is the
+  URL (IPv6 hosts bracketed, a zone written `%25`, the port only when it is not
+  69) in the `;` spelling: `;mode=netascii` first and only for netascii, then
+  `;name=value` for each option in name order, names and values
+  percent-encoded. A URL with a mode and no options is exactly RFC 3617's form.
+  `str()` imports nothing: `TFTPURL.parse(str(url)) == url`.
 - **`TFTPURL.parse(text)`** — RFC 3617's `"tftp://" host "/" file [ mode ]`
-  plus an optional `:port` (default 69) and `/` inside the file name. The
-  file name is percent-decoded as UTF-8 with `surrogateescape` (the packet
-  codec's own, so any octet sequence round-trips); a `%25` zone decodes. Raises
-  `TFTPValueError` for another scheme, no host or file, a query (`?`), a
-  fragment (`#`), userinfo, port 0 or a non-digit port, a control character, a
-  NUL in the file name, a repeated or unknown parameter and `mode=mail` (write
-  `%3F` or `%23` for a literal `?` or `#`); `TypeError` for a non-`str`.
+  plus an optional `:port` (default 69; `0` and an empty port mean 69), `/`
+  inside the file name, and options. The file name and the option names and
+  values are percent-decoded as UTF-8 with `surrogateescape` (the packet
+  codec's own, so any octet sequence round-trips); a `%25` zone decodes.
+  Raises `TFTPValueError` for another scheme, no host or file, a fragment
+  (`#`), userinfo, a non-digit or out-of-range port, a control character, a NUL
+  in the file name, both option delimiters unencoded, a repeated name, an
+  empty pair, a pair with no `=`, an option value its name cannot read, and
+  `mode=mail` (write `%23` for a literal `#`); `TypeError` for a non-`str`.
   **`TFTPURL.try_parse(text, default=None)`** returns `default` instead of
   raising `TFTPValueError`.
+- **Options in a URL are this library's extension** (RFC 3617 defines `;mode=`
+  and nothing else; another tool reads the text after `?` as part of the file
+  name, and curl looks for `;mode=` only). Two spellings; whichever of `?` and
+  `;` comes first after the file name decides how the rest is read:
+  `tftp://h/f?blksize=1428&windowsize=16` (after `?`, `name=value` pairs
+  separated by `&`) is the same URL as `tftp://h/f;blksize=1428;windowsize=16`
+  (after `;`, separated by `;`). `mode` is a name in both. The other
+  spelling's delimiter inside the list is refused: write `;` and `?` in a
+  value as `%3B` and `%3F` (`&` in the `;` spelling is plain text). Names are
+  compared without case and stored lower-case; a repeated one is refused.
+
+  | Name | Read as the `TFTPClient` keyword | Value |
+  | --- | --- | --- |
+  | `mode` | the transfer mode | `octet` or `netascii` |
+  | `blksize` | `blksize` | `mtu`, or ASCII digits within 8..65464 |
+  | `windowsize` | `windowsize` | ASCII digits, 1..65535 |
+  | `timeout` | `timeout` | seconds, ASCII digits with an optional fraction, above 0 |
+  | `tsize` | `tsize` | `1`, `0`, `true` or `false` |
+  | `rollover` | `rollover` | `0` or `1` |
+  | any other | `extra_options`, requested verbatim | any text |
+
+  A value a known name cannot read, or whose range the client refuses, raises
+  `TFTPValueError` when the URL is built, not at the transfer.
 - **`download_url(url, dst, /, *, progress=None, **client_options)`**,
   **`upload_url(url, src, /, ...)`** — one-shot transfers by URL; the operands
   are positional-only, so `src=` in `client_options` is the client's source
-  address.
+  address. The URL's options become client keywords; a keyword in
+  `client_options` wins over the URL's option of the same name, and
+  `extra_options` merge name by name with the keyword winning. The command
+  line (`pytftp get|put|ls tftp://...`) and `TFTPURIPath` follow the same
+  rule: a flag or a `with_options` argument wins over the URL.
 
 ## Netascii
 
@@ -830,12 +871,17 @@ pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--tra
              [--extract DIR] [--json] [--payload]
 ```
 
-- `-b 0` / `-w 0` request no `blksize` / `windowsize`; defaults are 1428 and 0.
+- `-b 0` / `-w 0` request no `blksize` / `windowsize`; without a flag the
+  URL's option is used, else 1428 and none. A flag wins over a URL's option
+  of the same name (`-m`, `-b`, `-w`, `-t`), and `--no-options` drops the
+  URL's options too.
   `--compat PROFILE` (`strict`, `default`, `pxe`, `hpa`, `legacy`) replaces the
   option flags with the profile's settings (client and server alike).
 - `get` writes to the remote file's basename by default; `-` is stdout.
   `put` from `-` (stdin) needs a remote name. A `tftp://` URL replaces HOST and
-  the remote name (and sets the mode with `;mode=netascii`).
+  the remote name, sets the mode with `;mode=netascii` and may carry transfer
+  options (`"tftp://h/f?blksize=1024&windowsize=8"`; quote the `?` and `&`
+  for the shell).
 - `--trace` prints every datagram on stderr; `--pcap FILE` writes them as a
   capture (Wireshark-readable).
 - `serve --http URL` is the HTTP gateway, `serve --upstream` the terminating

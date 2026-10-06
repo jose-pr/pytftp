@@ -594,3 +594,31 @@ def test_a_bad_option_is_refused_before_any_transfer(root, spy_server):
     with pytest.raises(TFTPValueError):
         upload_url(base + "big.bin;windowsize=0", b"x")
     assert spy.requests == []
+
+
+def _documented_urls():
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    sources = [root / "README.md", root / "src" / "tftp" / "AGENTS.md", root / "src" / "tftp" / "uri.py"]
+    sources += [root / "src" / "tftp" / "cli" / "transfer.py", root / "src" / "tftp" / "path" / "uri.py"]
+    sources += sorted((root / "docs").glob("*.md"))
+    found = []
+    for source in sources:
+        if not source.is_file():
+            pytest.skip("not a checkout: %s" % source.name)
+        for text in re.findall(r"tftp://[^\s`\"')>]+", source.read_text(encoding="utf-8")):
+            text = text.rstrip(".,")
+            if ("?" in text or ";" in text) and not re.search(r"\[[;:?]|HOST|FILE|\.\.\.", text):
+                found.append((source.name, text))
+    return found
+
+
+def test_every_url_with_options_in_the_documents_parses():
+    found = _documented_urls()
+    assert len(found) >= 8, found
+    for name, text in found:
+        url = TFTPURL.parse(text.replace("&amp;", "&"))
+        assert TFTPURL.parse(str(url)) == url, (name, text)
+    assert any(TFTPURL.parse(text).options for _, text in found)
