@@ -38,9 +38,9 @@ from ..server.handler import TFTPRequestContext
 from ..server.listener import Arrival, Listener
 from ..server.policy import TFTPServerLimits
 from ..server.session import PortAllocator, as_port_range, bind_transfer
-from .routing import RouteFunction, Upstream
+from ._routing import RouteFunction, Upstream
 from ..server.stats import RELAY_COUNTERS, TFTPStats
-from .session import RelaySession, RelaySummary
+from ._session import RelaySession, RelaySummary
 
 __all__ = ["TFTPRelay"]
 
@@ -58,7 +58,7 @@ class TFTPRelay(SelectorService):
     :param route: an upstream (``"host"``, ``"host:port"``, ``(host, port)``,
         :class:`Upstream`) for every request, or a route callable
         ``route(request, context) -> upstream | None`` (see
-        :mod:`tftp.relay.routing`). ``None`` refuses with ERROR 2.
+        :mod:`tftp.relay`). ``None`` refuses with ERROR 2.
     :param host, port: where to listen for requests (as for ``TFTPServer``).
     :param idle_timeout: end a transfer after this long without traffic.
         Keep it above the largest timeout a peer may negotiate times its

@@ -1,7 +1,7 @@
 # `tftp.relay`
 
-::: tftp.relay.core
+::: tftp.relay._core
 
-::: tftp.relay.routing
+::: tftp.relay._routing
 
-::: tftp.relay.session
+::: tftp.relay._session
