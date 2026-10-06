@@ -2,3 +2,6 @@
 # ending; a tool writing LF into a CRLF file leaves it MIXED, which defeats
 # diffs and hides real changes inside whitespace churn.
 * text=auto eol=lf
+
+# Captured bytes and the output recorded for them are kept as written.
+tests/capture_cases/** -text
