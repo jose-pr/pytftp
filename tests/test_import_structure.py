@@ -280,13 +280,48 @@ def test_a_sibling_is_imported_at_the_top_of_a_module_or_the_reason_is_recorded(
     assert all(reason.strip() for reason in _LOCAL_IMPORTS.values())
 
 
-def test_importing_the_package_loads_no_optional_dependency():
-    code = (
-        "import sys, tftp\n"
-        "print(sorted(n for n in sys.modules if n.split('.')[0] in ('netimps', 'duho', 'pathlib_next')))\n"
+#: Dependencies the package imports inside the functions that use them, so importing it loads none.
+_LAZY = ("netimps", "pktcap", "duho", "pathlib_next")
+
+
+@pytest.mark.parametrize("statement", ["import tftp", "import tftp.capture"])
+def test_importing_the_package_loads_no_optional_dependency(statement):
+    code = "import sys, %s\nprint(sorted(n for n in sys.modules if n.split('.')[0] in %r))\n" % (
+        statement.split()[1],
+        _LAZY,
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
     assert ast.literal_eval(out.strip()) == []
+
+
+def _module_level_imports(path, name):
+    """The lines at which a module imports ``name`` outside a function and outside ``if TYPE_CHECKING:``."""
+    found = []
+
+    def visit(node):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            if isinstance(child, ast.If) and "TYPE_CHECKING" in ast.unparse(child.test):
+                continue
+            if isinstance(child, ast.Import) and any(a.name.split(".")[0] == name for a in child.names):
+                found.append(child.lineno)
+            if (
+                isinstance(child, ast.ImportFrom)
+                and not child.level
+                and (child.module or "").split(".")[0] == name
+            ):
+                found.append(child.lineno)
+            visit(child)
+
+    visit(ast.parse(path.read_text(encoding="utf-8")))
+    return found
+
+
+@pytest.mark.parametrize("name", ["pktcap", "netimps"])
+def test_no_module_imports_a_required_dependency_at_its_top(name):
+    at_top = {_name(p): _module_level_imports(p, name) for p in _modules()}
+    assert {path: lines for path, lines in at_top.items() if lines} == {}
 
 
 def test_a_command_module_defines_only_commands_and_their_bases():
