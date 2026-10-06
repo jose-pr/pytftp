@@ -37,6 +37,7 @@ from ..exceptions import (
     TFTPError,
     TFTPProtocolError,
     TransferTimeoutError,
+    TransferTooLargeError,
 )
 from ..listing import LIST_OPTION, MTIME_OPTION
 from ..options import (
@@ -51,6 +52,7 @@ from ..options import (
 from ..options.base import read_decimal
 from ..packet import TFTPErrorCode, TFTPOpcode, decode, encode_ack, encode_request
 from ..packet.codec import _encode_error
+from ..server.handler import AtomicWriter
 
 if TYPE_CHECKING:  # netimps is imported lazily at run time
     from netimps import HostLike
@@ -123,23 +125,92 @@ def _repeats_without_options(exc: RemoteError) -> bool:
     return exc.code in _OPTION_ERRORS and getattr(exc, "_in_request", False)
 
 
+#: What ``listdir`` accepts of a listing, in octets: a directory entry is a line.
+LISTING_LIMIT = 16 << 20
+
+
+def _is_plain_file(source: Any) -> bool:
+    """``source`` is a file on disk read as it is: ``fstat`` then says how much is left."""
+    return isinstance(getattr(source, "raw", source), io.FileIO)
+
+
 def _source_size(source: Any) -> Optional[int]:
+    """Octets ``source`` has left to send, or ``None`` when that cannot be told cheaply."""
     if isinstance(source, (bytes, bytearray, memoryview)):
         return len(source)
     size = getattr(source, "size", None)
     if isinstance(size, int) and not isinstance(size, bool):
         return size
     try:
-        return os.fstat(source.fileno()).st_size - source.tell()
-    except (AttributeError, OSError, ValueError, io.UnsupportedOperation):
-        pass
-    try:
+        if _is_plain_file(source):
+            return os.fstat(source.fileno()).st_size - source.tell()
         here = source.tell()
         end = source.seek(0, os.SEEK_END)
         source.seek(here)
         return end - here
-    except (AttributeError, OSError, ValueError):
+    except (AttributeError, OSError, ValueError, io.UnsupportedOperation):
         return None
+
+
+def _failure(error: TFTPError) -> BaseException:
+    """What a caller sees of a failed transfer: the local exception behind it, else the error itself."""
+    cause = error.__cause__
+    return error if cause is None or isinstance(cause, TFTPError) else cause
+
+
+class _PathSink:
+    """Where a download to a path is written.
+
+    A temporary file beside the path, which :meth:`commit` replaces the path
+    with, so a failed download leaves what was there. A path that exists and is
+    not a regular file (a device, a pipe) is written in place and never removed.
+    """
+
+    def __init__(self, dst: Any) -> None:
+        path = os.fspath(dst)
+        self._file: Optional[BinaryIO] = None
+        self._atomic: Optional[AtomicWriter] = None
+        self.sink: Any
+        if os.path.exists(path) and not os.path.isfile(path):
+            self._file = self.sink = open(path, "wb")
+        else:
+            self._atomic = self.sink = AtomicWriter(path, mode=0o666)
+
+    def commit(self) -> None:
+        """The download succeeded: put it in place (``OSError`` when that fails)."""
+        if self._file is not None:
+            self._file.close()
+        else:
+            self._atomic.close()  # type: ignore[union-attr]
+
+    def abort(self) -> None:
+        """The download failed or was interrupted: leave what was there."""
+        if self._file is not None:
+            self._file.close()
+        else:
+            self._atomic.abort()  # type: ignore[union-attr]
+
+
+def _bounded(write: Callable[[memoryview], Any], limit: Optional[int], announced: Optional[int]) -> Callable:
+    """``write`` refusing the octets past ``limit`` and past the ``announced`` size.
+
+    A block that would pass either is not written. A write that raises
+    ``WouldBlock`` is not counted: the engine offers the block again.
+    """
+    done = 0
+
+    def bounded(view: memoryview) -> Any:
+        nonlocal done
+        total = done + len(view)
+        if limit is not None and total > limit:
+            raise TransferTooLargeError("the download passes max_size (%d octets)" % limit)
+        if announced is not None and total > announced:
+            raise TFTPProtocolError("the server sent more than the %d octets it announced" % announced)
+        result = write(view)
+        done = total
+        return result
+
+    return bounded
 
 
 def _mtu_blksize(server: Any) -> int:
@@ -184,6 +255,7 @@ class _ClientBase:
         backoff: float = 2.0,
         max_timeout: Optional[float] = None,
         deadline: Optional[float] = None,
+        max_size: Optional[int] = None,
         strict_source: bool = True,
         utimeout: bool = False,
         extra_options: Optional[Mapping[str, object]] = None,
@@ -200,6 +272,8 @@ class _ClientBase:
                 raise ValueError("max_timeout must be at least timeout (%s), got %s" % (timeout, max_timeout))
         if deadline is not None:
             check_seconds("deadline", deadline, finite=False)
+        if max_size is not None:
+            check_int("max_size", max_size, 1)
         check_seconds("backoff", backoff, minimum=1.0)
         check_family(family)
         src = check_source(src)
@@ -230,6 +304,7 @@ class _ClientBase:
         self.backoff = backoff
         self.max_timeout = max_timeout if max_timeout is not None else timeout * 8
         self.deadline = deadline
+        self.max_size = max_size
         self.strict_source = strict_source
         self.utimeout = utimeout
         self.extra_options = dict(extra_options or {})
@@ -408,6 +483,26 @@ class _ClientBase:
             if n < 2 or (self.strict_source and not same_host(peer, server)):
                 continue  # not the server we asked
             return n, peer
+
+    def _limit(self, max_size: Optional[int]) -> Optional[int]:
+        """The bound a download is held to: the call's ``max_size``, else the client's."""
+        if max_size is not None:
+            check_int("max_size", max_size, 1)
+            return max_size
+        return self.max_size
+
+    def _admit(self, negotiated: Negotiated, send: Callable[[bytes], Any], limit: Optional[int]) -> None:
+        """Refuse (ERROR 3) a download whose announced size is already past ``limit``."""
+        if limit is None or negotiated.tsize is None or negotiated.tsize <= limit:
+            return
+        refusal = TransferTooLargeError(
+            "the server announced %d octets, past max_size (%d)" % (negotiated.tsize, limit)
+        )
+        try:
+            send(_encode_error(refusal.code, refusal.message))
+        except OSError:
+            pass
+        raise refusal
 
     def _expires(self, started: float) -> Optional[float]:
         """When a transfer begun at ``started`` (``time.monotonic``) must be over, or ``None``."""

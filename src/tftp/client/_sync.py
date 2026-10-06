@@ -21,12 +21,16 @@ from .._sockets import fit_window
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from ._core import (
     _RECV_BUFFER,
+    LISTING_LIMIT,
     PathOrFile,
     Progress,
     RemoteStat,
     _ClientBase,
     _mode,
+    _bounded,
+    _failure,
     _NotListing,
+    _PathSink,
     _repeats_without_options,
     _source_size,
 )
@@ -73,6 +77,11 @@ class TFTPClient(_ClientBase):
         ``None`` is eight times ``timeout``.
     :param deadline: seconds a whole transfer may take, or ``None``. A
         relative duration, unlike the engine's ``deadline`` attribute.
+    :param max_size: octets a download may bring, or ``None`` for no bound. A
+        server announcing more, or sending more than it announced or than
+        this, is sent ERROR 3 and ends the download with
+        :class:`TransferTooLargeError` (or :class:`TFTPProtocolError` for
+        more than it announced).
     :param utimeout: send a fractional ``timeout`` as tftp-hpa's ``utimeout``
         (otherwise a fractional timeout is not requested at all).
     :param extra_options: further options to request, verbatim (extensions
@@ -101,29 +110,30 @@ class TFTPClient(_ClientBase):
         *,
         mode: str = "octet",
         progress: Optional[Progress] = None,
+        max_size: Optional[int] = None,
     ) -> TransferResult:
         """Fetch ``filename`` into ``dst`` (a path or a writable binary file).
 
-        A path is written in place and removed again if the transfer fails.
-        Raises :class:`RemoteError`, :class:`TransferTimeoutError` or
-        :class:`TFTPProtocolError`; ``OSError`` for local failures.
+        A path is written to a temporary file beside it, which replaces it when
+        the transfer succeeds: a download that fails leaves what was there. A
+        path that exists and is not a regular file (a device, a pipe) is
+        written in place. ``max_size`` overrides the client's.
+        Raises :class:`RemoteError`, :class:`TransferTimeoutError`,
+        :class:`TransferTooLargeError` or :class:`TFTPProtocolError`;
+        ``OSError`` for local failures.
         """
         mode = _mode(mode)
+        limit = self._limit(max_size)
         if isinstance(dst, (str, os.PathLike)):
-            path = os.fspath(dst)
-            fileobj = open(path, "wb")
+            target = _PathSink(dst)
             try:
-                result = self._download(filename, fileobj, mode, progress)
+                result = self._download(filename, target.sink, mode, progress, limit)
+                target.commit()
             except BaseException:
-                fileobj.close()
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
+                target.abort()
                 raise
-            fileobj.close()
             return result
-        return self._download(filename, dst, mode, progress)
+        return self._download(filename, dst, mode, progress, limit)
 
     def path(self, *segments: Any, mode: str = "octet") -> Any:
         """A :class:`tftp.path.TFTPPath` on this server (needs the ``path`` extra)."""
@@ -131,10 +141,10 @@ class TFTPClient(_ClientBase):
 
         return TFTPPath(*segments, client=self, mode=mode)
 
-    def get(self, filename: str, *, mode: str = "octet") -> bytes:
+    def get(self, filename: str, *, mode: str = "octet", max_size: Optional[int] = None) -> bytes:
         """Fetch ``filename`` and return its contents."""
         buffer = io.BytesIO()
-        self.download(filename, buffer, mode=mode)
+        self.download(filename, buffer, mode=mode, max_size=max_size)
         return buffer.getvalue()
 
     def upload(
@@ -161,11 +171,11 @@ class TFTPClient(_ClientBase):
     # -- internals --------------------------------------------------------
 
     def _download(
-        self, filename: str, sink: BinaryIO, mode: str, progress: Optional[Progress]
+        self, filename: str, sink: BinaryIO, mode: str, progress: Optional[Progress], limit: Optional[int]
     ) -> TransferResult:
         writer: Any = NetasciiWriter(sink) if mode == "netascii" else sink
         write = as_write(writer)
-        result = self._run(TFTPOpcode.RRQ, filename, mode, None, write, None, progress)
+        result = self._run(TFTPOpcode.RRQ, filename, mode, None, write, None, progress, limit)
         if mode == "netascii":
             writer.flush()
         return result
@@ -181,23 +191,23 @@ class TFTPClient(_ClientBase):
             size = _source_size(source)
             reader = source
         read = as_readinto(reader)
-        return self._run(TFTPOpcode.WRQ, filename, mode, size, None, read, progress)
+        return self._run(TFTPOpcode.WRQ, filename, mode, size, None, read, progress, None)
 
-    def _run(self, opcode, filename, mode, size, write, read, progress) -> TransferResult:
+    def _run(self, opcode, filename, mode, size, write, read, progress, limit) -> TransferResult:
         family, server, address = self._endpoint()
         options = self._options(opcode == TFTPOpcode.RRQ, size, address)
         with self._socket(family) as sock:
             started = time.monotonic()
             try:
                 return self._exchange(
-                    sock, server, opcode, filename, mode, options, write, read, progress, started
+                    sock, server, opcode, filename, mode, options, write, read, progress, started, limit
                 )
             except RemoteError as exc:
                 # Only a refusal of the request itself: nothing has been
                 # read or written yet, so asking again is safe.
                 if options and self.fallback and _repeats_without_options(exc):
                     return self._exchange(
-                        sock, server, opcode, filename, mode, {}, write, read, progress, started
+                        sock, server, opcode, filename, mode, {}, write, read, progress, started, limit
                     )
                 raise
 
@@ -224,8 +234,11 @@ class TFTPClient(_ClientBase):
         """
         return self._stat(filename, mode, self._expires(time.monotonic()))
 
-    def listdir(self, dirname: str = "") -> List[ListEntry]:
+    def listdir(self, dirname: str = "", *, max_size: Optional[int] = LISTING_LIMIT) -> List[ListEntry]:
         """The entries of directory ``dirname`` (``""`` is the server's root).
+
+        A listing longer than ``max_size`` octets (16 MiB) raises
+        :class:`TransferTooLargeError`.
 
         Needs a server speaking pytftp's ``x-list`` extension (``tftp.TFTPServer``
         allowing :data:`LISTING_OPTIONS`); there is no standard way to list
@@ -237,13 +250,13 @@ class TFTPClient(_ClientBase):
         lister = self._lister()
         sink = io.BytesIO()
         try:
-            lister.download(dirname or ".", sink)
+            lister.download(dirname or ".", sink, max_size=max_size)
         except _NotListing:
             raise NotADirectoryError(errno.ENOTDIR, "not a directory", dirname) from None
         return listing.loads(sink.getvalue())
 
     def _exchange(
-        self, sock, server, opcode, filename, mode, options, write, read, progress, started
+        self, sock, server, opcode, filename, mode, options, write, read, progress, started, limit
     ) -> TransferResult:
         is_read = opcode == TFTPOpcode.RRQ
         request = encode_request(opcode, filename, mode=mode, options=options)
@@ -285,6 +298,10 @@ class TFTPClient(_ClientBase):
         self._negotiated(negotiated, peer, send)
         now = clock()
         if is_read:
+            self._admit(negotiated, send, limit)
+            announced = negotiated.tsize if mode == "octet" else None
+            if limit is not None or announced is not None:
+                write = _bounded(write, limit, announced)
             reply = None if first_data else encode_ack(0)
             session = Receiver(send, write, negotiated, self.retries, now, reply=reply, **engine)
             if first_data:
@@ -341,7 +358,7 @@ class TFTPClient(_ClientBase):
                 progress(reported, total)
 
         if session.error is not None:
-            raise session.error
+            raise _failure(session.error)
 
         if is_read and self.dally:
             linger = clock() + negotiated.timeout

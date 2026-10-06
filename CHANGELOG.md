@@ -459,6 +459,31 @@ Old names are not kept as aliases.
   ERROR 4, where the blocking client waited out its retries and
   `AsyncTFTPClient` waited for ever (or raised `IndexError` for a cut ACK)
   and an upload began from a cut ACK.
+- **`download()` to a path no longer loses the file that was there.** It writes
+  a hidden temporary file beside the path and replaces the path when the
+  transfer succeeds; the file was opened (and so truncated) before the host
+  was resolved, and removed on any failure, an unparsable host or a server's
+  "not found" included. A path that exists and is not a regular file (a device,
+  a pipe) is written in place and never removed. A symlink at the path is
+  replaced, the directory must be writable, and on Windows a file another
+  handle has open cannot be replaced (`PermissionError`, the file intact).
+  `AtomicWriter(path, *, overwrite=True, mode=None)` takes the file's
+  permissions with `mode`.
+- **A local failure during a transfer is raised as itself**, where the client
+  raised a bare `TFTPError` whose `__cause__` held it: a full disk is
+  `OSError(ENOSPC)`, as the header says, and an exception from an asynchronous
+  stream is that exception. The server is still sent the ERROR for it.
+- **`max_size` bounds what a server can make a client hold.** `TFTPClient(
+  max_size=)`, and `max_size=` on `download`, `get` and `listdir`, refuse a
+  download past it with ERROR 3 and the new `TransferTooLargeError`, before
+  the block that passes it is written, and a server announcing more in its
+  `tsize` is refused before any data moves. A server sending more than the
+  `tsize` it announced is `TFTPProtocolError` where it was accepted.
+  `listdir()` is bounded at 16 MiB by default; the bound on a download is off
+  unless set.
+- The `tsize` announced for an upload from a wrapped file object (a
+  `gzip.GzipFile`, say) is the size of what is read, where `fstat` of the file
+  underneath announced the compressed size (139 octets for 100000).
 - **`deadline` bounds every call.** `size()`, `stat()` and the request phase of a
   transfer end by it (a `size()` with `deadline=0.5` took 6 seconds, a `get()`
   with a longer `timeout` waited the whole `timeout`), and the limit has one

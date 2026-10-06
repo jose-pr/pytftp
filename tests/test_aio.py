@@ -6,6 +6,7 @@ import asyncio
 import io
 import os
 import sys
+import time
 
 import pytest
 
@@ -534,3 +535,166 @@ def test_an_engine_with_nothing_outstanding_is_woken_after_one_timeout(loop_fact
         assert Idle.woken is not None, "the engine was never told that a timeout passed"
 
     run(main(), loop_factory)
+
+
+# -- the destination file, local failures and sizes ------------------------------------------------
+
+OLD = b"the previous good copy"
+
+
+def _beside(directory):
+    return sorted(p.name for p in directory.iterdir())
+
+
+@pytest.fixture
+def dest(tmp_path):
+    directory = tmp_path / "out"
+    directory.mkdir()
+    path = directory / "important.cfg"
+    path.write_bytes(OLD)
+    return path
+
+
+@LOOPS
+@pytest.mark.parametrize("host", ["127.0.0.1", None, "h:+70"], ids=["not-found", "host-is-none", "bad-host"])
+def test_a_failed_download_to_a_path_leaves_the_file_that_was_there(loop_factory, dest, host):
+    from tftp.packet import encode_error
+
+    async def main():
+        with FakePeer(lambda data: [encode_error(tftp.TFTPErrorCode.FILE_NOT_FOUND)]) as peer:
+            client = AsyncTFTPClient(host, peer.port, timeout=0.5, retries=1)
+            with pytest.raises(Exception):
+                await client.download("f", dest)
+
+    run(main(), loop_factory)
+    assert dest.read_bytes() == OLD
+    assert _beside(dest.parent) == ["important.cfg"]
+
+
+@LOOPS
+def test_a_download_to_a_path_replaces_the_file_on_success(loop_factory, root, make_server, dest):
+    server = make_server(root)
+
+    async def main():
+        return await async_client(server).download("big.bin", dest)
+
+    result = run(main(), loop_factory)
+    assert dest.read_bytes() == (root / "big.bin").read_bytes() and result.bytes == 300_001
+    assert _beside(dest.parent) == ["important.cfg"]
+
+
+@LOOPS
+def test_a_download_that_fails_while_data_arrives_leaves_the_file_and_no_temporary(loop_factory, dest):
+    async def main():
+        with FakePeer(_data_for_ever) as peer:
+            client = AsyncTFTPClient(
+                "127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None, deadline=0.3
+            )
+            with pytest.raises(tftp.TransferTimeoutError):
+                await client.download("f", dest)
+            assert len(peer.seen) > 2, "no data had arrived when the transfer failed"
+
+    run(main(), loop_factory)
+    assert dest.read_bytes() == OLD
+    assert _beside(dest.parent) == ["important.cfg"]
+
+
+@LOOPS
+def test_a_download_into_a_directory_that_does_not_exist_sends_nothing(loop_factory, tmp_path):
+    async def main():
+        with FakePeer() as peer:
+            client = AsyncTFTPClient("127.0.0.1", peer.port, timeout=0.2, retries=1)
+            with pytest.raises(FileNotFoundError):
+                await client.download("f", tmp_path / "missing" / "x.bin")
+            assert peer.seen == []
+
+    run(main(), loop_factory)
+
+
+def _data_for_ever(data):
+    from tftp.packet import encode_data
+
+    packet = tftp.decode(data)
+    if isinstance(packet, tftp.RequestPacket):
+        return [encode_data(1, b"x" * 512)]
+    if isinstance(packet, tftp.AckPacket):
+        return [encode_data(packet.block + 1, b"x" * 512)]
+    return []
+
+
+@LOOPS
+def test_a_failing_sink_is_raised_as_itself_and_the_server_is_told(loop_factory):
+    import errno
+
+    class DiskFull:
+        async def write(self, data):
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+    async def main():
+        with FakePeer(_data_for_ever) as peer:
+            client = AsyncTFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None)
+            with pytest.raises(OSError) as info:
+                await client.download("f", DiskFull())
+            assert info.value.errno == errno.ENOSPC and not isinstance(info.value, tftp.TFTPError)
+            for _ in range(100):
+                if any(isinstance(tftp.decode(d), tftp.ErrorPacket) for _, d in peer.seen):
+                    break
+                await asyncio.sleep(0.05)
+            return [tftp.decode(d) for _, d in peer.seen]
+
+    seen = run(main(), loop_factory)
+    assert any(isinstance(p, tftp.ErrorPacket) and p.code == tftp.TFTPErrorCode.DISK_FULL for p in seen)
+
+
+@LOOPS
+def test_max_size_ends_a_download_the_server_does_not_end(loop_factory, tmp_path):
+    class Sink:
+        def __init__(self):
+            self.data = bytearray()
+
+        async def write(self, data):
+            self.data += data
+
+    sink = Sink()
+
+    async def main():
+        with FakePeer(_data_for_ever) as peer:
+            client = AsyncTFTPClient(
+                "127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None, max_size=700
+            )
+            with pytest.raises(tftp.TransferTooLargeError):
+                await client.download("f", sink)
+            with pytest.raises(tftp.TransferTooLargeError):
+                await client.get("f", max_size=1000)
+            with pytest.raises(tftp.TransferTooLargeError):
+                await client.download("f", tmp_path / "x.bin")
+            for _ in range(100):
+                if any(tftp.decode(d).__class__ is tftp.ErrorPacket for _, d in peer.seen):
+                    break
+                await asyncio.sleep(0.05)
+            return [tftp.decode(d) for _, d in peer.seen]
+
+    seen = run(main(), loop_factory)
+    assert any(isinstance(p, tftp.ErrorPacket) and p.code == tftp.TFTPErrorCode.DISK_FULL for p in seen)
+    assert len(sink.data) <= 700
+    assert not (tmp_path / "x.bin").exists()
+
+
+@LOOPS
+def test_a_listing_is_bounded_and_the_server_is_told(loop_factory, root, make_server):
+    from test_listing import LISTING
+
+    server = make_server(root, options=LISTING)
+
+    async def main():
+        client = async_client(server)
+        with pytest.raises(tftp.TransferTooLargeError):
+            await client.listdir(max_size=10)
+        assert await client.listdir()
+
+    run(main(), loop_factory)
+    for _ in range(100):
+        if server.stats_snapshot()["failed"] >= 1:
+            break
+        time.sleep(0.05)
+    assert server.stats_snapshot()["failed"] >= 1

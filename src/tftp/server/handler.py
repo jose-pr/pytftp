@@ -15,6 +15,8 @@ import dataclasses
 import functools
 import inspect
 import os
+import secrets
+import stat
 import tempfile
 from typing import Any, Optional, Protocol, Tuple, Union
 
@@ -271,20 +273,42 @@ class ThreadedHandler:
         )
 
 
+def _create_beside(directory: str, name: str, mode: int) -> Tuple[int, str]:
+    """A new file ``.name.<random>.part`` in ``directory``, as ``(fd, path)``, made as ``open`` makes one."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    while True:
+        tmp = os.path.join(directory, ".%s.%s.part" % (name, secrets.token_hex(4)))
+        try:
+            return os.open(tmp, flags, mode), tmp
+        except FileExistsError:
+            continue
+
+
 class AtomicWriter:
     """Writes to a temporary file beside ``path`` and renames it on ``close``.
 
     A partial upload therefore never replaces or appears as ``path``;
-    :meth:`abort` deletes the temporary file.
+    :meth:`abort` deletes the temporary file. The temporary file is private
+    (mode 0600) unless ``mode`` is given: then it is created with that mode
+    less the process's umask, and takes the permissions of the file it
+    replaces. A process killed mid-transfer leaves ``.name.*.part`` beside
+    ``path``.
     """
 
     copies_writes = True  # write() copies its argument (see as_write)
 
-    def __init__(self, path: str, *, overwrite: bool = True) -> None:
+    def __init__(self, path: str, *, overwrite: bool = True, mode: Optional[int] = None) -> None:
         self.path = path
         self.overwrite = overwrite
         directory, name = os.path.split(path)
-        fd, self._tmp = tempfile.mkstemp(prefix=".%s." % name, suffix=".part", dir=directory or ".")
+        if mode is None:
+            fd, self._tmp = tempfile.mkstemp(prefix=".%s." % name, suffix=".part", dir=directory or ".")
+        else:
+            fd, self._tmp = _create_beside(directory or ".", name, mode)
+            try:
+                os.chmod(self._tmp, stat.S_IMODE(os.stat(path).st_mode))
+            except OSError:  # nothing to take the permissions of
+                pass
         self._file = os.fdopen(fd, "wb")
         self.closed = False
 

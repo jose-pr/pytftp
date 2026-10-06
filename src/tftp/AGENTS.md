@@ -27,7 +27,7 @@ takes every field by keyword.
 
 | Module | Exports |
 | --- | --- |
-| `tftp` | `AccessViolation`, `AckPacket`, `AsyncTFTPClient`, `AsyncTFTPServer`, `AtomicWriter`, `DataPacket`, `DiskFull`, `ErrorPacket`, `FileAlreadyExists`, `FileNotFound`, `FilesystemBackend`, `IllegalOperation`, `ListEntry`, `NetasciiReader`, `NetasciiWriter`, `NoSuchUser`, `OptionAckPacket`, `OptionNegotiationError`, `Profile`, `Receiver`, `RemoteError`, `RequestPacket`, `Sender`, `TFTPClient`, `TFTPDecodeError`, `TFTPError`, `TFTPErrorCode`, `TFTPHandler`, `TFTPOpcode`, `TFTPProtocolError`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPServerOptions`, `TFTPURL`, `TFTPValueError`, `TransferAbortedError`, `TransferResult`, `TransferTimeoutError`, `UnknownTransferID`, `WouldBlock`, `decode`, `download`, `download_url`, `upload`, `upload_url` |
+| `tftp` | `AccessViolation`, `AckPacket`, `AsyncTFTPClient`, `AsyncTFTPServer`, `AtomicWriter`, `DataPacket`, `DiskFull`, `ErrorPacket`, `FileAlreadyExists`, `FileNotFound`, `FilesystemBackend`, `IllegalOperation`, `ListEntry`, `NetasciiReader`, `NetasciiWriter`, `NoSuchUser`, `OptionAckPacket`, `OptionNegotiationError`, `Profile`, `Receiver`, `RemoteError`, `RequestPacket`, `Sender`, `TFTPClient`, `TFTPDecodeError`, `TFTPError`, `TFTPErrorCode`, `TFTPHandler`, `TFTPOpcode`, `TFTPProtocolError`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPServerOptions`, `TFTPURL`, `TFTPValueError`, `TransferAbortedError`, `TransferResult`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock`, `decode`, `download`, `download_url`, `upload`, `upload_url` |
 | `tftp.client` | `AsyncTFTPClient`, `MODES`, `RemoteStat`, `TFTPClient`, `download`, `upload` |
 | `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
 | `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `by_interface`, `by_prefix`, `by_subnet` |
@@ -36,7 +36,7 @@ takes every field by keyword.
 | `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
 | `tftp.backends` | `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `Pipe`, `UpstreamBackend`, `normalize_name` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` |
-| `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `CaptureFormatError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `UnknownTransferID`, `WouldBlock` |
+| `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `CaptureFormatError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
 | `tftp.cli` | `CaptureCmd`, `Get`, `Ls`, `Put`, `Pytftp`, `RelayCmd`, `Serve`, `run` |
 | `tftp.transfer` | `Receiver`, `Sender`, `Transfer`, `as_readinto`, `as_write` |
 | `tftp.uri` | `TFTPURL`, `download_url`, `upload_url` |
@@ -66,7 +66,7 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 
 ## Client
 
-**`TFTPClient(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, src=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, deadline=None, strict_source=True, utimeout=False, extra_options=None, registry=None, on_negotiated=None)`**
+**`TFTPClient(host, port=69, *, timeout=1.0, retries=5, blksize=1428, windowsize=None, tsize=True, rollover=None, timeout_option=True, family=0, src=None, fallback=True, dally=False, backoff=2.0, max_timeout=None, deadline=None, max_size=None, strict_source=True, utimeout=False, extra_options=None, registry=None, on_negotiated=None)`**
 
 - `host` — a string (name or address; `"[v6]"`, `"host:port"` and
   `"[v6]:port"` are accepted, and a port written there overrides `port`), an
@@ -88,6 +88,13 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
   the wait for the server's first answer as well. `None` is unlimited. A relative duration: the client's
   `deadline` argument and attribute are not the engine's `deadline` (the
   instant it next wants `on_timeout`, see "Transfer engine").
+- `max_size` — octets a download may bring; `None` is unlimited (a download
+  to a file has no default bound). A server announcing a `tsize` above it is
+  sent ERROR 3 before any data moves, and a block that would pass it is not
+  written: ERROR 3 and `TransferTooLargeError` (code 3). A server sending more
+  than the `tsize` it announced (octet mode) is `TFTPProtocolError` after
+  ERROR 4. `download`, `get` and `listdir` take `max_size=` to override it for
+  one call; `listdir` defaults to 16 MiB.
 - The first answer to a request is an ERROR, an OACK, DATA 1 (a read) or
   ACK 0 (a write), whole: anything else (another block, a packet cut short,
   one that does not decode) is `TFTPProtocolError` after an ERROR 4.
@@ -140,10 +147,16 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 
 Methods (each returns a `TransferResult` unless noted):
 
-- **`download(filename, dst, *, mode="octet", progress=None)`** — `dst` is a
-  path or a writable binary file. A path is created/truncated and **removed
-  again if the transfer fails**.
-- **`get(filename, *, mode="octet") -> bytes`** — download into memory.
+- **`download(filename, dst, *, mode="octet", progress=None, max_size=None)`** —
+  `dst` is a path or a writable binary file. A path is written to a hidden
+  temporary file beside it (`.name.*.part`, which a process killed mid-transfer
+  leaves behind) that **replaces the path only when the transfer succeeds**: a
+  failed download leaves the file that was there, and the directory must be
+  writable. A symlink at `dst` is replaced, not written through. A path that
+  exists and is not a regular file (a device, a pipe) is written in place and
+  never removed. On Windows a file another handle has open cannot be replaced:
+  `PermissionError`, the file intact.
+- **`get(filename, *, mode="octet", max_size=None) -> bytes`** — download into memory.
 - **`upload(filename, src, *, mode="octet", progress=None)`** — `src` is
   a path, a readable binary file (`readinto` or `read`), or bytes-like.
 - **`put(filename, data, *, mode="octet")`** — upload bytes.
@@ -159,7 +172,7 @@ Methods (each returns a `TransferResult` unless noted):
   `None` and report a directory as `FileNotFound`. A request refused with
   ERROR 8, 4 or 0 is retried as a plain size probe (with `fallback`). `filename`
   `""` is the root.
-- **`listdir(dirname="") -> list[ListEntry(name, is_dir, size, mtime)]`** —
+- **`listdir(dirname="", *, max_size=16 MiB) -> list[ListEntry(name, is_dir, size, mtime)]`** —
   a directory listing from a server speaking `x-list`. `NotADirectoryError`
   when the name is a file (the transfer is abandoned at once);
   `FileNotFound` when it does not exist — which is also what a server
@@ -174,9 +187,11 @@ Methods (each returns a `TransferResult` unless noted):
   (as the subclass for its code: `FileNotFound`, `AccessViolation`, ...),
   `TFTPProtocolError` (the server broke the protocol, e.g. an OACK with a larger
   `blksize` than requested — the client sends ERROR 8 first, or a DATA longer
-  than the negotiated `blksize`), or `OSError` for local failures (resolution,
-  the local file, a send the host refuses: the asyncio client raises it at
-  once and does not wait out the retries).
+  than the negotiated `blksize`), `TransferTooLargeError` (`max_size`), or the
+  local exception for a local failure: an `OSError` from the file or stream
+  (resolution, the local file, a send the host refuses: the asyncio client
+  raises it at once and does not wait out the retries), as it was raised, after
+  the server was sent the ERROR for it.
 
 **`download(host, filename, dst, /, *, port=69, mode="octet", progress=None, **client_options)`**
 and **`upload(host, filename, src, /, ...)`** — one-shot wrappers;
@@ -476,9 +491,12 @@ anything outside its directory),
 outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
 `MTIME_OPTION`.
 
-**`AtomicWriter(path, *, overwrite=True)`** — writes to a hidden temp file beside
+**`AtomicWriter(path, *, overwrite=True, mode=None)`** — writes to a hidden temp file beside
 `path`; `close()` renames it into place (refusing with ERROR 6 if
-`overwrite=False` and `path` appeared meanwhile); `abort()` deletes it.
+`overwrite=False` and `path` appeared meanwhile); `abort()` deletes it. The
+temp file is private (0600) unless `mode` is given: it is then created as
+`open()` creates a file with that mode (less the umask) and takes the
+permissions of the file it replaces.
 
 ## asyncio
 
@@ -769,7 +787,9 @@ not one of these. `TFTPError` plays three roles, told apart by the subclass:
   code 4, or 8 for option problems), **`TransferTimeoutError(message)`** (also
   a `TimeoutError`, with `errno` `None`; retries exhausted or the client's `deadline`
   passed) and **`TransferAbortedError(message)`** (cancelled locally:
-  `abort()`, server shutdown), both with code 0.
+  `abort()`, server shutdown), both with code 0, and
+  **`TransferTooLargeError(message)`** (a download past the client's
+  `max_size`; code 3).
 - *What `TransferResult.error` holds*: whichever of the above ended the
   transfer, or `None`.
 

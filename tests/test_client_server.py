@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import os
+import sys
 import time
 
 import pytest
@@ -220,7 +222,7 @@ def test_failed_upload_leaves_nothing_behind(root, make_server):
             buffer[: len(buffer)] = b"a" * len(buffer)
             return len(buffer)
 
-    with pytest.raises(tftp.TFTPError):
+    with pytest.raises(OSError, match="source went away"):
         client_for(server, blksize=512, tsize=False).upload("partial.bin", Failing())
     deadline = time.monotonic() + 2
     while server.active_sessions and time.monotonic() < deadline:
@@ -535,3 +537,255 @@ def test_the_time_limit_is_one_start_across_the_fallback_to_a_request_without_op
         elapsed = time.monotonic() - started
     # 0.8 s in the first request, so 0.7 s are left for the second; a fresh limit would end it near 2.3 s.
     assert 1.4 <= elapsed < 2.3
+
+
+# -- the destination file, local failures and sizes ------------------------------------------------
+
+
+def _data_for_ever(data):
+    from tftp.packet import encode_data
+
+    packet = tftp.decode(data)
+    if isinstance(packet, tftp.RequestPacket):
+        return [encode_data(1, b"x" * 512)]
+    if isinstance(packet, tftp.AckPacket):
+        return [encode_data(packet.block + 1, b"x" * 512)]
+    return []
+
+
+OLD = b"the previous good copy"
+
+
+def _beside(directory):
+    return sorted(p.name for p in directory.iterdir())
+
+
+@pytest.fixture
+def dest(tmp_path):
+    """A destination that already holds a file, in a directory of its own."""
+    directory = tmp_path / "out"
+    directory.mkdir()
+    path = directory / "important.cfg"
+    path.write_bytes(OLD)
+    return path
+
+
+def _refused(code):
+    from tftp.packet import encode_error
+
+    return lambda data: [encode_error(code)]
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(lambda port: ("127.0.0.1", port, {}, "f"), id="server-says-not-found"),
+        pytest.param(lambda port: (None, port, {}, "f"), id="host-is-none"),
+        pytest.param(lambda port: ("h:+70", port, {}, "f"), id="host-cannot-be-parsed"),
+        pytest.param(lambda port: ("127.0.0.1", 1, {"timeout": 0.1, "retries": 1}, "f"), id="nobody-answers"),
+    ],
+)
+def test_a_failed_download_to_a_path_leaves_the_file_that_was_there(dest, build):
+    with FakePeer(_refused(tftp.TFTPErrorCode.FILE_NOT_FOUND)) as peer:
+        host, port, options, name = build(peer.port)
+        client = tftp.TFTPClient(host, port, **dict({"timeout": 0.5, "retries": 1}, **options))
+        with pytest.raises(Exception):
+            client.download(name, dest)
+    assert dest.read_bytes() == OLD
+    assert _beside(dest.parent) == ["important.cfg"]
+
+
+def test_a_download_to_a_path_replaces_the_file_on_success(root, make_server, dest):
+    server = make_server(root)
+    result = client_for(server).download("big.bin", dest)
+    assert dest.read_bytes() == (root / "big.bin").read_bytes() and result.bytes == 300_001
+    assert _beside(dest.parent) == ["important.cfg"]
+
+
+def test_a_download_to_a_new_path_is_created_with_the_modes_open_gives(root, make_server, tmp_path):
+    server = make_server(root)
+    client_for(server).download("one.bin", tmp_path / "fresh.bin")
+    plain = tmp_path / "plain.bin"
+    plain.write_bytes(b"")
+    if os.name == "posix":
+        assert (tmp_path / "fresh.bin").stat().st_mode & 0o777 == plain.stat().st_mode & 0o777
+
+
+def test_a_download_that_fails_while_data_arrives_leaves_the_file_and_no_temporary(dest):
+    with FakePeer(_data_for_ever) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None, deadline=0.3)
+        with pytest.raises(tftp.TransferTimeoutError):
+            client.download("f", dest)
+        assert len(peer.seen) > 2, "no data had arrived when the transfer failed"
+    assert dest.read_bytes() == OLD
+    assert _beside(dest.parent) == ["important.cfg"]
+
+
+def test_a_download_into_a_directory_that_does_not_exist_sends_nothing(tmp_path):
+    with FakePeer() as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.2, retries=1)
+        with pytest.raises(FileNotFoundError):
+            client.download("f", tmp_path / "missing" / "x.bin")
+        assert peer.seen == []
+    assert _beside(tmp_path) == []
+
+
+def test_a_download_to_a_device_is_written_in_place(root, make_server, tmp_path):
+    server = make_server(root)
+    result = client_for(server).download("big.bin", os.devnull)
+    assert result.bytes == 300_001
+    assert [n for n in os.listdir(".") if n.endswith(".part")] == []
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no named pipes here")
+def test_a_download_to_a_named_pipe_is_written_in_place(root, make_server, tmp_path):
+    import threading
+
+    pipe = tmp_path / "pipe"
+    os.mkfifo(pipe)
+    got = []
+    reader = threading.Thread(target=lambda: got.append(pipe.open("rb").read()), daemon=True)
+    reader.start()
+    client_for(make_server(root)).download("one.bin", pipe)
+    reader.join(5)
+    assert got == [b"x"] and _beside(tmp_path) == ["pipe"]
+
+
+def test_a_download_over_a_file_that_cannot_be_replaced_leaves_it_and_no_temporary(root, make_server, dest):
+    server = make_server(root)
+    with open(dest, "rb"):  # on Windows a file another handle has open cannot be replaced
+        try:
+            client_for(server).download("one.bin", dest)
+            replaced = True
+        except OSError as exc:
+            replaced = False
+            assert not isinstance(exc, tftp.TFTPError)
+    assert replaced is (sys.platform != "win32")
+    assert dest.read_bytes() == (OLD if not replaced else b"x")
+    assert _beside(dest.parent) == ["important.cfg"]
+
+
+class _DiskFull:
+    def write(self, data):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+
+def test_a_local_failure_is_raised_as_itself_and_the_server_is_told():
+    from tftp.packet import encode_data
+
+    with FakePeer(lambda data: [encode_data(1, b"x" * 512)]) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None)
+        with pytest.raises(OSError) as info:
+            client.download("f", _DiskFull())
+        assert info.value.errno == errno.ENOSPC and not isinstance(info.value, tftp.TFTPError)
+        assert wait_until(lambda: len(peer.seen) >= 2)
+        told = tftp.decode(peer.seen[1][1])
+    assert isinstance(told, tftp.ErrorPacket) and told.code == tftp.TFTPErrorCode.DISK_FULL
+
+
+def test_a_failing_source_is_raised_as_itself():
+    class Broken(io.RawIOBase):
+        def readinto(self, view):
+            raise OSError(errno.EIO, "input/output error")
+
+    with FakePeer(lambda data: [b"\x00\x04\x00\x00"]) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None)
+        with pytest.raises(OSError) as info:
+            client.upload("f", Broken())
+    assert info.value.errno == errno.EIO and not isinstance(info.value, tftp.TFTPError)
+
+
+def test_max_size_ends_a_download_the_server_does_not_end():
+    sink = io.BytesIO()
+    with FakePeer(_data_for_ever) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None, max_size=700)
+        with pytest.raises(tftp.TransferTooLargeError):
+            client.download("f", sink)
+        assert wait_until(lambda: len(peer.seen) >= 3)
+        told = tftp.decode(peer.seen[2][1])
+    assert isinstance(told, tftp.ErrorPacket) and told.code == tftp.TFTPErrorCode.DISK_FULL
+    assert len(sink.getvalue()) == 512  # the block that would pass the bound was not written
+
+
+def test_max_size_per_call_overrides_the_clients_and_get_takes_it():
+    with FakePeer(_data_for_ever) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None)
+        with pytest.raises(tftp.TransferTooLargeError):
+            client.get("f", max_size=1000)
+
+
+def test_max_size_refuses_a_size_the_server_announces_before_any_data_moves():
+    from tftp.packet import encode_oack
+
+    answer = lambda data: [encode_oack({"tsize": "1000000000"})]
+    with FakePeer(answer) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None, max_size=1000)
+        with pytest.raises(tftp.TransferTooLargeError):
+            client.get("f")
+        assert wait_until(lambda: len(peer.seen) >= 2)
+        told = tftp.decode(peer.seen[1][1])
+    assert isinstance(told, tftp.ErrorPacket) and told.code == tftp.TFTPErrorCode.DISK_FULL
+    assert len(peer.seen) == 2  # no ACK 0 went first
+
+
+def test_a_server_sending_more_than_its_tsize_is_a_protocol_error():
+    from tftp.packet import encode_data, encode_oack
+
+    def script(data):
+        packet = tftp.decode(data)
+        if isinstance(packet, tftp.RequestPacket):
+            return [encode_oack({"tsize": "10"})]
+        if isinstance(packet, tftp.AckPacket) and packet.block == 0:
+            return [encode_data(1, b"x" * 512)]
+        return []
+
+    with FakePeer(script) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None)
+        with pytest.raises(tftp.TFTPProtocolError):
+            client.get("f")
+
+
+def test_a_listing_is_bounded_and_the_server_is_told(root, make_server):
+    from test_listing import LISTING
+
+    server = make_server(root, options=LISTING)
+    client = client_for(server)
+    with pytest.raises(tftp.TransferTooLargeError):
+        client.listdir(max_size=10)
+    assert wait_until(lambda: server.stats_snapshot()["failed"] >= 1)
+    assert client.listdir()  # the default bound is 16 MiB
+
+
+def test_max_size_is_validated_when_the_client_is_built():
+    with pytest.raises(TypeError):
+        tftp.TFTPClient("127.0.0.1", max_size="9")
+    with pytest.raises(ValueError):
+        tftp.TFTPClient("127.0.0.1", max_size=0)
+
+
+def test_the_size_announced_for_an_upload_is_the_size_of_what_is_sent(spy_server, tmp_path):
+    import gzip
+
+    from tftp.client._core import _source_size
+
+    payload = b"A" * 100_000
+    plain = tmp_path / "plain.gz"
+    with gzip.open(plain, "wb") as handle:
+        handle.write(payload)
+    with gzip.open(plain, "rb") as handle:
+        assert _source_size(handle) == len(payload) != plain.stat().st_size
+    spy, base = spy_server()
+    port = int(base.rsplit(":", 1)[1].rstrip("/"))
+    with gzip.open(plain, "rb") as handle:
+        tftp.TFTPClient("127.0.0.1", port, timeout=0.5).upload("up.bin", handle)
+    assert spy.requests[-1].options["tsize"] == str(len(payload))
+    with open(plain, "rb") as handle:
+        assert _source_size(handle) == plain.stat().st_size
+    handle = io.BufferedReader(io.BytesIO(b"abc"))
+    assert _source_size(handle) == 3
+
+    class Unsized:
+        def readinto(self, view):
+            return 0
+
+    assert _source_size(Unsized()) is None

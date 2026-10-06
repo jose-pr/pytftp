@@ -23,11 +23,15 @@ from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
 from .._sockets import fit_window, same_host
 from ._core import (
+    LISTING_LIMIT,
     Progress,
     RemoteStat,
     _ClientBase,
     _mode,
+    _bounded,
+    _failure,
     _NotListing,
+    _PathSink,
     _repeats_without_options,
     _source_size,
 )
@@ -196,28 +200,29 @@ class AsyncTFTPClient(_ClientBase):
         *,
         mode: str = "octet",
         progress: Optional[Progress] = None,
+        max_size: Optional[int] = None,
     ) -> TransferResult:
-        """Fetch ``filename`` into ``dst``: a path, or an object with ``async write(data)``."""
-        mode = _mode(mode)
-        if isinstance(dst, (str, os.PathLike)):
-            path = os.fspath(dst)
-            fileobj = open(path, "wb")
-            try:
-                result = await self._download(filename, fileobj, mode, progress, bridged=False)
-            except BaseException:
-                fileobj.close()
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
-                raise
-            fileobj.close()
-            return result
-        return await self._download(filename, dst, mode, progress, bridged=True)
+        """Fetch ``filename`` into ``dst``: a path, or an object with ``async write(data)``.
 
-    async def get(self, filename: str, *, mode: str = "octet") -> bytes:
+        As :meth:`tftp.TFTPClient.download`: a path is replaced only when the
+        transfer succeeds, and ``max_size`` overrides the client's.
+        """
+        mode = _mode(mode)
+        limit = self._limit(max_size)
+        if isinstance(dst, (str, os.PathLike)):
+            target = _PathSink(dst)
+            try:
+                result = await self._download(filename, target.sink, mode, progress, limit, bridged=False)
+                target.commit()
+            except BaseException:
+                target.abort()
+                raise
+            return result
+        return await self._download(filename, dst, mode, progress, limit, bridged=True)
+
+    async def get(self, filename: str, *, mode: str = "octet", max_size: Optional[int] = None) -> bytes:
         buffer = io.BytesIO()
-        await self._download(filename, buffer, mode, None, bridged=False)
+        await self._download(filename, buffer, mode, None, self._limit(max_size), bridged=False)
         return buffer.getvalue()
 
     async def upload(
@@ -252,12 +257,14 @@ class AsyncTFTPClient(_ClientBase):
         expires = self._expires(time.monotonic())
         return await loop.run_in_executor(None, lambda: self._stat(filename, mode, expires))
 
-    async def listdir(self, dirname: str = "") -> List[ListEntry]:
+    async def listdir(self, dirname: str = "", *, max_size: Optional[int] = LISTING_LIMIT) -> List[ListEntry]:
         """:meth:`tftp.TFTPClient.listdir`, as a coroutine."""
         lister = self._lister()
         sink = io.BytesIO()
         try:
-            await lister._download(dirname or ".", sink, "octet", None, bridged=False)
+            await lister._download(
+                dirname or ".", sink, "octet", None, lister._limit(max_size), bridged=False
+            )
         except _NotListing:
             raise NotADirectoryError(errno.ENOTDIR, "not a directory", dirname) from None
         return listing.loads(sink.getvalue())
@@ -306,7 +313,14 @@ class AsyncTFTPClient(_ClientBase):
     # -- internals ---------------------------------------------------------------
 
     async def _download(
-        self, filename: str, sink: Any, mode: str, progress: Optional[Progress], *, bridged: bool
+        self,
+        filename: str,
+        sink: Any,
+        mode: str,
+        progress: Optional[Progress],
+        limit: Optional[int],
+        *,
+        bridged: bool,
     ) -> TransferResult:
         bridge = None
         if bridged:
@@ -316,7 +330,7 @@ class AsyncTFTPClient(_ClientBase):
             target = sink
         writer: Any = NetasciiWriter(target) if mode == "netascii" else target
         result = await self._run(
-            TFTPOpcode.RRQ, filename, mode, None, as_write(writer), None, progress, bridge
+            TFTPOpcode.RRQ, filename, mode, None, as_write(writer), None, progress, bridge, limit
         )
         if mode == "netascii":
             writer.flush()
@@ -339,10 +353,12 @@ class AsyncTFTPClient(_ClientBase):
             size = _source_size(source) if bridge is None else bridge.size
             reader = source
         return await self._run(
-            TFTPOpcode.WRQ, filename, mode, size, None, as_readinto(reader), progress, bridge
+            TFTPOpcode.WRQ, filename, mode, size, None, as_readinto(reader), progress, bridge, None
         )
 
-    async def _run(self, opcode, filename, mode, size, write, read, progress, bridge) -> TransferResult:
+    async def _run(
+        self, opcode, filename, mode, size, write, read, progress, bridge, limit
+    ) -> TransferResult:
         from netimps import bind
 
         loop = asyncio.get_running_loop()
@@ -369,6 +385,7 @@ class AsyncTFTPClient(_ClientBase):
                     progress,
                     started,
                     bridge,
+                    limit,
                 )
             except RemoteError as exc:
                 # Retry without options only when the request itself was
@@ -380,7 +397,20 @@ class AsyncTFTPClient(_ClientBase):
         raise AssertionError("unreachable")  # pragma: no cover
 
     async def _exchange_async(
-        self, loop, sock, server, opcode, filename, mode, options, write, read, progress, started, bridge
+        self,
+        loop,
+        sock,
+        server,
+        opcode,
+        filename,
+        mode,
+        options,
+        write,
+        read,
+        progress,
+        started,
+        bridge,
+        limit,
     ) -> TransferResult:
         is_read = opcode == TFTPOpcode.RRQ
         request = encode_request(opcode, filename, mode=mode, options=options)
@@ -418,6 +448,10 @@ class AsyncTFTPClient(_ClientBase):
             driver.total = negotiated.tsize
             now = loop.time()
             if is_read:
+                self._admit(negotiated, driver.send, limit)
+                announced = negotiated.tsize if mode == "octet" else None
+                if limit is not None or announced is not None:
+                    write = _bounded(write, limit, announced)
                 reply = None if first_data else encode_ack(0)
                 driver.engine = Receiver(
                     driver.send, write, negotiated, self.retries, now, reply=reply, **engine_kwargs
@@ -432,7 +466,7 @@ class AsyncTFTPClient(_ClientBase):
             await driver.done
             engine = driver.engine
             if engine.error is not None:
-                raise engine.error
+                raise _failure(engine.error)
             if is_read and self.dally:
                 await asyncio.sleep(negotiated.timeout)  # the protocol keeps re-ACKing meanwhile
             return TransferResult(

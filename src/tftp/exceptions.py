@@ -10,8 +10,9 @@ subclass:
 - what a client raises for an ERROR the server sent: :class:`RemoteError` and
   its leaves, one per defined error code;
 - what a transfer that failed reports in ``TransferResult.error``, whichever
-  of these it was, including :class:`TransferTimeoutError` and
-  :class:`TransferAbortedError` for a local deadline or an ``abort()``.
+  of these it was, including :class:`TransferTimeoutError`,
+  :class:`TransferAbortedError` and :class:`TransferTooLargeError` for a local
+  deadline, an ``abort()`` or a client's ``max_size``.
 
 Text that is not the value it was asked to become raises
 :class:`TFTPValueError`, which is also a :class:`ValueError`:
@@ -48,6 +49,7 @@ __all__ = [
     "OptionNegotiationError",
     "TransferTimeoutError",
     "TransferAbortedError",
+    "TransferTooLargeError",
     "TFTPValueError",
     "TFTPDecodeError",
     "CaptureFormatError",
@@ -233,6 +235,20 @@ class TransferAbortedError(TFTPError):
 
     def __init__(self, message: str = "transfer aborted") -> None:
         super().__init__(TFTPErrorCode.NOT_DEFINED, message)
+
+    def _constructor_args(self) -> Tuple[object, ...]:
+        return (self.message,)
+
+
+class TransferTooLargeError(TFTPError):
+    """A download would bring more than the client's ``max_size``.
+
+    Raised, and sent to the server as ERROR 3, before the octet that passes the
+    bound is written; ``code`` is ``DISK_FULL``.
+    """
+
+    def __init__(self, message: str = "transfer too large") -> None:
+        super().__init__(TFTPErrorCode.DISK_FULL, message)
 
     def _constructor_args(self) -> Tuple[object, ...]:
         return (self.message,)
