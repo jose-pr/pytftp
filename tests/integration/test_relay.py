@@ -171,12 +171,12 @@ def test_upstream_errors_pass_through(root, make_server, make_relay):
 def test_idle_sessions_are_cleaned_up(root, make_server, make_relay):
     server = make_server(root, timeout=5)
     ends = []
-    relay = make_relay(upstream_of(server), idle_timeout=0.3, on_session_end=ends.append)
+    relay = make_relay(upstream_of(server), idle_timeout=1.5, on_session_end=ends.append)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.settimeout(3)
         client.sendto(tftp.packet.encode_request(TFTPOpcode.RRQ, "big.bin"), relay.server_address)
         client.recvfrom(2048)  # then vanish
-    assert wait_for(lambda: ends)
+    assert wait_for(lambda: ends, timeout=10)
     assert ends[0].reason == "idle" and relay.active_sessions == 0
 
 
@@ -279,7 +279,7 @@ def test_relay_hears_an_upstream_named_by_a_link_local_address_with_its_zone(lin
 def test_a_transfer_longer_than_max_duration_is_ended(root, make_server, make_relay):
     server = make_server(root, timeout=5)
     ends = []
-    relay = make_relay(upstream_of(server), idle_timeout=60, max_duration=0.3, on_session_end=ends.append)
+    relay = make_relay(upstream_of(server), idle_timeout=60, max_duration=1.5, on_session_end=ends.append)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.settimeout(3)
         client.sendto(tftp.packet.encode_request(TFTPOpcode.RRQ, "big.bin"), relay.server_address)

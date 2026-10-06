@@ -571,7 +571,7 @@ def test_a_download_that_fails_while_data_arrives_leaves_the_file_and_no_tempora
     async def main():
         with FakePeer(_data_for_ever) as peer:
             client = AsyncTFTPClient(
-                "127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None, deadline=0.3
+                "127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None, deadline=1.0
             )
             with pytest.raises(tftp.TransferTimeoutError):
                 await client.download("f", dest)

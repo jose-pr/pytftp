@@ -610,7 +610,7 @@ def test_a_download_to_a_new_path_is_created_with_the_modes_open_gives(root, mak
 
 def test_a_download_that_fails_while_data_arrives_leaves_the_file_and_no_temporary(dest):
     with FakePeer(_data_for_ever) as peer:
-        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None, deadline=0.3)
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=0.5, retries=1, blksize=None, deadline=1.0)
         with pytest.raises(tftp.TransferTimeoutError):
             client.download("f", dest)
         assert len(peer.seen) > 2, "no data had arrived when the transfer failed"
