@@ -9,6 +9,9 @@ Three sources of :class:`PacketEvent`:
   :func:`analyze` in one call;
 - live capture on Linux (``pktcap.sniff``).
 
+:func:`dissect_tftp` is TFTP as a pktcap layer (:class:`TFTPLayer`), registered by
+:func:`register_tftp_dissector` and by nothing else.
+
 :func:`trace_to` turns a pktcap writer (``pktcap.PcapWriter``,
 ``pktcap.PcapngWriter``) into a trace hook, so a run is recorded for Wireshark, and
 :func:`combine_hooks` joins several trace hooks into the one ``trace=`` takes.
@@ -19,6 +22,7 @@ from __future__ import annotations
 import os
 from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union, cast
 
+from ._dissector import TFTPLayer, dissect_tftp, register_tftp_dissector
 from ._events import PacketEvent, new_session_id, summarize
 from ._filters import FILTER_KEYS, EventPredicate, compile_filter
 from ._flows import CapturedTransfer, DatagramLike, Endpoint, FlowTracker
@@ -38,6 +42,9 @@ __all__ = [
     "FlowTracker",
     "combine_hooks",
     "trace_to",
+    "TFTPLayer",
+    "dissect_tftp",
+    "register_tftp_dissector",
     "Analysis",
     "analyze",
 ]

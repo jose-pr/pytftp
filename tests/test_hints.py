@@ -1,9 +1,9 @@
 """Every public annotation resolves with ``typing.get_type_hints``, except the ones that
-name a netimps type (or the optional ``pathlib_next``'s path class).
+name a netimps or pktcap type (or the optional ``pathlib_next``'s path class).
 
-``netimps`` is imported lazily, so the names ``HostLike``, ``IPAddressLike``, ``IPNetworkLike`` and
-``Interface`` exist only under ``TYPE_CHECKING``; a signature that names one raises ``NameError``
-from ``get_type_hints`` on every Python. The list below is the whole of that exception, with the
+``netimps`` and ``pktcap`` are imported lazily, so the names ``HostLike``, ``IPAddressLike``,
+``IPNetworkLike``, ``Interface`` and the module ``pktcap`` exist only under ``TYPE_CHECKING``; a
+signature that names one raises ``NameError`` from ``get_type_hints`` on every Python. The list below is the whole of that exception, with the
 name each one cannot resolve: a new signature that names a netimps type, or any other annotation
 that does not resolve (``"X | None"`` in a string fails on 3.9), changes the set and fails the test.
 """
@@ -19,9 +19,9 @@ from surface import EXPECTED
 
 pytest.importorskip("pathlib_next")
 
-#: Public callable -> the one name its annotations cannot resolve at run time: a netimps type, or
-#: ``TFTPPath``, which needs the optional ``pathlib_next``.
-NETIMPS_TYPED = {
+#: Public callable -> the one name its annotations cannot resolve at run time: a netimps type, the
+#: pktcap module, or ``TFTPPath``, which needs the optional ``pathlib_next``.
+LAZILY_IMPORTED = {
     "tftp.TFTPClient": "HostLike",
     "tftp.TFTPClient.path": "TFTPPath",
     "tftp.AsyncTFTPClient": "HostLike",
@@ -37,6 +37,8 @@ NETIMPS_TYPED = {
     "tftp.relay.by_subnet": "IPNetworkLike",
     "tftp.relay.by_prefix": "HostLike",
     "tftp.relay.by_interface": "Interface",
+    "tftp.capture.dissect_tftp": "pktcap",
+    "tftp.capture.register_tftp_dissector": "pktcap",
 }
 
 
@@ -83,6 +85,6 @@ def _unresolved():
     return failures
 
 
-def test_public_annotations_resolve_except_the_netimps_ones():
+def test_public_annotations_resolve_except_the_lazily_imported_ones():
     failures = {k.replace(" (class)", ""): v for k, v in _unresolved().items()}
-    assert failures == NETIMPS_TYPED
+    assert failures == LAZILY_IMPORTED

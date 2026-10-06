@@ -84,6 +84,30 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "host=10.1.0.0/16 and op
 sudo pytftp capture -i eth0 --extract recovered/            # Linux, live
 ```
 
+## TFTP in pktcap
+
+`tftp.capture.dissect_tftp` is the dissector pktcap's frame walk calls for the TFTP layer,
+`TFTPLayer` its record, and `register_tftp_dissector` the call that puts it in a registry
+(nothing registers when `tftp.capture` is imported):
+
+```python
+import pktcap
+from tftp.capture import TFTPLayer, register_tftp_dissector
+
+registry = pktcap.DissectorRegistry()
+register_tftp_dissector(registry)                     # udp port 69; ports=(69, 6969) for more
+dissector = pktcap.FrameDissector(registry)
+for frame in pktcap.read_dissected("boot.pcapng", dissector=dissector):
+    request = frame.layer(TFTPLayer)
+    if request is not None:
+        print(frame.datagram().source, request.opcode, request.filename)
+```
+
+The layer is on the datagrams to the request port: a transfer's DATA and ACK run between ports
+chosen per transfer, which no selector names, so `FlowTracker` follows them. With the layer
+registered, `pktcap.compile_capture_filter("proto=tftp", pktcap.frame_filter)` selects the
+frames that have it and `pktcap.frame_record` writes its fields.
+
 ## Filters
 
 `key=value` clauses joined by `and`; a comma means "any of"; `!=` negates. The grammar is

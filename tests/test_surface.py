@@ -84,6 +84,8 @@ POSITIONAL = {
     "tftp.server.PortRange": 2,
     "tftp.relay.Upstream": 2,
     "tftp.capture.FlowTracker": 1,
+    "tftp.capture.dissect_tftp": 1,
+    "tftp.capture.register_tftp_dissector": 1,
 }
 
 

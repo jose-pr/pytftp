@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `DatagramWriter`, the `Protocol` it takes (`write(time, source, destination, payload)`).
   `pktcap.PcapWriter` and `pktcap.PcapngWriter` are both one, so a run can be recorded as
   pcapng too.
+- `tftp.capture.dissect_tftp`, `TFTPLayer` and `register_tftp_dissector(registry=None, *,
+  ports=(69,))`: TFTP as a layer for pktcap's dissection, so `pktcap.read_dissected`
+  gives a `TFTPLayer` on the datagrams to the request port, `pktcap.frame_record` writes
+  it and the filter `proto=tftp` selects it. Nothing registers on import; the call registers
+  in the registry given, or in pktcap's default one.
 - `by_prefix` and `by_subnet` take `"KEY=HOST[:PORT]"` text in a sequence, in place of
   a pair.
 - `pytftp serve --max-duration SECONDS` (the longest a transfer may run),

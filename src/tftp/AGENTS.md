@@ -32,7 +32,7 @@ takes every field by keyword.
 | `tftp.client` | `AsyncSink`, `AsyncSource`, `AsyncTFTPClient`, `MODES`, `ProgressFunction`, `RemoteStat`, `SinkLike`, `SourceLike`, `TFTPClient`, `download`, `upload` |
 | `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
 | `tftp.relay` | `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `UpstreamLike`, `by_interface`, `by_prefix`, `by_subnet` |
-| `tftp.capture` | `Analysis`, `CapturedTransfer`, `DatagramLike`, `DatagramWriter`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `analyze`, `combine_hooks`, `compile_filter`, `new_session_id`, `summarize`, `trace_to` |
+| `tftp.capture` | `Analysis`, `CapturedTransfer`, `DatagramLike`, `DatagramWriter`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `TFTPLayer`, `analyze`, `combine_hooks`, `compile_filter`, `dissect_tftp`, `new_session_id`, `register_tftp_dissector`, `summarize`, `trace_to` |
 | `tftp.options` | `BUILTIN_OPTIONS`, `Blksize2Option`, `BlksizeOption`, `ClientOptionContext`, `CookieOption`, `DEFAULT_BLKSIZE`, `DEFAULT_REGISTRY`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS`, `MAX_BLKSIZE`, `MAX_UTIMEOUT`, `MAX_WINDOWSIZE`, `MIN_BLKSIZE`, `MIN_UTIMEOUT`, `MstfwindowOption`, `Negotiated`, `OptionHandler`, `OptionRegistry`, `PROFILES`, `Profile`, `RolloverOption`, `STANDARD_OPTIONS`, `SUPPORTED_OPTIONS`, `ServerOptionContext`, `TFTPServerOptions`, `TimeoutOption`, `TsizeOption`, `UtimeoutOption`, `WindowsizeOption`, `XListOption`, `XMtimeOption`, `accept_oack`, `negotiate`, `refuse`, `register_option`, `request_options` |
 | `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
 | `tftp.backends` | `CaseInsensitive`, `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `PerClient`, `Pipe`, `Remap`, `UpstreamBackend`, `normalize_name` |
@@ -67,7 +67,9 @@ Windows. Public aliases, each exported from the module named:
 `ipaddress` address or interface, a `netimps.Host` or `FQDN`; an `int` or
 `bytes` address is a `TypeError`. A signature that names a netimps type
 (`HostLike`, `IPNetworkLike`, `Interface`) cannot be resolved by
-`typing.get_type_hints` at run time, because netimps is imported lazily;
+`typing.get_type_hints` at run time, because netimps is imported lazily (so are
+the signatures of `dissect_tftp` and `register_tftp_dissector`, which name the `pktcap`
+module);
 every other public annotation resolves on every supported Python.
 
 ## Protocol coverage
@@ -914,6 +916,30 @@ destination, payload, fragmented, truncated)`, which `FlowTracker` and
   file is always inside `directory`, which is created) and returns the path,
   or `None` when there is nothing to write; `to_dict()` (`"missing_blocks"` is
   a list of `[first, last]` pairs, `"missing_count"` their total).
+- **`TFTPLayer`, `dissect_tftp(data) -> pktcap.Dissected`,
+  `register_tftp_dissector(registry=None, *, ports=(69,)) -> None`** — TFTP as a layer
+  for pktcap's dissection (`pktcap.read_dissected`, `frame.layer(TFTPLayer)`, the
+  filter `proto=tftp`, `pktcap.frame_record`). **Nothing registers on import**: a
+  caller registers, in `registry` (a `pktcap.DissectorRegistry`) or, given none, in
+  pktcap's process-wide default one. It is registered under `("udp", port)` for each
+  port, the request port only: a transfer's DATA and ACK run between ports chosen
+  per transfer, which no selector names, so they carry no `TFTPLayer`; follow them
+  with `FlowTracker`. A port already holding a dissector, or outside 1 to 65535, is a
+  `ValueError` and this call registers nothing (a non-`int` port is a `TypeError`).
+  `TFTPLayer(opcode, block=None, filename=None, mode=None, options=None, code=None,
+  message=None)` is a named tuple of plain values: `opcode` is `"RRQ"`, `"WRQ"`,
+  `"DATA"`, `"ACK"`, `"ERROR"` or `"OACK"`; `block` is DATA's and ACK's,
+  `filename`, `mode` (lower case) and `options` (a tuple of `(name, value)` pairs,
+  names lower-cased, in the order sent) a request's, `options` an OACK's too,
+  `code` and `message` an ERROR's, each `None` where the packet has none. It equals
+  another `TFTPLayer` with the same fields and nothing else (not the same fields
+  as a plain tuple), is hashable and immutable, and its repr is a constructor
+  call. `dissect_tftp` reads with the package's `decode`: a DATA's payload is what
+  follows its four octets, every other packet's is empty, nothing follows a
+  TFTP packet, and octets that are not a TFTP packet raise `pktcap.DissectError`
+  with the text `not a TFTP packet` and none of the octets (a datagram to the
+  request port that is not TFTP is therefore a frame with that `error` and no
+  `TFTPLayer`). It passes `pktcap.check_dissector`.
 - **`analyze(source, *, ports=(69,), filter=None, keep_payloads=True) -> Analysis(events, transfers)`**
   — a whole capture (a path or a stream, read by pktcap, or any iterable of
   `DatagramLike`) at once.

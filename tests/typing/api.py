@@ -43,8 +43,15 @@ from tftp import (
     upload,
 )
 from tftp.backends import CaseInsensitive, FilesystemBackend, PerClient, Remap
-from pktcap import PcapWriter, PcapngWriter
-from tftp.capture import PacketEvent, combine_hooks, trace_to
+from pktcap import DissectorRegistry, Dissected, PcapWriter, PcapngWriter
+from tftp.capture import (
+    PacketEvent,
+    TFTPLayer,
+    combine_hooks,
+    dissect_tftp,
+    register_tftp_dissector,
+    trace_to,
+)
 from tftp.client import ProgressFunction, RemoteStat, SinkLike, SourceLike
 from tftp.listing import ListEntry
 from tftp.relay import TFTPRelay, Upstream, UpstreamLike, by_prefix, by_subnet
@@ -250,6 +257,15 @@ def a_combined_hook_takes_an_event(event: PacketEvent) -> None:
 def a_pktcap_writer_is_a_trace_hook(path: str) -> None:
     assert_type(trace_to(PcapWriter(path)), Callable[[PacketEvent], None])
     TFTPServer(".", trace=trace_to(PcapngWriter(path)))
+
+
+def the_dissector_is_pktcaps_and_its_layer_a_value(data: bytes, registry: DissectorRegistry) -> None:
+    assert_type(dissect_tftp(data), Dissected)
+    register_tftp_dissector()
+    register_tftp_dissector(registry, ports=(69, 6969))
+    layer = TFTPLayer("RRQ", filename="f", mode="octet", options=(("blksize", "512"),))
+    assert_type(layer.block, Optional[int])
+    assert_type(layer.options, Optional[Tuple[Tuple[str, str], ...]])
 
 
 # -- where a name lives -------------------------------------------------------------------------
