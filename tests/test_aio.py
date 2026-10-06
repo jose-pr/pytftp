@@ -13,6 +13,7 @@ import tftp
 from conftest import client_for
 from tftp import AsyncTFTPClient, AsyncTFTPServer
 from tftp.backends import HTTPBackend, MemoryBackend
+from tftp.server import ThreadedHandler
 
 
 def run(coro, loop_factory=None):
@@ -78,6 +79,9 @@ class SlowSink:
         await asyncio.sleep(0.001)
         self.data += chunk
 
+    async def close(self):
+        pass
+
 
 class AsyncSource:
     def __init__(self, data, chunk=1000):
@@ -88,15 +92,13 @@ class AsyncSource:
         await asyncio.sleep(0)
         return self.data.read(min(n, self.chunk))
 
+    async def close(self):
+        pass
+
 
 def test_async_sink_source_and_stream(root, make_server):
     server = make_server(root, writable=True)
     expected = (root / "big.bin").read_bytes()
-
-    async def gen():
-        for i in range(0, 50_000, 7_000):
-            await asyncio.sleep(0)
-            yield expected[i : min(i + 7_000, 50_000)]
 
     async def main():
         client = async_client(server, windowsize=4)
@@ -104,13 +106,11 @@ def test_async_sink_source_and_stream(root, make_server):
         await client.download("big.bin", sink)
         assert bytes(sink.data) == expected
         await client.upload("from-async.bin", AsyncSource(expected[:30_000]))
-        await client.upload("from-gen.bin", gen())
         chunks = [c async for c in client.stream("big.bin", buffer=8192)]
         assert b"".join(chunks) == expected
 
     run(main())
     assert (root / "from-async.bin").read_bytes() == expected[:30_000]
-    assert (root / "from-gen.bin").read_bytes() == expected[:50_000]
 
 
 def test_async_client_timeout_and_cancel(root, make_server):
@@ -248,7 +248,7 @@ def test_async_server_runs_blocking_handlers_in_the_executor(root):
             # The Pipe's thread-side wake-ups must reach the loop thread.
             assert await async_client(server).get("anything") == b"from-http"
 
-        serve(HTTPBackend("http://127.0.0.1:%d" % httpd.server_address[1]), scenario)
+        serve(ThreadedHandler(HTTPBackend("http://127.0.0.1:%d" % httpd.server_address[1])), scenario)
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -263,7 +263,12 @@ def test_async_server_memory_handler_trace_and_results():
         assert await client.get("m.bin") == b"memory"
         await asyncio.sleep(0.05)
 
-    serve(MemoryBackend(writable=True), scenario, on_complete=results.append, trace=events.append)
+    serve(
+        ThreadedHandler(MemoryBackend(writable=True)),
+        scenario,
+        on_complete=results.append,
+        trace=events.append,
+    )
     assert [r.operation for r in results] == ["write", "read"] and all(r.is_ok for r in results)
     assert {e.role for e in events} == {"server"} and len({e.session for e in events}) == 2
 
@@ -320,7 +325,7 @@ def test_async_server_releases_a_session_whose_error_could_not_be_encoded():
         return error
 
     class Handler:
-        _tftp_fast_open_ = True
+        opens_fast = True
 
         def open_read(self, context):
             if context.filename == "ok":
@@ -338,7 +343,7 @@ def test_async_server_releases_a_session_whose_error_could_not_be_encoded():
             await asyncio.sleep(0.02)
         assert server.active_sessions == 0
 
-    serve(Handler(), scenario)
+    serve(ThreadedHandler(Handler()), scenario)
 
 
 # -- link-local servers and send failures ---------------------------------------------------------
@@ -357,7 +362,7 @@ def test_async_client_hears_a_server_named_by_a_link_local_address_with_its_zone
 ):
     async def main():
         async with AsyncTFTPServer(
-            MemoryBackend({"f": b"link-local"}), host=link_local, port=0, timeout=0.5
+            ThreadedHandler(MemoryBackend({"f": b"link-local"})), host=link_local, port=0, timeout=0.5
         ) as server:
             await server.start()
             client = AsyncTFTPClient(

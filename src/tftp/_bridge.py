@@ -10,37 +10,18 @@ can make progress. All of it runs on the event loop thread.
 from __future__ import annotations
 
 import asyncio
-import inspect
 from typing import Any, Callable, Optional
 
 from .exceptions import TFTPError
 from .exceptions import WouldBlock
 
-__all__ = ["AsyncReaderBridge", "AsyncWriterBridge", "is_async_reader", "is_async_writer"]
-
-
-def is_async_reader(obj: Any) -> bool:
-    """An object with ``async read(n)``, or an async iterable of bytes."""
-    return inspect.iscoroutinefunction(getattr(obj, "read", None)) or hasattr(obj, "__aiter__")
-
-
-def is_async_writer(obj: Any) -> bool:
-    """An object with ``async write(data)``, or ``write`` + ``async drain()`` (StreamWriter)."""
-    return inspect.iscoroutinefunction(getattr(obj, "write", None)) or (
-        callable(getattr(obj, "write", None)) and inspect.iscoroutinefunction(getattr(obj, "drain", None))
-    )
-
-
-async def _maybe_await(value: Any) -> Any:
-    if inspect.isawaitable(value):
-        return await value
-    return value
+__all__ = ["AsyncReaderBridge", "AsyncWriterBridge"]
 
 
 class AsyncReaderBridge:
     """The engine's (non-blocking) view of an async source.
 
-    :param source: ``async read(n)`` object or async iterable of bytes.
+    :param source: an object with ``async read(n)`` returning ``b""`` at the end.
     :param capacity: bytes read ahead at most.
     :param size: total size when known (answers ``tsize``).
     """
@@ -68,19 +49,12 @@ class AsyncReaderBridge:
 
     async def _pump(self) -> None:
         try:
-            if hasattr(self.source, "__aiter__") and not inspect.iscoroutinefunction(
-                getattr(self.source, "read", None)
-            ):
-                async for chunk in self.source:
-                    await self._space.wait()
-                    self._take(chunk)
-            else:
-                while True:
-                    await self._space.wait()
-                    chunk = await self.source.read(self._CHUNK)
-                    if not chunk:
-                        break
-                    self._take(chunk)
+            while True:
+                await self._space.wait()
+                chunk = await self.source.read(self._CHUNK)
+                if not chunk:
+                    break
+                self._take(chunk)
             self._eof = True
         except asyncio.CancelledError:
             raise
@@ -111,17 +85,13 @@ class AsyncReaderBridge:
 
     def close(self) -> None:
         self._task.cancel()
-        closer = getattr(self.source, "aclose", None) or getattr(self.source, "close", None)
-        if closer is not None:
-            result = closer()
-            if inspect.isawaitable(result):
-                asyncio.ensure_future(result)
+        asyncio.ensure_future(self.source.close())
 
 
 class AsyncWriterBridge:
     """The engine's (non-blocking) view of an async sink.
 
-    :param sink: ``async write(data)``, or ``write`` + ``async drain()``.
+    :param sink: an object with ``async write(data)`` and, with ``close_sink``, ``async close()``.
     :param capacity: bytes buffered ahead of the sink at most.
     :param close_sink: close the sink once everything is written.
 
@@ -130,7 +100,7 @@ class AsyncWriterBridge:
     block is acknowledged only once the data is really out.
     """
 
-    _tftp_copies_ = True
+    copies_writes = True
 
     def __init__(self, sink: Any, *, capacity: int = 1 << 20, close_sink: bool = True) -> None:
         self.sink = sink
@@ -153,7 +123,6 @@ class AsyncWriterBridge:
             self._wakeup()
 
     async def _pump(self) -> None:
-        drain = getattr(self.sink, "drain", None)
         try:
             while True:
                 await self._data.wait()
@@ -161,20 +130,13 @@ class AsyncWriterBridge:
                     chunk = bytes(self._buffer)
                     self._buffer.clear()
                     self._wake()  # there is room again
-                    await _maybe_await(self.sink.write(chunk))
-                    if drain is not None and inspect.iscoroutinefunction(drain):
-                        await drain()
+                    await self.sink.write(chunk)
                     continue
                 if self._eof:
                     break
                 self._data.clear()
             if self.close_sink:
-                closer = getattr(self.sink, "aclose", None) or getattr(self.sink, "close", None)
-                if closer is not None:
-                    await _maybe_await(closer())
-                    waiter = getattr(self.sink, "wait_closed", None)
-                    if waiter is not None:
-                        await waiter()
+                await self.sink.close()
         except asyncio.CancelledError:
             raise
         except BaseException as exc:

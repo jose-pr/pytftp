@@ -25,6 +25,7 @@ import tftp
 from tftp import AsyncTFTPClient, AsyncTFTPServer, TFTPServer
 from tftp.backends import MemoryBackend
 from tftp.relay import TFTPRelay
+from tftp.server import ThreadedHandler
 
 WAIT = 5.0  # a second of margin over what any step here takes on a loaded runner
 
@@ -225,7 +226,7 @@ def test_wait_closed_times_out_while_serving(make):
 class _Closer:
     """A handler that asks its own server to stop, and records what close() does there."""
 
-    _tftp_fast_open_ = True
+    opens_fast = True
 
     def __init__(self):
         self.server = None
@@ -259,7 +260,7 @@ def test_wait_closed_from_the_serving_thread_is_refused():
     server = _server()
 
     class Waiter:
-        _tftp_fast_open_ = True
+        opens_fast = True
 
         def open_read(self, context):
             try:
@@ -398,7 +399,7 @@ async def waits(awaitable, what, seconds=WAIT):
 
 def _async_server(**kwargs):
     kwargs.setdefault("timeout", 0.5)
-    return AsyncTFTPServer(MemoryBackend({"f": b"data"}), host="127.0.0.1", port=0, **kwargs)
+    return AsyncTFTPServer(ThreadedHandler(MemoryBackend({"f": b"data"})), host="127.0.0.1", port=0, **kwargs)
 
 
 def test_the_async_lifecycle_names():
@@ -540,7 +541,7 @@ def test_async_start_raises_what_bind_raised_and_leaves_nothing(loop_factory):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as held:
             held.bind(("127.0.0.1", 0))
             server = AsyncTFTPServer(
-                MemoryBackend({}), host="127.0.0.1", port=held.getsockname()[1], timeout=0.5
+                ThreadedHandler(MemoryBackend({})), host="127.0.0.1", port=held.getsockname()[1], timeout=0.5
             )
             with pytest.raises(OSError):
                 await waits(server.start(), "start")

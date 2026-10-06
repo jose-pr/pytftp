@@ -231,6 +231,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   netimps' `aclose()`, and `close()` and `stop()` are gone. `AsyncTFTPServer` is
   exported from `tftp` and `tftp.server`, and the package `tftp.aio` is gone.
   `AsyncTFTPServer.serve_forever()` iterates the listener's `datagrams()`.
+- **One hook contract per server.** `TFTPServer` takes plain `open_read` and
+  `open_write` and synchronous streams; `AsyncTFTPServer` takes `async def`
+  hooks and asynchronous streams (`async read`/`async close`, `async
+  write`/`async close`). A handler of the other kind raises `TypeError` when the
+  server is built. A synchronous handler (the four built-in backends included)
+  goes to `AsyncTFTPServer` through `tftp.server.ThreadedHandler(handler, *,
+  executor=None)`, which opens in the executor, or on the loop for a handler
+  with `opens_fast`; a directory path needs no adapter and `AsyncTFTPServer(executor=)`
+  is gone. Asynchronous streams are no longer accepted as async iterables or as
+  a `write` plus `async drain()` pair, and `AsyncTFTPClient.download` and
+  `upload` take a path, bytes (to upload) or an object with `async write(data)`
+  or `async read(n)`, not a synchronous file object.
+- **The contracts are `typing.Protocol`s** in `tftp.server`: `TFTPHandler`,
+  `TFTPReader`, `TFTPChunkReader`, `TFTPWriter`, `AsyncTFTPHandler`,
+  `AsyncTFTPReader` and `AsyncTFTPWriter`, with their optional members
+  documented as such. The three marker attributes are public: `_tftp_fast_open_`
+  is `opens_fast`, `_tftp_copies_` is `copies_writes` and `_tftp_listing_` is
+  `lists_directories`.
 
 ### Renamed
 

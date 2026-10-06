@@ -35,6 +35,7 @@ from ..packet.codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Transfer
 from ._core import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
+from .handler import has_coroutine_hooks
 from .policy import TFTPServerLimits
 from .session import Session
 
@@ -249,7 +250,7 @@ class TFTPServer(SelectorService, ServerBase):
     :param open_in_thread: call the handler's ``open_read``/``open_write`` in
         a worker thread, so a handler that blocks (an HTTP request, an
         upstream server) never stalls other transfers. ``None`` decides from
-        the handler: those marked ``_tftp_fast_open_ = True`` (the built-in
+        the handler: those with ``opens_fast = True`` (the built-in
         file and memory handlers) open inline, everything else in a worker.
     :param workers: size of that worker pool.
     :param port_range: a :class:`PortRange`, a ``(low, high)`` pair
@@ -291,6 +292,11 @@ class TFTPServer(SelectorService, ServerBase):
         port_range: Any = None,
         interface: Any = None,
     ) -> None:
+        if has_coroutine_hooks(root_or_handler):
+            raise TypeError(
+                "%r has coroutine hooks; TFTPServer takes plain functions (AsyncTFTPServer takes coroutines)"
+                % (root_or_handler,)
+            )
         if sys.platform == "win32" and max_sessions is not None and max_sessions > SELECT_SESSIONS:
             raise ValueError(
                 "max_sessions=%d is more than the %d transfers select() can watch on Windows"
@@ -322,7 +328,7 @@ class TFTPServer(SelectorService, ServerBase):
         self._ready: "collections.deque[Session]" = collections.deque()
         self._pending_opens: "collections.deque[Tuple[Session, Any]]" = collections.deque()
         if open_in_thread is None:
-            open_in_thread = not getattr(self.handler, "_tftp_fast_open_", False)
+            open_in_thread = not getattr(self.handler, "opens_fast", False)
         self._worker_count = max(1, workers) if open_in_thread else 0
         self._workers: Optional[concurrent.futures.ThreadPoolExecutor] = None
         self._selector: Any = None

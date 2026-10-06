@@ -189,7 +189,7 @@ and **`upload(host, filename, src, /, ...)`** — one-shot wrappers;
 - `open_in_thread`, `workers` — call the handler's `open_read`/`open_write`
   in a pool of `workers` threads so a handler that blocks (HTTP, an upstream
   server) never stalls other transfers. `None` decides per handler: one
-  with `_tftp_fast_open_ = True` (`FilesystemBackend`, `MemoryBackend`)
+  with `opens_fast = True` (`FilesystemBackend`, `MemoryBackend`)
   opens inline on the loop, anything else in a worker. A retransmitted
   request is still recognised while its open is pending.
 - `interface` — listen on one network adapter: a name (`"eth0"`), a
@@ -330,7 +330,7 @@ Built-ins: `blksize`, `timeout`, `tsize`, `windowsize` (standard), and
 one), `mstfwindow` (`MstfwindowOption`: answers `31416` with `27182` and runs a
 window of 4 unless `windowsize` was also acknowledged; a client refuses any
 other answer), `x-list` (`XListOption`: acknowledged `1` only when the RRQ's stream
-is a listing, `_tftp_listing_`), `x-mtime` (`XMtimeOption`: an RRQ's OACK carries
+is a listing, `lists_directories = True`), `x-mtime` (`XMtimeOption`: an RRQ's OACK carries
 the stream's `mtime` attribute or `fstat` time, whole seconds; omitted when
 unknown). `stream_mtime(stream)` is that lookup.
 
@@ -355,16 +355,28 @@ tftp.TFTPClient("192.0.2.1", **tftp.Profile.LEGACY.client)
 
 ## Handlers
 
-A handler is any object with:
+The contract is a set of `typing.Protocol`s in `tftp.server`; the members
+listed as optional are looked up once per request or transfer, and a class
+that lacks them is still a valid implementation. A **plain** handler is for
+`TFTPServer`; the asyncio server takes the coroutine contract below.
 
-- **`open_read(context) -> reader`** — a binary reader with `readinto` or
-  `read`, and `close`. `tsize` is answered when the reader has an integer
-  `size` attribute, a real `fileno()`, or is seekable.
-- **`open_write(context, size) -> writer`** — a binary writer with `write` and
-  `close`. `size` is the client's announced `tsize` or `None`. **`close` is
-  called after the last block is written and before it is acknowledged**, so
-  an exception there reaches the client as ERROR. If the writer has `abort()`,
-  a failed transfer calls it instead of `close()`.
+**`TFTPHandler`** — an object with:
+
+- **`open_read(context) -> reader`** — a `TFTPReader` (required: `readinto`,
+  `close`) or a `TFTPChunkReader` (required: `read`, `close`). Optional:
+  `size` (an integer; `tsize` is also answered from a real `fileno()` or a
+  seekable file), `mtime`, `set_wakeup`, `lists_directories`.
+- **`open_write(context, size) -> writer`** — a `TFTPWriter` (required:
+  `write`, `close`). `size` is the client's announced `tsize` or `None`.
+  **`close` is called after the last block is written and before it is
+  acknowledged**, so an exception there reaches the client as ERROR. Optional:
+  `abort()` (a failed transfer calls it instead of `close()`),
+  `copies_writes`, `set_wakeup`.
+- Optional on the handler itself: **`opens_fast = True`**, so its hooks run
+  inline on the loop; otherwise they run in a worker thread.
+
+A handler whose hooks are `async def` is refused by `TFTPServer` with
+`TypeError` at construction.
 
 **Slow or asynchronous streams.** A reader's `readinto`/`read`, a writer's
 `write` and its `close` may raise `tftp.WouldBlock` when nothing is ready:
@@ -375,16 +387,17 @@ make progress again; without it a stalled transfer only resumes when the
 peer retransmits. A paused transfer is subject to `max_duration`, not to
 peer retries.
 
-Either may raise `TFTPError(code, message)` to refuse with that ERROR, or
+Either hook may raise `TFTPError(code, message)` to refuse with that ERROR, or
 `OSError`, mapped by errno (`ENOENT` → 1, `EACCES`/`EPERM` → 2, `ENOSPC` → 3,
 `EEXIST` → 6). The OS message is **not** sent (it could disclose paths). Any
 other exception is logged and sent as ERROR 0. What reaches the wire is
 always encodable (see `encode_error`), and an exception escaping one transfer
-ends that transfer, with a logged traceback, and never the loop. Handlers run
-on the event-loop thread: **a slow handler stalls every transfer**.
+ends that transfer, with a logged traceback, and never the loop. Streams are
+read and written on the server's thread: **a slow stream stalls every transfer**
+(a stalled `readinto`/`write` raises `WouldBlock` instead).
 
 `write` receives a `memoryview` of a reused buffer when the writer is a
-standard file object (`io.IOBase`) or declares `_tftp_copies_ = True`, and
+standard file object (`io.IOBase`) or has `copies_writes = True`, and
 `bytes` otherwise — so a writer that keeps references is safe by default.
 
 **`TFTPRequestContext(request, peer, *, local_address=None, interface_index=0)`** — `request` (the `RequestPacket`), `peer` (client address
@@ -422,7 +435,7 @@ size, mtime=None)`** (a named tuple: it is only handed out),
 **`dumps(entries) -> bytes`**, **`loads(data) -> list`** (malformed lines
 skipped),
 **`DirectoryListing(directory, *, root=None)`** (a `BytesIO` with `size`,
-`mtime`, `_tftp_listing_`; sorted by name; leaves out symlinks resolving
+`mtime`, `lists_directories`; sorted by name; leaves out symlinks resolving
 outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
 `MTIME_OPTION`.
 
@@ -439,15 +452,13 @@ dst, *, mode, progress)`, `get`, `upload(filename, src, *, mode,
 progress)`, `put`, `size`, `stat` (both in the executor), `listdir`, and the async generator **`stream(filename, *, mode,
 buffer=1 MiB)`** yielding chunks as they arrive (a slow consumer holds ACKs
 back; at most `buffer` bytes are held). Name resolution runs in the
-executor. Destinations: a path, a binary file (written on the loop — fine
-for local files), or an **async writer** (`async write(data)`, or `write` +
-`async drain()` like `asyncio.StreamWriter`); `download` returns only once
-an async writer has taken every byte (the writer is not closed). Sources: a
-path, bytes, a binary file, or an **async reader** (`async read(n)`) or async
-iterable of bytes. Cancelling the task sends the server ERROR 0. Each
+executor. Destinations: a path (written on the loop — fine for local
+files) or an object with `async write(data)`; `download` returns only once
+that writer has taken every byte (it is not closed). Sources: a path, bytes
+or an object with `async read(n)`. Cancelling the task sends the server ERROR 0. Each
 attempt (including the option fallback) uses a fresh socket.
 
-**`AsyncTFTPServer(root_or_handler, *, host=None, port=69, executor=None, **server_options)`**
+**`AsyncTFTPServer(root_or_handler, *, host=None, port=69, **server_options)`**
 (from `tftp` and `tftp.server`) — `TFTPServer`'s arguments except
 `open_in_thread`/`workers`, and its lifecycle: `bind()` and `shutdown()` are
 plain methods (`shutdown()` is thread-safe), `await start()`, `await
@@ -458,13 +469,19 @@ entry and awaits `aclose()` on exit; `aclose()` from another task ends a
 running `serve_forever()` without an exception. A serving task that ended on
 an error is seen by `wait_closed()` and `aclose()`. Handlers:
 
-- `open_read`/`open_write` may be `async def` (awaited on the loop), or
-  synchronous: those marked `_tftp_fast_open_` (file, memory) run inline,
-  others in `executor` (default: the loop's) — so `HTTPBackend` and
-  `UpstreamBackend` work unchanged (their `Pipe` wake-ups are thread-safe).
-- The returned stream may be an async reader/iterable (RRQ) or async writer
-  (WRQ); a writer is closed after the last block, and the final ACK waits
-  until everything is written.
+- `root_or_handler` is a directory path, a handler with **coroutine hooks**
+  (`AsyncTFTPHandler`: `async open_read(context) -> AsyncTFTPReader`,
+  `async open_write(context, size) -> AsyncTFTPWriter`), or a synchronous
+  handler wrapped in **`ThreadedHandler(handler, *, executor=None)`**
+  (`tftp.server`): its hooks run in `executor` (default: the loop's), or on
+  the loop when the handler has `opens_fast = True`, and its streams stay
+  synchronous. `HTTPBackend` and `UpstreamBackend` work through it (their `Pipe`
+  wake-ups are thread-safe). A synchronous handler given without it raises
+  `TypeError` when the server is built.
+- `AsyncTFTPReader` requires `async read(size)` (`b""` at the end) and
+  `async close()`, optionally `size`. `AsyncTFTPWriter` requires
+  `async write(data)` (`data` is `bytes`) and `async close()`; it is closed
+  after the last block, and the final ACK waits until everything is written.
 - pktinfo is kept on every loop: the listener is read with netimps'
   `UDPEndpoint.arecv` (`add_reader`, or a readiness thread where the loop
   has none — Windows' Proactor loop).

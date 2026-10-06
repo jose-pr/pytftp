@@ -20,7 +20,7 @@ from ..packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_request
 from ..packet.codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
-from .._bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
+from .._bridge import AsyncReaderBridge, AsyncWriterBridge
 from .._sockets import fit_window, same_host
 from ._core import Progress, RemoteStat, _ClientBase, _mode, _NotListing, _source_size
 
@@ -163,13 +163,12 @@ class _Transfer:
 class AsyncTFTPClient(_ClientBase):
     """:class:`tftp.TFTPClient` for asyncio: the same arguments, coroutine methods.
 
-    Sources and destinations may be what :class:`TFTPClient` takes (paths,
-    binary files, bytes -- local file I/O happens on the loop, which is fine
-    for files and wrong for anything slow) or asynchronous: an object with
-    ``async read(n)`` / an async iterable of bytes to upload, an object with
-    ``async write(data)`` (or ``write`` plus ``async drain()``, such as
-    :class:`asyncio.StreamWriter`) to download into. Those are driven with
-    backpressure: a slow sink slows the transfer instead of filling memory.
+    A source or destination is a path (or ``bytes``, to upload) -- local file
+    I/O happens on the loop, which is fine for files and wrong for anything
+    slow -- or an asynchronous stream: an object with ``async read(n)`` to
+    upload from, an object with ``async write(data)`` to download into. Those
+    are driven with backpressure: a slow sink slows the transfer instead of
+    filling memory. The client never closes a stream it was given.
     """
 
     async def download(
@@ -180,13 +179,13 @@ class AsyncTFTPClient(_ClientBase):
         mode: str = "octet",
         progress: Optional[Progress] = None,
     ) -> TransferResult:
-        """Fetch ``filename`` into ``dst``: a path, a binary file or an async writer."""
+        """Fetch ``filename`` into ``dst``: a path, or an object with ``async write(data)``."""
         mode = _mode(mode)
         if isinstance(dst, (str, os.PathLike)):
             path = os.fspath(dst)
             fileobj = open(path, "wb")
             try:
-                result = await self._download(filename, fileobj, mode, progress)
+                result = await self._download(filename, fileobj, mode, progress, bridged=False)
             except BaseException:
                 fileobj.close()
                 try:
@@ -196,11 +195,11 @@ class AsyncTFTPClient(_ClientBase):
                 raise
             fileobj.close()
             return result
-        return await self._download(filename, dst, mode, progress)
+        return await self._download(filename, dst, mode, progress, bridged=True)
 
     async def get(self, filename: str, *, mode: str = "octet") -> bytes:
         buffer = io.BytesIO()
-        await self.download(filename, buffer, mode=mode)
+        await self._download(filename, buffer, mode, None, bridged=False)
         return buffer.getvalue()
 
     async def upload(
@@ -211,14 +210,14 @@ class AsyncTFTPClient(_ClientBase):
         mode: str = "octet",
         progress: Optional[Progress] = None,
     ) -> TransferResult:
-        """Send ``src``: a path, bytes, a binary file, or an async reader/iterable."""
+        """Send ``src``: a path, bytes, or an object with ``async read(n)``."""
         mode = _mode(mode)
         if isinstance(src, (str, os.PathLike)):
             with open(os.fspath(src), "rb") as fileobj:
-                return await self._upload(filename, fileobj, mode, progress)
+                return await self._upload(filename, fileobj, mode, progress, bridged=False)
         if isinstance(src, (bytes, bytearray, memoryview)):
-            return await self._upload(filename, io.BytesIO(bytes(src)), mode, progress)
-        return await self._upload(filename, src, mode, progress)
+            return await self._upload(filename, io.BytesIO(bytes(src)), mode, progress, bridged=False)
+        return await self._upload(filename, src, mode, progress, bridged=True)
 
     async def put(self, filename: str, data: bytes, *, mode: str = "octet") -> TransferResult:
         return await self.upload(filename, data, mode=mode)
@@ -238,7 +237,7 @@ class AsyncTFTPClient(_ClientBase):
         lister = self._lister()
         sink = io.BytesIO()
         try:
-            await lister.download(dirname or ".", sink)
+            await lister._download(dirname or ".", sink, "octet", None, bridged=False)
         except _NotListing:
             raise NotADirectoryError(errno.ENOTDIR, "not a directory", dirname) from None
         return listing.loads(sink.getvalue())
@@ -287,10 +286,10 @@ class AsyncTFTPClient(_ClientBase):
     # -- internals ---------------------------------------------------------------
 
     async def _download(
-        self, filename: str, sink: Any, mode: str, progress: Optional[Progress]
+        self, filename: str, sink: Any, mode: str, progress: Optional[Progress], *, bridged: bool
     ) -> TransferResult:
         bridge = None
-        if is_async_writer(sink):
+        if bridged:
             bridge = AsyncWriterBridge(sink, close_sink=False)
             target: Any = bridge
         else:
@@ -306,10 +305,10 @@ class AsyncTFTPClient(_ClientBase):
         return result
 
     async def _upload(
-        self, filename: str, source: Any, mode: str, progress: Optional[Progress]
+        self, filename: str, source: Any, mode: str, progress: Optional[Progress], *, bridged: bool
     ) -> TransferResult:
         bridge = None
-        if is_async_reader(source):
+        if bridged:
             bridge = AsyncReaderBridge(source)
             source = bridge
         size: Optional[int]

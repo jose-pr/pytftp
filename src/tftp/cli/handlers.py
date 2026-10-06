@@ -47,7 +47,7 @@ class Remap:
     def __init__(self, inner: _ty.Any, rules: _ty.Sequence[_ty.Tuple["re.Pattern[str]", str]]) -> None:
         self.inner = inner
         self.rules = list(rules)
-        self._tftp_fast_open_ = getattr(inner, "_tftp_fast_open_", False)
+        self.opens_fast = getattr(inner, "opens_fast", False)
 
     def rewrite(self, filename: str) -> str:
         for pattern, replacement in self.rules:
@@ -85,7 +85,7 @@ class PerClient:
     :class:`FilesystemBackend` with the server's write policy).
     """
 
-    _tftp_fast_open_ = True
+    opens_fast = True
 
     def __init__(self, root: str, make: _ty.Callable[[str], _ty.Any], fallback: bool = True) -> None:
         self.root = os.path.realpath(root)

@@ -29,7 +29,7 @@ class Pipe:
         server answers ``tsize`` from it.
     """
 
-    _tftp_copies_ = True  # write() copies its argument
+    copies_writes = True  # write() copies its argument
 
     def __init__(self, capacity: int = 1 << 20, size: Optional[int] = None) -> None:
         if capacity < 1:

@@ -82,7 +82,7 @@ def as_write(sink) -> Callable[[memoryview], object]:
     reference to the buffer would see it overwritten by the next packet.
     """
     write = sink.write
-    if isinstance(sink, _COPYING_WRITERS) or getattr(sink, "_tftp_copies_", False):
+    if isinstance(sink, _COPYING_WRITERS) or getattr(sink, "copies_writes", False):
         return write
     return lambda view: write(bytes(view))
 

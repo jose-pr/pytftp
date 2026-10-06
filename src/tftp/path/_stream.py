@@ -57,7 +57,7 @@ def os_error(exc: BaseException, path: Any) -> OSError:
 class _Sink:
     """Blocking writer for the transfer thread (backpressure from the reader)."""
 
-    _tftp_copies_ = True
+    copies_writes = True
 
     def __init__(self, pipe: Pipe) -> None:
         self._pipe = pipe

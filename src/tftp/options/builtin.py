@@ -251,7 +251,7 @@ class XListOption(OptionHandler):
     """pytftp's directory listing (see :mod:`tftp.listing`): ``x-list=1``.
 
     Acknowledged only when the handler answered the RRQ with a listing
-    (a stream marked ``_tftp_listing_``); a client seeing it left out of the
+    (a stream with ``lists_directories = True``); a client seeing it left out of the
     OACK knows it is receiving a file.
     """
 
@@ -261,7 +261,7 @@ class XListOption(OptionHandler):
     def negotiate(self, value: str, ctx: ServerOptionContext) -> Optional[str]:
         if not ctx.is_read or value.strip() != self.VERSION:
             return None
-        if not getattr(ctx.stream, "_tftp_listing_", False):
+        if not getattr(ctx.stream, "lists_directories", False):
             return None
         ctx.result.extra[self.name] = True
         return self.VERSION

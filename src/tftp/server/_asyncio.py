@@ -1,10 +1,10 @@
 """The asyncio server: :class:`tftp.TFTPServer`'s behaviour on an asyncio event loop.
 
-Handlers may be ``async def``: ``open_read``/``open_write`` are awaited when
-they return an awaitable, and the streams they return may be asynchronous
-(``async read``/``async write``, async iterables, ``StreamWriter``) -- the
-engine is driven around them with backpressure. Blocking handlers still work:
-those not marked ``_tftp_fast_open_`` are opened in the loop's executor.
+The handler has coroutine hooks (``async def open_read``/``open_write``) and
+returns asynchronous streams (:class:`AsyncTFTPReader`, :class:`AsyncTFTPWriter`),
+which the engine is driven around with backpressure. A synchronous handler is
+given through :class:`ThreadedHandler`, which opens in the loop's executor;
+anything else is a ``TypeError`` when the server is built.
 
 The listening socket keeps pktinfo (replies from the request's address) on
 every loop, Windows' default Proactor loop included: it is read with netimps'
@@ -14,7 +14,7 @@ every loop, Windows' default Proactor loop included: it is read with netimps'
 from __future__ import annotations
 
 import asyncio
-import inspect
+import os
 import logging
 import time
 from typing import TYPE_CHECKING, Any, Optional, Tuple
@@ -22,10 +22,11 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
-from .._bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
+from .._bridge import AsyncReaderBridge, AsyncWriterBridge
 from ..packet import TFTPErrorCode
 from ..packet.codec import _encode_error
 from ._core import ServerBase
+from .handler import ThreadedHandler, has_coroutine_hooks
 from .listener import _RECV_SIZE, Arrival
 from .session import Session
 
@@ -64,7 +65,9 @@ class _Timer:
 class AsyncTFTPServer(ServerBase):
     """:class:`tftp.TFTPServer` for asyncio; same arguments except ``open_in_thread``/``workers``.
 
-    ``executor`` (default: the loop's) runs blocking handler opens.
+    ``root_or_handler`` is a directory, a handler with coroutine hooks
+    (:class:`AsyncTFTPHandler`) or a synchronous handler wrapped in
+    :class:`ThreadedHandler`; a bare synchronous handler raises ``TypeError``.
     Use as ``async with AsyncTFTPServer(...) as server: await server.serve_forever()``,
     or ``await server.start()`` ... ``await server.aclose()``.
 
@@ -82,11 +85,23 @@ class AsyncTFTPServer(ServerBase):
         *,
         host: "IPAddressLike | Host | None" = None,
         port: int = 69,
-        executor: Any = None,
         **kwargs: Any,
     ) -> None:
+        is_root = isinstance(root_or_handler, (str, os.PathLike))
+        if (
+            not is_root
+            and not isinstance(root_or_handler, ThreadedHandler)
+            and not has_coroutine_hooks(root_or_handler)
+        ):
+            raise TypeError(
+                "%s has plain hooks; AsyncTFTPServer takes coroutine hooks, or a synchronous handler "
+                "wrapped as ThreadedHandler(handler)" % type(root_or_handler).__name__
+            )
         super().__init__(root_or_handler, host=host, port=port, **kwargs)
-        self.executor = executor
+        if is_root:
+            self.handler = ThreadedHandler(self.handler)
+        # Only the adapter returns synchronous streams; a coroutine handler returns asynchronous ones.
+        self._async_streams = not isinstance(self.handler, ThreadedHandler)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stopped: Optional[asyncio.Event] = None
         self._serve_ended: Optional["asyncio.Future[None]"] = None
@@ -255,27 +270,16 @@ class AsyncTFTPServer(ServerBase):
         timer = _Timer()
         session.driver = timer
         try:
-            if getattr(self.handler, "_tftp_fast_open_", False) or self._is_async_handler(session):
-                stream = session.call_handler(self.handler, self.options, self.timeout, self._mtu(session))
-                if inspect.isawaitable(stream):
-                    stream = await stream
-            else:
-                stream = await loop.run_in_executor(
-                    self.executor,
-                    session.call_handler,
-                    self.handler,
-                    self.options,
-                    self.timeout,
-                    self._mtu(session),
-                )
+            stream = await session.call_handler(self.handler, self.options, self.timeout, self._mtu(session))
             if session.closed:  # the server stopped meanwhile
                 session.stream = stream
                 session.close_stream(ok=False)
                 return
-            if session.context.request.is_read and is_async_reader(stream):
-                stream = AsyncReaderBridge(stream)
-            elif not session.context.request.is_read and is_async_writer(stream):
-                stream = AsyncWriterBridge(stream)
+            if self._async_streams:
+                if session.context.request.is_read:
+                    stream = AsyncReaderBridge(stream)
+                else:
+                    stream = AsyncWriterBridge(stream)
             session.stream = stream
             transport, _ = await loop.create_datagram_endpoint(
                 lambda: _SessionProtocol(self, session), sock=session.sock
@@ -297,14 +301,6 @@ class AsyncTFTPServer(ServerBase):
                 self._schedule(session)
         except Exception as exc:
             self._survive(session, exc)
-
-    def _is_async_handler(self, session: Session) -> bool:
-        method = (
-            self.handler.open_read
-            if session.context.request.is_read
-            else getattr(self.handler, "open_write", None)
-        )
-        return inspect.iscoroutinefunction(method)
 
     # -- transfer events ------------------------------------------------------------------
 

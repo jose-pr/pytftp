@@ -40,7 +40,7 @@ class FilesystemBackend:
     leaves no trace, and directories are never created.
     """
 
-    _tftp_fast_open_ = True  # local files: the server opens them inline
+    opens_fast = True  # local files: the server opens them inline
 
     def __init__(
         self,
@@ -135,7 +135,7 @@ def _is_root(filename: str, backslash: bool) -> bool:
 class _Capped:
     """Refuses to grow an upload past ``limit`` bytes."""
 
-    _tftp_copies_ = True
+    copies_writes = True
 
     def __init__(self, inner: AtomicWriter, limit: int) -> None:
         self._inner = inner

@@ -188,7 +188,7 @@ def test_sender_pauses_and_resumes():
 
 def test_receiver_holds_block_while_sink_is_full():
     class Valve:
-        _tftp_copies_ = True
+        copies_writes = True
 
         def __init__(self):
             self.open = False
@@ -581,7 +581,7 @@ def test_a_finished_transfer_is_not_pinned_by_its_stale_timer_entry(make_server)
     streams = []
 
     class Handler:
-        _tftp_fast_open_ = True
+        opens_fast = True
 
         def open_read(self, context):
             stream = Stream(b"x")

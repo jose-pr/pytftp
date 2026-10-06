@@ -49,4 +49,4 @@ A handler returns a reader or writer. If it can be slow, return a
 `tftp.backends.Pipe` and fill (or drain) it from a thread: the transfer pauses
 while the pipe is empty (or full) and resumes when it is woken, without
 blocking anything else. Handlers that block while opening are run in worker
-threads automatically; mark fast ones with `_tftp_fast_open_ = True`.
+threads automatically; mark fast ones with `opens_fast = True`.

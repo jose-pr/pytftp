@@ -359,7 +359,7 @@ def _wait_idle(server, seconds: float = 2.0) -> None:
 class _RefusingHandler:
     """Refuses at open, or fails from the stream, with an error built by ``make``."""
 
-    _tftp_fast_open_ = True
+    opens_fast = True
 
     def __init__(self, make, where):
         self.make, self.where = make, where

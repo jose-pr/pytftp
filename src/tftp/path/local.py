@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import errno
-import inspect
 import posixpath
 from typing import Any, Callable, Iterator, Optional, Tuple
 
@@ -12,6 +11,7 @@ from pathlib_next import Path, Pathname
 from pathlib_next.utils.stat import FileStat
 
 from ..client import TFTPClient
+from ..client._core import _ClientBase
 from ..exceptions import FileNotFound, TFTPError
 from ._stream import open_reader, open_writer, os_error
 
@@ -25,7 +25,7 @@ def check_client(client: Any) -> Any:
     methods return coroutines that nothing here would await, so every
     operation would appear to succeed having sent nothing.
     """
-    if inspect.iscoroutinefunction(getattr(client, "download", None)):
+    if isinstance(client, _ClientBase) and not isinstance(client, TFTPClient):
         raise TypeError(
             "a path needs the synchronous tftp.TFTPClient, not %s, whose methods are coroutines"
             % type(client).__name__

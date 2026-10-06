@@ -16,10 +16,8 @@ async def main():
 asyncio.run(main())
 ```
 
-Destinations and sources may be asynchronous: anything with `async
-write(data)` (or `write` plus `async drain()`, such as
-`asyncio.StreamWriter`) to download into, anything with `async read(n)` or an
-async iterable of bytes to upload from.
+A destination is a path or anything with `async write(data)` to download into;
+a source is a path, `bytes` or anything with `async read(n)` to upload from.
 
 ## Async handlers
 
@@ -29,10 +27,10 @@ class Images:
         record = await db.fetch_image(context.peer[0], context.filename)
         if record is None:
             raise tftp.TFTPError(tftp.TFTPErrorCode.FILE_NOT_FOUND)
-        return await storage.open(record.path)          # an async reader
+        return await storage.open(record.path)          # an AsyncTFTPReader
 
     async def open_write(self, context, size):
-        return await storage.create(context.filename)   # an async writer
+        return await storage.create(context.filename)   # an AsyncTFTPWriter
 
 async def serve():
     async with AsyncTFTPServer(Images(), port=69) as server:
@@ -44,9 +42,23 @@ serves in a background task and returns once listening; `shutdown()` (safe from 
 thread) and `await server.wait_closed()` stop and wait; `await server.aclose()`
 releases the socket and is final.
 
-Synchronous handlers work too: the built-in file and memory handlers open on
-the loop, others (HTTP, upstream TFTP) in the loop's executor. An upload's
-final ACK is sent only once an async writer has taken every byte.
+The hooks are coroutines and the streams are asynchronous: an
+`AsyncTFTPReader` has `async read(size)` and `async close()`, an
+`AsyncTFTPWriter` has `async write(data)` and `async close()`. An upload's final
+ACK is sent only once the writer has taken every byte and `close` has returned.
+
+A synchronous handler, such as the built-in backends, is given through the one
+adapter, `tftp.server.ThreadedHandler`: the backends that open quickly
+(`opens_fast`) open on the loop, the others (HTTP, upstream TFTP) in the loop's
+executor. A synchronous handler given without it raises `TypeError` when the
+server is built; a directory path needs no adapter.
+
+```python
+from tftp.backends import MemoryBackend
+from tftp.server import ThreadedHandler
+
+server = AsyncTFTPServer(ThreadedHandler(MemoryBackend({"hello": b"hi"})), port=69)
+```
 
 The server keeps replying from the request's own address on every loop: where
 the loop has no `add_reader` (Windows' default Proactor loop), the listening

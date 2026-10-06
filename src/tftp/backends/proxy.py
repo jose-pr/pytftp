@@ -29,7 +29,7 @@ Upstream = Union[str, Tuple[str, int]]
 class _PipeSink:
     """Blocking writer for the upstream client's thread (backpressure)."""
 
-    _tftp_copies_ = True
+    copies_writes = True
 
     def __init__(self, pipe: Pipe, timeout: float) -> None:
         self._pipe = pipe

@@ -90,13 +90,13 @@ class DirectoryListing(io.BytesIO):
     """A readable listing of ``directory``, as a handler returns it from ``open_read``.
 
     The server acknowledges ``x-list`` only for a stream marked this way
-    (``_tftp_listing_``). Entries whose resolved path leaves ``root``
+    (``lists_directories``). Entries whose resolved path leaves ``root``
     (symlinks pointing outside what is served) are left out, as are
     in-progress uploads (``.name.*.part``). ``size`` and ``mtime`` let the
     server answer ``tsize`` and ``x-mtime``.
     """
 
-    _tftp_listing_ = True
+    lists_directories = True
 
     def __init__(self, directory: str, *, root: Optional[str] = None) -> None:
         root = os.path.realpath(root or directory)

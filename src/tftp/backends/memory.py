@@ -26,7 +26,7 @@ class MemoryBackend:
     it is complete. Safe to read and update ``files`` from other threads.
     """
 
-    _tftp_fast_open_ = True
+    opens_fast = True
 
     def __init__(
         self,
@@ -70,7 +70,7 @@ class MemoryBackend:
 
 
 class _MemoryUpload:
-    _tftp_copies_ = True
+    copies_writes = True
 
     def __init__(self, owner: MemoryBackend, name: str) -> None:
         self._owner = owner

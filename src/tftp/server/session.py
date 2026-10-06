@@ -281,7 +281,7 @@ class Session:
     def call_handler(
         self, handler: Any, policy: TFTPServerOptions, timeout: float, mtu: Optional[int] = None
     ) -> Any:
-        """Step 1: ask ``handler`` for the stream (may return an awaitable).
+        """Step 1: ask ``handler`` for the stream (a coroutine, for a handler with coroutine hooks).
 
         Raises whatever the handler raises, or :class:`TFTPError` for an
         unsupported mode; the caller turns either into an ERROR packet. A WRQ
