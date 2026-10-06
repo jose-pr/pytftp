@@ -20,7 +20,7 @@ except ImportError as exc:  # pragma: no cover - exercised without the extra
     raise ImportError("tftp.path needs the 'path' extra: pip install 'tftp[path]'") from exc
 del pathlib_next  # only checking that the extra is installed
 
-from .local import TFTPPath
+from ._local import TFTPPath
 
 __all__ = ["TFTPPath", "TFTPURIPath"]
 
@@ -30,7 +30,7 @@ def __getattr__(name: str):
     # own "uri" extra, included in ours); import it only when asked.
     if name == "TFTPURIPath":
         try:
-            from . import uri
+            from . import _uri as uri
         except ImportError as exc:
             if exc.name != "uritools":
                 raise

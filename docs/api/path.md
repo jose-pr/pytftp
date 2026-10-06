@@ -1,5 +1,5 @@
 # `tftp.path`
 
-::: tftp.path.local
+::: tftp.path._local
 
-::: tftp.path.uri
+::: tftp.path._uri

@@ -602,7 +602,7 @@ def _documented_urls():
 
     root = pathlib.Path(__file__).resolve().parent.parent
     sources = [root / "README.md", root / "src" / "tftp" / "AGENTS.md", root / "src" / "tftp" / "uri.py"]
-    sources += [root / "src" / "tftp" / "cli" / "transfer.py", root / "src" / "tftp" / "path" / "uri.py"]
+    sources += [root / "src" / "tftp" / "cli" / "transfer.py", root / "src" / "tftp" / "path" / "_uri.py"]
     sources += sorted((root / "docs").glob("*.md"))
     found = []
     for source in sources:
