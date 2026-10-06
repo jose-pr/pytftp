@@ -213,7 +213,9 @@ encoded_size(fileobj)
 Local text uses LF; on the wire a line ends CR LF and a bare CR is CR NUL. The translation is
 lossless both ways (a local `\r\n` travels as `\r\0\r\n`). `NetasciiReader(raw)` (`readinto`,
 `close`) encodes a binary reader; `NetasciiWriter(raw)` (`write`, `flush`, `close`, `abort`)
-decodes into a binary writer, holding a trailing CR until it sees what follows. Both handle a CR
+decodes into a binary writer, holding a trailing CR until it sees what follows, and writes
+through `as_write`: a raw stream's short write is completed, one that takes nothing raises
+`OSError`, and one with nothing ready raises `WouldBlock` with the block held. Both handle a CR
 on any block boundary. `encode`, `decode` and `encoded_size(fileobj)` (seekable; position
 preserved) work on whole values.
 

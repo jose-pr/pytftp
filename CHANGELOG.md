@@ -657,6 +657,11 @@ Old names are not kept as aliases.
   nothing ready holds the block), and `as_readinto` takes `None` from
   `readinto` or `read` as "nothing ready", where a non-blocking source ended
   the transfer after 512 octets of 10247.
+- **`NetasciiWriter` completes a short write of the stream it wraps.** Over
+  a raw stream that took part of what it was given, the rest was dropped with
+  no error; it writes through `as_write`, so the rest is written, a stream
+  that takes nothing raises `OSError`, and one with nothing ready raises
+  `WouldBlock` with the block held.
 - **A netascii read request asking `tsize` no longer makes the server read
   the whole file before it answers.** The size of a netascii transfer needs
   the file scanned, on the loop that serves every other transfer: after eight

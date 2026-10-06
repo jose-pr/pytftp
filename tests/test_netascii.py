@@ -3,7 +3,7 @@ import random
 
 import pytest
 
-from tftp import NetasciiReader, NetasciiWriter
+from tftp import NetasciiReader, NetasciiWriter, WouldBlock
 from tftp.netascii import decode, encode, encoded_size
 
 SAMPLES = [
@@ -92,3 +92,54 @@ def test_any_octets_survive_encode_decode_the_reader_and_the_writer_at_any_split
         position += step
     writer.flush()
     assert sink.getvalue() == data, where
+
+
+class _Raw(io.RawIOBase):
+    """A raw stream that takes ``take`` octets a call, and has nothing ready
+    for the calls whose numbers are in ``busy``."""
+
+    def __init__(self, take, busy=()):
+        self.taken = bytearray()
+        self._take = take
+        self._busy = set(busy)
+        self._calls = 0
+
+    def writable(self):
+        return True
+
+    def write(self, data):
+        self._calls += 1
+        if self._calls in self._busy:
+            return None
+        part = bytes(data)[: self._take]
+        self.taken += part
+        return len(part)
+
+
+@pytest.mark.parametrize("take", [1, 7, 100])
+def test_the_writer_completes_a_short_write_of_a_raw_stream(take):
+    data = b"line one\nline two\r\nbare\rend\r" * 9
+    wire = encode(data)
+    raw = _Raw(take)
+    writer = NetasciiWriter(raw)
+    for start in range(0, len(wire), 50):
+        assert writer.write(wire[start : start + 50]) == len(wire[start : start + 50])
+    writer.flush()
+    assert bytes(raw.taken) == data
+
+
+def test_a_raw_stream_that_takes_nothing_fails_the_write():
+    writer = NetasciiWriter(_Raw(0))
+    with pytest.raises(OSError, match="took none"):
+        writer.write(b"abc")
+
+
+def test_a_raw_stream_with_nothing_ready_holds_the_block_and_a_retry_is_exact():
+    raw = _Raw(100, busy={2})
+    writer = NetasciiWriter(raw)
+    writer.write(b"a\r")
+    with pytest.raises(WouldBlock):
+        writer.write(b"\nb\r")
+    writer.write(b"\nb\r")
+    writer.flush()
+    assert bytes(raw.taken) == b"a\nb\r"

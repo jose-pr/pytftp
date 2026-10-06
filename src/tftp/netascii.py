@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import BinaryIO, Optional, Union
 
+from .transfer._engine import as_write
+
 __all__ = ["NetasciiReader", "NetasciiWriter", "encode", "decode", "encoded_size"]
 
 _CHUNK = 65536
@@ -114,6 +116,8 @@ class NetasciiWriter:
 
     def __init__(self, raw: BinaryIO) -> None:
         self._raw = raw
+        #: Writes all of what it is given: a raw stream may take part of it a call.
+        self._write = as_write(raw)
         self._held_cr = False
 
     def write(self, data: Union[bytes, bytearray, memoryview]) -> int:
@@ -127,13 +131,13 @@ class NetasciiWriter:
         if chunk:
             # May raise (WouldBlock from a full sink): the state below is only
             # updated once the write went through, so a retry is exact.
-            self._raw.write(decode(chunk))
+            self._write(decode(chunk))
         self._held_cr = held
         return size
 
     def flush(self) -> None:
         if self._held_cr:
-            self._raw.write(b"\r")
+            self._write(b"\r")
             self._held_cr = False
         flush = getattr(self._raw, "flush", None)
         if flush is not None:
