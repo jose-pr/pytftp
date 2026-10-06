@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import re
 import struct
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Protocol, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Protocol, Set, Tuple, Union
 
 from ..netascii import decode as netascii_decode
 from ..options._handler import DEFAULT_BLKSIZE
@@ -28,7 +28,19 @@ Endpoint = Tuple[str, int]
 
 
 class DatagramLike(Protocol):
-    """What :meth:`FlowTracker.feed` reads of a datagram; ``pktcap.CapturedDatagram`` has all four."""
+    """What :meth:`FlowTracker.feed` reads of a datagram.
+
+    Required: ``time``, ``source``, ``destination`` and ``payload``.
+
+    Optional member, read once per datagram when present:
+
+    * ``truncated`` -- ``True`` when ``payload`` is shorter than the datagram was because a
+      snap length cut the capture. Such a datagram is counted as a packet of its transfer but
+      never read as a DATA: a short payload is not the final block, and its block is reported
+      missing. Without the member a datagram is whole.
+
+    ``pktcap.CapturedDatagram`` has all five.
+    """
 
     @property
     def time(self) -> float: ...
@@ -106,6 +118,7 @@ class CapturedTransfer:
         self.retransmissions = 0
         self.request_retransmissions = 0
         self._sizes: Dict[int, int] = {}  # payload octets of each block seen, payloads kept or not
+        self._cut: Set[int] = set()  # blocks seen only as a DATA a snap length cut
         self._blocks: Dict[int, bytes] = {}  # the payloads, when they are kept
         self._logical_hi = 0
         self._rollover = 0
@@ -130,15 +143,23 @@ class CapturedTransfer:
         """The most one DATA may move the highest block number: the window, and at least ``_REACH``."""
         return max(self.windowsize, _REACH)
 
-    def add_data(self, wire: int, payload: bytes, keep: bool = True) -> None:
+    def add_data(self, wire: int, payload: bytes, keep: bool = True, cut: bool = False) -> None:
         """Account for one DATA: always its size, and its payload when ``keep``.
 
         A block further ahead of the highest one seen than a window can be is not
-        placed: it is counted as a packet and nothing else.
+        placed: it is counted as a packet and nothing else. A DATA a snap length ``cut`` is
+        not placed either: its block is missing until a whole one arrives, and its short
+        payload never ends the transfer.
         """
         block = self._logical(wire)
         if block - self._logical_hi > self._reach():
             return
+        if cut:
+            if block not in self._sizes:
+                self._cut.add(block)
+                self._logical_hi = max(self._logical_hi, block)
+            return
+        self._cut.discard(block)
         if block in self._sizes:
             self.retransmissions += 1
         else:
@@ -159,10 +180,12 @@ class CapturedTransfer:
 
     @property
     def missing_blocks(self) -> Tuple[Tuple[int, int], ...]:
-        """``(first, last)`` ranges of the logical block numbers never seen, up to the highest one seen."""
+        """``(first, last)`` ranges of the logical block numbers never seen whole, up to the highest one seen."""
         ranges: List[Tuple[int, int]] = []
         expected = 1
-        for block in sorted(self._sizes):
+        placed = sorted(self._sizes)
+        # The sentinel past the last block seen, cut or placed, closes a run that ends in a cut one.
+        for block in placed + [max(placed[-1:] + sorted(self._cut)[-1:], default=0) + 1]:
             if block > expected:
                 ranges.append((expected, block - 1))
             expected = block + 1
@@ -302,6 +325,7 @@ class FlowTracker:
     def feed(self, datagram: DatagramLike) -> Optional[PacketEvent]:
         """Account for one datagram; its event if it is TFTP, else ``None``."""
         time, payload = datagram.time, datagram.payload
+        cut = bool(getattr(datagram, "truncated", False))
         source, destination = _plain(datagram.source), _plain(datagram.destination)
         transfer = None
         if destination[1] in self.ports and len(payload) >= 2 and payload[0] == 0 and payload[1] in (1, 2):
@@ -332,7 +356,7 @@ class FlowTracker:
         transfer.packets += 1
         transfer.ended = time
         try:
-            self._observe(transfer, source, payload)
+            self._observe(transfer, source, payload, cut)
         except Exception as exc:  # a packet this reading cannot take fails its transfer, not the capture
             if transfer.error is None:
                 transfer.error = (0, "unreadable packet: %s" % type(exc).__name__, "capture")
@@ -365,17 +389,16 @@ class FlowTracker:
             return from_client
         return None
 
-    def _observe(self, transfer: CapturedTransfer, source: Endpoint, payload: bytes) -> None:
+    def _observe(
+        self, transfer: CapturedTransfer, source: Endpoint, payload: bytes, cut: bool = False
+    ) -> None:
         if len(payload) < 4 or payload[0]:
             return
         op = payload[1]
         from_client = source == transfer.client
         if op == TFTPOpcode.DATA:
             wire = struct.unpack_from("!H", payload, 2)[0]
-            if self.keep_payloads:
-                transfer.add_data(wire, payload[4:])
-            else:
-                transfer.add_data(wire, payload[4:], keep=False)
+            transfer.add_data(wire, payload[4:], keep=self.keep_payloads, cut=cut)
         elif op == TFTPOpcode.ACK:
             transfer.add_ack(struct.unpack_from("!H", payload, 2)[0])
         elif op == TFTPOpcode.OACK and not from_client:

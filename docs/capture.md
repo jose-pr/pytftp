@@ -69,7 +69,14 @@ A capture is untrusted input, so pktcap refuses what it cannot bound: `analyze` 
 file that is not a capture, a damaged one, a frame of more than 262,144 octets or
 a block too short for its kind. `pktcap.read_datagrams(source)` gives the datagrams
 of a capture, and `FlowTracker.feed` takes anything with a `time`, a `source`, a
-`destination` and a `payload`.
+`destination` and a `payload` (and a `truncated`, when it has one).
+
+A frame no dissector reads is reported, never taken for "no traffic": `pytftp capture`
+prints one `warning: N of M frames not read: ...` line on stderr naming the count and the
+link-type numbers, and exits 2 when every frame was of an unsupported link type (802.11, for
+one). A datagram the capture's snap length cut is listed as a packet but never read as the
+last block of its transfer: the transfer is incomplete, its block is in `missing_blocks`, and
+`--extract` writes it with `.partial`.
 
 ```bash
 pytftp capture boot.pcapng --transfers

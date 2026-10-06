@@ -21,6 +21,40 @@ if _ty.TYPE_CHECKING:
 
 __all__ = ["CaptureCmd"]
 
+#: Link-type numbers named in the line about frames nothing here reads.
+_LISTED_LINKTYPES = 8
+
+
+def _datagrams_of(frames: _ty.Iterable[_ty.Any], unread: _ty.Dict[int, int]) -> _ty.Iterator[_ty.Any]:
+    """The UDP datagrams of dissected frames; ``unread`` counts the frames no dissector took, by link type."""
+    for frame in frames:
+        if not frame.layers and frame.error is None:
+            unread[frame.frame.linktype] = unread.get(frame.frame.linktype, 0) + 1
+        datagram = frame.datagram()
+        if datagram is not None:
+            yield datagram
+
+
+def _unread_line(stats: _ty.Any, unread: _ty.Dict[int, int]) -> _ty.Optional[str]:
+    """The one line about frames that were not dissected, or ``None`` when every frame was."""
+    if not (stats.unsupported or stats.malformed):
+        return None
+    parts = []
+    if stats.unsupported:
+        numbers = sorted(unread)
+        listed = ", ".join(str(number) for number in numbers[:_LISTED_LINKTYPES])
+        parts.append(
+            "%d of an unsupported link type (%s%s)"
+            % (stats.unsupported, listed, ", ..." if len(numbers) > _LISTED_LINKTYPES else "")
+        )
+    if stats.malformed:
+        parts.append("%d malformed" % stats.malformed)
+    return "warning: %d of %d frames not read: %s" % (
+        stats.unsupported + stats.malformed,
+        stats.frames,
+        ", ".join(parts),
+    )
+
 
 class CaptureCmd(Base):
     """Show the TFTP in a capture, reconstruct its transfers, extract their files."""
@@ -59,7 +93,7 @@ class CaptureCmd(Base):
     "Include DATA payloads (hex) in --json output. Default: left out"
     ("--payload",)
 
-    def _datagrams(self, dissector: "FrameDissector") -> _ty.Iterable[_ty.Any]:
+    def _datagrams(self, dissector: "FrameDissector", unread: _ty.Dict[int, int]) -> _ty.Iterable[_ty.Any]:
         import pktcap
 
         if self.interface:
@@ -71,17 +105,19 @@ class CaptureCmd(Base):
         if not self.source:
             raise ValueError("give a capture file, '-' for stdin, or --interface")
         if self.source == "-":
-            return pktcap.read_datagrams(_sys.stdin.buffer, dissector=dissector)
+            return _datagrams_of(pktcap.read_dissected(_sys.stdin.buffer, dissector=dissector), unread)
         if not _os.path.isfile(self.source):
             raise ValueError("no such file: %s" % self.source)
-        return pktcap.read_datagrams(self.source, dissector=dissector)
+        return _datagrams_of(pktcap.read_dissected(self.source, dissector=dissector), unread)
 
     def __call__(self) -> _ty.Optional[int]:
         import pktcap
 
         try:
             wanted = compile_filter(self.filter)
-            datagrams = self._datagrams(pktcap.FrameDissector())
+            dissector = pktcap.FrameDissector()
+            unread: _ty.Dict[int, int] = {}
+            datagrams = self._datagrams(dissector, unread)
         except ValueError as exc:
             error("error: %s" % exc)
             return 2
@@ -106,11 +142,15 @@ class CaptureCmd(Base):
             return 2
         except KeyboardInterrupt:
             pass
+        stats = dissector.stats
+        line = _unread_line(stats, unread)
+        if line:
+            error(line)
         for transfer in list(tracker.transfers):
             self._finish(transfer, written)
         if self.extract and not written:
             error("no transfer data to extract")
-        return None
+        return 2 if stats.frames and stats.unsupported == stats.frames else None
 
     def _finish(self, transfer: _ty.Any, written: _ty.List[_ty.Any]) -> None:
         """The transfer is complete as far as this capture goes: summarise it, write its file."""

@@ -1,1 +1,1 @@
-CapturedTransfer(c1 read 'cut.bin' ('192.0.2.5', 2000)->('192.0.2.1', 69), 612 bytes, complete)
+CapturedTransfer(c1 read 'cut.bin' ('192.0.2.5', 2000)->('192.0.2.1', 69), 512 bytes, incomplete)

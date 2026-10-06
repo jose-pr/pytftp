@@ -861,7 +861,8 @@ fragments reassembled, non-UDP skipped.
 `pktcap.read_datagrams(source)` yields `pktcap.CapturedDatagram(time, source,
 destination, payload, fragmented, truncated)`, which `FlowTracker` and
 `analyze` take as they take anything with a `time`, a `source`, a
-`destination` and a `payload` (**`DatagramLike`**, a `Protocol`).
+`destination` and a `payload`, and a `truncated` when it has one
+(**`DatagramLike`**, a `Protocol`).
 `tftp.capture` has no reader, frame decoder or live capture of its own.
 
 - **A capture is untrusted input**, and pktcap refuses what it cannot bound:
@@ -892,13 +893,18 @@ destination, payload, fragmented, truncated)`, which `FlowTracker` and
   block further ahead is counted as a packet and not placed. A packet the
   reading cannot take sets that transfer's `error` to
   `(0, "unreadable packet: <ExceptionType>", "capture")` and the capture goes on.
+  **A datagram whose `truncated` is true** (the capture's snap length cut it;
+  `DatagramLike.truncated` is optional, absent means whole) is counted as a packet of its
+  transfer and is never read as a DATA: its octets are not placed, a short one is not
+  the final block, and its block is in `missing_blocks` until a whole one arrives, so the
+  transfer is not complete and is written as `.partial`.
 - **`CapturedTransfer`** — `session`, `client`, `server`, `server_tid`,
   `filename`, `mode`, `operation`, `requested`, `acknowledged`, `blksize`,
   `windowsize`, `tsize`, `error` (`(code, message, "client"|"server")`),
   `is_complete` (final DATA seen and ACKed), `packets`, `retransmissions` (DATA
   seen again), `request_retransmissions`, `size` (the DATA bytes; `"bytes"`
   in `to_dict()`), `missing_blocks` (a tuple of inclusive `(first, last)`
-  ranges of the blocks never seen, up to the highest placed; `missing_count`
+  ranges of the blocks never seen whole, up to the highest seen; `missing_count`
   counts them), `started`, `ended`, `duration`; `data(decode_netascii=True)`
   returns the file up to the first gap (block numbers followed across
   rollover); `write_to(directory) -> str | None` writes it as
@@ -1224,7 +1230,12 @@ served as a tool.
   are decoded; `--transfers` adds a summary per transfer at the end;
   `--extract DIR` writes each transfer's file as `<session>-<name>`
   (`.partial` when incomplete). Ctrl-C ends a live capture and still prints
-  the summaries.
+  the summaries. A frame nothing here dissects (a link type with no dissector, or one
+  cut too short for its headers) is never silent: one `warning: N of M frames not read: ...`
+  line on stderr names the count of each and the link-type numbers, whatever `--json` says;
+  when every frame was of an unsupported link type the status is 2, otherwise it is not
+  changed. A datagram the capture's snap length cut is listed as a packet, and its
+  transfer is incomplete.
 - `serve` and `relay` log each transfer at INFO on stderr (`-v`/`-q` adjust)
   and their final counters when stopped. Ctrl-C, Ctrl-Break and SIGTERM stop
   them, idle or not (the signal wakes the loop through its wake socket; there

@@ -221,6 +221,79 @@ def _block(block_type: int, body: bytes) -> bytes:
     return struct.pack("<II", block_type, 12 + len(body)) + body + struct.pack("<I", 12 + len(body))
 
 
+_CASES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "capture_cases")
+
+
+def test_a_capture_of_a_link_type_nothing_dissects_is_said_so_and_is_status_two(capsys):
+    assert main(["capture", os.path.join(_CASES, "wifi.pcapng"), "--transfers"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "warning: 3 of 3 frames not read: 3 of an unsupported link type (105)\n"
+
+
+def test_a_capture_with_one_frame_nothing_dissects_says_so_and_keeps_its_status(tmp_path, capsys):
+    import pktcap
+
+    path = tmp_path / "mixed.pcapng"
+    frames = list(pktcap.read_frames(os.path.join(_CASES, "plain.pcap")))
+    with pktcap.PcapngWriter(str(path)) as writer:
+        for frame in frames:
+            writer.write_frame(frame)
+        writer.write_frame(pktcap.CapturedFrame(1700000100.0, 105, b"\x01" * 40))
+    assert main(["capture", str(path), "--no-packets", "--transfers"]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == "warning: 1 of %d frames not read: 1 of an unsupported link type (105)\n" % (
+        len(frames) + 1
+    )
+    assert captured.out.count("CapturedTransfer(") == 4
+
+
+def test_the_line_counts_what_the_dissector_counts(tmp_path, capsys):
+    """Link types 105 (three frames) and 127 (one), and one frame too short for its Ethernet header."""
+    import pktcap
+
+    path = tmp_path / "several.pcapng"
+    with pktcap.PcapngWriter(str(path)) as writer:
+        for number, linktype in enumerate((105, 127, 105, 105, 1)):
+            writer.write_frame(pktcap.CapturedFrame(1700000000.0 + number, linktype, b"\x02" * 6))
+    dissector = pktcap.FrameDissector()
+    list(pktcap.read_dissected(str(path), dissector=dissector))
+    stats = dissector.stats
+    assert (stats.frames, stats.unsupported, stats.malformed) == (5, 4, 1)
+    assert main(["capture", str(path)]) == 0
+    assert capsys.readouterr().err == (
+        "warning: 5 of 5 frames not read: 4 of an unsupported link type (105, 127), 1 malformed\n"
+    )
+
+
+def test_a_capture_every_frame_of_which_is_read_says_nothing_and_a_cut_one_is_incomplete(capsys, tmp_path):
+    assert main(["capture", os.path.join(_CASES, "plain.pcap"), "--no-packets"]) == 0
+    assert capsys.readouterr().err == ""
+    target = tmp_path / "files"
+    assert (
+        main(
+            [
+                "capture",
+                os.path.join(_CASES, "cut.pcap"),
+                "--no-packets",
+                "--transfers",
+                "--extract",
+                str(target),
+            ]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    assert captured.out.endswith("512 bytes, incomplete)\n")
+    (written,) = list(target.iterdir())
+    assert written.name.endswith("-cut.bin.partial") and written.stat().st_size == 512
+    assert "(512 bytes, incomplete)" in captured.err
+
+    assert main(["capture", os.path.join(_CASES, "cut.pcap"), "--json", "--no-packets", "--transfers"]) == 0
+    record = json.loads(capsys.readouterr().out)["transfer"]
+    assert (record["complete"], record["missing_blocks"], record["bytes"]) == (False, [[2, 2]], 512)
+
+
 _SECTION = _block(0x0A0D0D0A, struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1))
 _PCAP_HEADER = struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 101)
 

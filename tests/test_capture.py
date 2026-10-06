@@ -607,6 +607,81 @@ def test_missing_blocks_are_ranges_and_missing_count_counts_them():
     assert (record["missing_blocks"], record["missing_count"]) == ([[3, 9], [11, 12]], 9)
 
 
+def _cut(*packets, cut):
+    """The flow of ``packets`` with the datagrams at the indexes in ``cut`` marked as cut by a snap length."""
+    datagrams = [d._replace(truncated=i in cut) for i, d in enumerate(_flow(*packets))]
+    tracker = FlowTracker()
+    list(tracker.feed_all(datagrams))
+    return tracker
+
+
+def test_a_data_the_snap_length_cut_is_a_packet_and_not_the_final_block():
+    (transfer,) = _cut(
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")),
+        (T, C, encode_data(1, b"a" * 512)),
+        (T, C, encode_data(2, b"b" * 100)),  # cut: its headers say 512 octets
+        (C, T, encode_ack(2)),
+        cut={2},
+    ).transfers
+    assert transfer.packets == 4
+    assert not transfer.is_complete and transfer.final_block is None
+    assert transfer.missing_blocks == ((2, 2),) and transfer.missing_count == 1
+    assert transfer.size == 512 and transfer.data() == b"a" * 512
+    assert transfer.to_dict()["missing_blocks"] == [[2, 2]]
+
+
+def test_a_cut_data_is_not_a_retransmission_and_a_whole_one_after_it_completes_the_transfer():
+    (transfer,) = _cut(
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")),
+        (T, C, encode_data(1, b"a" * 512)),
+        (T, C, encode_data(2, b"b" * 100)),
+        (T, C, encode_data(2, b"b" * 100)),  # the whole datagram, sent again
+        (C, T, encode_ack(2)),
+        cut={2},
+    ).transfers
+    assert (transfer.retransmissions, transfer.missing_blocks) == (0, ())
+    assert transfer.is_complete and transfer.data() == b"a" * 512 + b"b" * 100
+
+
+def test_a_cut_data_ahead_of_a_gap_names_both_in_the_missing_blocks():
+    (transfer,) = _cut(
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")),
+        (T, C, encode_data(1, b"a" * 512)),
+        (T, C, encode_data(3, b"c" * 100)),  # cut
+        (T, C, encode_data(4, b"d" * 512)),
+        (T, C, encode_data(5, b"e" * 7)),
+        cut={2},
+    ).transfers
+    assert transfer.missing_blocks == ((2, 3),) and not transfer.is_complete
+
+
+def test_a_transfer_with_a_cut_data_is_written_as_partial(tmp_path):
+    (transfer,) = _cut(
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")),
+        (T, C, encode_data(1, b"a" * 512)),
+        (T, C, encode_data(2, b"b" * 100)),
+        cut={2},
+    ).transfers
+    assert transfer.write_to(tmp_path).endswith(".partial")
+
+
+def test_a_datagram_object_with_no_truncated_member_is_read_as_whole():
+    tracker = FlowTracker()
+    for datagram in _flow(
+        (C, S, encode_request(TFTPOpcode.RRQ, "f")), (T, C, encode_data(1, b"x")), (C, T, encode_ack(1))
+    ):
+        tracker.feed(_Bare(datagram))
+    assert tracker.transfers[0].is_complete
+
+
+class _Bare:
+    """The four members ``DatagramLike`` requires, and no ``truncated``."""
+
+    def __init__(self, datagram):
+        self.time, self.source = datagram.time, datagram.source
+        self.destination, self.payload = datagram.destination, datagram.payload
+
+
 def test_a_capture_that_jumps_half_the_block_space_costs_nothing():
     """Fifty DATA, 32768 blocks apart: a list of the missing blocks held 1,638,350 numbers (63 MiB)."""
     import tracemalloc
@@ -819,10 +894,10 @@ def test_nothing_a_capture_holds_raises_or_prints_a_control_character():
 def test_one_packet_that_cannot_be_read_fails_its_transfer_and_not_the_capture(monkeypatch):
     real = FlowTracker._observe
 
-    def observe(self, transfer, source, payload):
+    def observe(self, transfer, source, payload, *rest):
         if payload[:4] == b"\x00\x04\x00\x09":
             raise ValueError("a reading nobody expected")
-        return real(self, transfer, source, payload)
+        return real(self, transfer, source, payload, *rest)
 
     monkeypatch.setattr(FlowTracker, "_observe", observe)
     tracker = _tracked(

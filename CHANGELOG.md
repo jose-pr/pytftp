@@ -494,7 +494,19 @@ Old names are not kept as aliases.
   block with a 4-octet body, or an interface or packet block cut after its header, raised
   `struct.error` and `pytftp capture` printed a traceback and exited 1; it prints one
   `error:` line and exits 2.
-- **IP fragments cost time in proportion to their number.** Once the last fragment of a
+- **`pytftp capture` says when it could not read a frame.** A capture of a link type nothing
+  dissects (802.11, link type 105) printed nothing and exited 0, as an empty capture does; it
+  prints one `warning: N of M frames not read: ...` line on stderr with the count and the
+  link-type numbers (and the count of frames too short for their headers), and exits 2 when
+  every frame was of an unsupported link type. A capture with a few such frames among
+  readable ones prints the line and keeps its status.
+- **A datagram a capture's snap length cut is no longer read as a short final DATA.**
+  A cut DATA shorter than the block size ended its transfer as complete and `--extract`
+  wrote a short file under the full name. `FlowTracker` counts a datagram whose `truncated`
+  is true as a packet and does not place it: the transfer is incomplete, its block is in
+  `missing_blocks`, and the file is written with `.partial`. `DatagramLike` has `truncated`
+  as an optional member (absent means whole). `missing_blocks` also names a cut block that
+  is the highest one seen.- **IP fragments cost time in proportion to their number.** Once the last fragment of a
   datagram was seen, each later one re-sorted and re-copied every piece (8,000 fragments of
   one datagram took 3.7 s); a reassembly is also bounded in octets, in fragments and in
   capture time.
