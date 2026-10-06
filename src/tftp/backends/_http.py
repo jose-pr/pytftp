@@ -7,7 +7,6 @@ a large image never sits in memory and a slow client slows the download.
 
 from __future__ import annotations
 
-import logging
 import threading
 import urllib.error
 import urllib.request
@@ -17,12 +16,11 @@ from urllib.parse import quote, urlsplit
 from ..exceptions import TFTPError
 from ..options._handler import read_decimal
 from ..packet._enums import TFTPErrorCode
+from .._loggers import BACKENDS as log
 from ._memory import normalize_name
 from ._pipe import Pipe
 
 __all__ = ["HTTPBackend"]
-
-log = logging.getLogger("tftp.backends")
 
 #: Octets a download may be read ahead of what the transfer has taken, before it
 #: has taken any: a request nobody has acknowledged costs the origin this and

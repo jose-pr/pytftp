@@ -9,7 +9,6 @@ live here so the two cannot drift apart. Nothing here opens a socket until
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 import time
@@ -30,6 +29,7 @@ from ..packet._codec import _encode_error
 from ..result import TransferResult
 from ..transfer._receiver import Receiver
 from ..transfer._engine import Transfer
+from .._loggers import SERVER as log
 from ._handler import TFTPRequestContext
 from ._listener import Arrival, Listener
 from ._policy import TFTPServerLimits
@@ -37,8 +37,6 @@ from ._session import PortAllocator, Session, as_port_range
 from ._stats import SERVER_COUNTERS, TFTPStats
 
 __all__ = ["ServerBase"]
-
-log = logging.getLogger("tftp.server")
 
 _WINDOWS = sys.platform == "win32"
 #: Concurrent transfers by default.

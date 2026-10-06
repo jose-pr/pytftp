@@ -17,7 +17,6 @@ window instead, terminate both sessions with
 from __future__ import annotations
 
 import contextlib
-import logging
 import selectors
 import socket
 import sys
@@ -41,11 +40,10 @@ from ..server._policy import TFTPServerLimits
 from ..server._session import PortAllocator, as_port_range, bind_transfer
 from ._routing import RouteFunction, Upstream
 from ..server._stats import RELAY_COUNTERS, TFTPStats
+from .._loggers import RELAY as log
 from ._session import RelaySession, RelaySummary
 
 __all__ = ["TFTPRelay"]
-
-log = logging.getLogger("tftp.relay")
 
 _TICK = 0.25  # how often idle/lifetime/linger deadlines are checked
 _RECV = 65536

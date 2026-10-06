@@ -9,7 +9,6 @@ client used (``Listener.reply_socket``, on netimps' ``UDPEndpoint``).
 from __future__ import annotations
 
 import errno
-import logging
 import os
 import socket
 import time
@@ -28,6 +27,7 @@ from ..transfer._receiver import Receiver
 from ..transfer._sender import Sender
 from ..transfer._engine import Transfer, as_readinto, as_write
 from ..capture._events import PacketEvent, new_session_id
+from .._loggers import SERVER as log
 from ._handler import TFTPRequestContext
 
 __all__ = [
@@ -39,8 +39,6 @@ __all__ = [
     "bind_transfer",
     "stream_size",
 ]
-
-log = logging.getLogger("tftp.server")
 
 #: Send failures that are loss: the buffer or the stack is busy, not the transfer broken.
 #: 10055 is WSAENOBUFS, which Python reports as the errno on Windows.

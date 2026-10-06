@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import logging
 import time
 from typing import TYPE_CHECKING, Any, Optional, Tuple
 
@@ -25,14 +24,13 @@ if TYPE_CHECKING:
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
 from ..packet._enums import TFTPErrorCode
 from ..packet._codec import _encode_error
+from .._loggers import SERVER as log
 from ._core import ServerBase
 from ._handler import ThreadedHandler, has_coroutine_hooks
 from ._listener import _RECV_SIZE, Arrival
 from ._session import Session
 
 __all__ = ["AsyncTFTPServer"]
-
-log = logging.getLogger("tftp.server")
 
 
 class _SessionProtocol(asyncio.DatagramProtocol):

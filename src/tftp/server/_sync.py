@@ -17,7 +17,6 @@ import collections
 import concurrent.futures
 import contextlib
 import heapq
-import logging
 import selectors
 import socket
 import sys
@@ -34,14 +33,13 @@ from ..packet._enums import TFTPErrorCode
 from ..packet._codec import _encode_error
 from ..result import TransferResult
 from ..transfer._engine import Transfer
+from .._loggers import SERVER as log
 from ._core import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase
 from ._handler import has_coroutine_hooks
 from ._policy import TFTPServerLimits
 from ._session import Session
 
 __all__ = ["SelectorService", "TFTPServer"]
-
-log = logging.getLogger("tftp.server")
 
 _RECV_SIZE = 65536  # one receive buffer, shared by every session
 _DRAIN = 64  # packets read per readiness event before yielding to others

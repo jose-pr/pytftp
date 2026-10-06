@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import copy
 import io
-import logging
 import os
 import socket
 import time
@@ -49,6 +48,7 @@ from ..packet._enums import TFTPErrorCode, TFTPOpcode
 from ..packet._codec import decode, encode_ack, encode_request
 from ..packet._codec import _encode_error
 from ..server._handler import AtomicWriter
+from .._loggers import CLIENT as log
 
 if TYPE_CHECKING:  # netimps is imported lazily at run time
     from netimps import HostLike
@@ -57,8 +57,6 @@ __all__ = ["MODES", "RemoteStat"]
 
 #: Receive buffer: longer than any UDP datagram, so a stray one is read whole.
 _RECV_BUFFER = 65536
-
-log = logging.getLogger("tftp.client")
 
 #: Transfer modes this library speaks. ``mail`` (obsolete since RFC 1350) is not.
 MODES = ("octet", "netascii")
