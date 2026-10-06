@@ -43,8 +43,11 @@ and interface the request arrived on. Raise `tftp.TFTPError(code, message)`
 to refuse with a specific ERROR, or let an `OSError` through to have it
 mapped by errno.
 
-Handlers run on the server's single event-loop thread, so they should return
-quickly.
+A handler's `open_read` and `open_write` run in a worker thread, unless the handler
+sets `opens_fast = True` (`FilesystemBackend` and `MemoryBackend` do), when they run
+on the server's single event-loop thread and must return quickly. The streams they
+return are read and written on that thread: a stream with nothing ready raises
+`tftp.WouldBlock` instead of blocking.
 
 ## Composing handlers
 

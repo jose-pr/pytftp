@@ -79,7 +79,7 @@ every other public annotation resolves on every supported Python.
 | RFC 1350 | RRQ, WRQ, DATA, ACK, ERROR; octet and netascii | `mail` mode is refused with ERROR 4 |
 | RFC 1123 4.2.3.1 | Sorcerer's Apprentice fix | duplicate ACKs never trigger a resend (windowsize 1); with a window, an ACK that moves it on sends only the new blocks, and an ACK resends blocks in flight at most once per two windows of progress, so one duplicated, lost or late ACK costs one window of DATA, not every window after it |
 | RFC 1123 4.2.3.2 | exponential backoff | each consecutive retransmission waits `backoff` times longer, capped |
-| RFC 1123 4.2.3.4 | broadcast requests ignored | server, when pktinfo reports the destination |
+| RFC 1123 4.2.3.5 | broadcast requests ignored | server, when pktinfo reports the destination |
 | RFC 2347 | option extension, OACK, ERROR 8 | unknown options are ignored, as the RFC requires |
 | RFC 2348 | `blksize` 8..65464 | server clamps to its `max_blksize` |
 | RFC 2349 | `timeout` (1..255 s), `tsize` | `tsize` 0 is never sent in an OACK (curl rejects it), and a netascii read request's `tsize` is left out (its size needs the whole file read; tftp-hpa does the same) |
@@ -424,7 +424,7 @@ window of 4, lowered by `max_window_bytes` like `windowsize`, unless `windowsize
 also acknowledged; a client refuses any other answer), `x-list` (`XListOption`: acknowledged `1` only when the RRQ's stream
 is a listing, `lists_directories = True`), `x-mtime` (`XMtimeOption`: an RRQ's OACK carries
 the stream's `mtime` attribute or `fstat` time, whole seconds; omitted when
-unknown). `stream_mtime(stream)` is that lookup.
+unknown).
 
 **Profiles** — `Profile(name, server, client)`: `.server` is a fresh copy of
 the `TFTPServerOptions` and `.client` a fresh dict of `TFTPClient` keyword

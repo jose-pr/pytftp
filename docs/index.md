@@ -17,6 +17,7 @@ pip install "tftp[cli]"     # plus the pytftp command
 | Extra | Adds | Needed for |
 | --- | --- | --- |
 | `cli` | `duho` | the `pytftp` command and `python -m tftp` |
+| `path` | `pathlib-next[uri]` | `TFTPPath` and `tftp://` URLs as `pathlib_next` paths |
 
 ## 30-second tour
 

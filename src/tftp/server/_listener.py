@@ -156,7 +156,7 @@ class Listener:
 
     @staticmethod
     def is_broadcast(arrival: Arrival) -> bool:
-        """Sent to a broadcast (limited or subnet) or multicast address (RFC 1123 4.2.3.4)."""
+        """Sent to a broadcast (limited or subnet) or multicast address (RFC 1123 4.2.3.5)."""
         datagram = arrival.datagram
         local = None if datagram is None else datagram.destination
         if local is None:

@@ -5,7 +5,7 @@
 | RFC 1350 | RRQ, WRQ, DATA, ACK, ERROR; `octet` and `netascii` modes (`mail` is refused) |
 | RFC 1123 §4.2.3.1 | Sorcerer's Apprentice fix |
 | RFC 1123 §4.2.3.2 | Exponential backoff of retransmissions |
-| RFC 1123 §4.2.3.4 | Requests sent to broadcast or multicast addresses ignored |
+| RFC 1123 §4.2.3.5 | Requests sent to broadcast or multicast addresses ignored |
 | RFC 2347 | Option extension, OACK, ERROR 8 |
 | RFC 2348 | `blksize`, 8 to 65464 |
 | RFC 2349 | `timeout` (whole seconds) and `tsize` |

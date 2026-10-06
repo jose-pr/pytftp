@@ -64,7 +64,9 @@ split by responsibility rather than letting one file grow.
 - **The hot path stays allocation-light**: preallocated receive buffers,
   `recvfrom_into`, `struct.pack_into` into the window ring, no logging calls
   per packet, no `decode()` per DATA/ACK.
-- **The server loop is single-threaded.** Handlers run on it. One heap entry
+- **The server loop is single-threaded.** Handlers' streams run on it, and their
+  `open_read`/`open_write` do too when the handler has `opens_fast = True`, else in a
+  worker thread. One heap entry
   per session; deadlines that move later are re-queued lazily.
 - **netimps is imported lazily** (inside functions), so `import tftp` stays
   cheap and does not install the netimps socket patch until a transfer starts.

@@ -236,7 +236,7 @@ class TFTPServer(SelectorService, ServerBase):
     :param limits: request, per-client and duration bounds
         (:class:`TFTPServerLimits`).
     :param ignore_broadcast: silently drop requests sent to a broadcast or
-        multicast address (RFC 1123 4.2.3.4). Needs pktinfo to see the
+        multicast address (RFC 1123 4.2.3.5). Needs pktinfo to see the
         destination; without it every request looks unicast.
     :param backoff: each consecutive retransmission waits this many times
         longer (RFC 1123 4.2.3.2); progress resets it.
