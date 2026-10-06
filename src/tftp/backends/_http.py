@@ -17,8 +17,8 @@ from urllib.parse import quote, urlsplit
 from ..exceptions import TFTPError
 from ..options._handler import read_decimal
 from ..packet import TFTPErrorCode
-from .memory import normalize_name
-from .pipe import Pipe
+from ._memory import normalize_name
+from ._pipe import Pipe
 
 __all__ = ["HTTPBackend"]
 

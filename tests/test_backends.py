@@ -775,7 +775,7 @@ _WINDOWS_REFUSED = [
 @pytest.fixture(params=["list", "platform"])
 def windows_rules(request, monkeypatch):
     """The Windows branch of ``resolve`` on any host: with the explicit list, or with the platform's test."""
-    from tftp.backends import filesystem
+    from tftp.backends import _filesystem as filesystem  # the module that reads _WINDOWS
 
     monkeypatch.setattr(filesystem, "_WINDOWS", True)
     if request.param == "list":
@@ -802,7 +802,7 @@ def test_an_ordinary_name_is_still_served_under_the_windows_rules(root, windows_
 
 @pytest.mark.skipif(os.name == "nt", reason="the file system drops the trailing dot")
 def test_windows_rules_do_not_apply_elsewhere(root, monkeypatch):
-    from tftp.backends import filesystem
+    from tftp.backends import _filesystem as filesystem  # the module that reads _WINDOWS
 
     monkeypatch.setattr(filesystem, "_WINDOWS", False)
     assert tftp.FilesystemBackend(root).resolve("NUL.").endswith("NUL.")

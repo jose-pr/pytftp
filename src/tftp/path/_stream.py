@@ -14,7 +14,7 @@ import io
 import threading
 from typing import Any, Callable, Optional
 
-from ..backends.pipe import Pipe
+from ..backends._pipe import Pipe
 from ..packet import TFTPErrorCode
 from ..exceptions import (
     AccessViolation,

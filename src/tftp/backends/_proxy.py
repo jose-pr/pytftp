@@ -19,7 +19,7 @@ from typing import Any, Callable, Mapping, Optional, Tuple, Union
 
 from ..exceptions import RemoteError, TFTPError
 from ..packet import TFTPErrorCode
-from .pipe import Pipe
+from ._pipe import Pipe
 
 __all__ = ["UpstreamBackend"]
 

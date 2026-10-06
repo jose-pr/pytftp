@@ -1,11 +1,11 @@
 # `tftp.backends`
 
-::: tftp.backends.filesystem
+::: tftp.backends._filesystem
 
-::: tftp.backends.memory
+::: tftp.backends._memory
 
-::: tftp.backends.http
+::: tftp.backends._http
 
-::: tftp.backends.proxy
+::: tftp.backends._proxy
 
-::: tftp.backends.pipe
+::: tftp.backends._pipe

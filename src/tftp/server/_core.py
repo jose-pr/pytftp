@@ -79,7 +79,7 @@ class ServerBase:
                     "give host or interface, not both (host may be '0.0.0.0' or '::' to pick the family)"
                 )
         if isinstance(root_or_handler, (str, os.PathLike)):
-            from ..backends.filesystem import FilesystemBackend
+            from ..backends._filesystem import FilesystemBackend
 
             handler: Any = FilesystemBackend(
                 root_or_handler, writable=writable, create=create, overwrite=overwrite

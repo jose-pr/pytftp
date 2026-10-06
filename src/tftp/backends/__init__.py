@@ -12,10 +12,10 @@
 
 from __future__ import annotations
 
-from .filesystem import FilesystemBackend
-from .http import HTTPBackend
-from .memory import MemoryBackend, normalize_name
-from .pipe import Pipe
-from .proxy import UpstreamBackend
+from ._filesystem import FilesystemBackend
+from ._http import HTTPBackend
+from ._memory import MemoryBackend, normalize_name
+from ._pipe import Pipe
+from ._proxy import UpstreamBackend
 
 __all__ = ["FilesystemBackend", "MemoryBackend", "HTTPBackend", "UpstreamBackend", "Pipe", "normalize_name"]
