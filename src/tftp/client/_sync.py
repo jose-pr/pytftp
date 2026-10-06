@@ -313,49 +313,58 @@ class TFTPClient(_ClientBase):
         reported = -1
         peer_host, peer_port = peer[0], peer[1]
 
-        # Transfer phase.
-        while not session.is_done:
-            if session.is_stalled:
-                # A non-blocking local source/sink had nothing ready: poll it.
-                session.resume(clock())
-                if session.is_stalled:
-                    remaining = 0.01
-                    if session.deadline is not None and session.deadline <= clock():
-                        session.on_timeout(clock())
-                        continue
-                else:
-                    continue
-            elif session.deadline is not None:
-                remaining = session.deadline - clock()
-            else:
-                remaining = self.timeout
-            if remaining <= 0:
-                session.on_timeout(clock())
-                continue
-            sock.settimeout(remaining)
-            try:
-                n, addr = recv_into(buf)
-            except socket.timeout:
-                if not session.is_stalled:
-                    session.on_timeout(clock())
-                continue
-            except ConnectionResetError:  # pragma: no cover - connreset is off
-                continue
-            if trace is not None:
-                emit(view[:n], "in", addr)
-            if addr[1] != peer_port or addr[0] != peer_host:
-                try:
-                    stray = _encode_error(TFTPErrorCode.UNKNOWN_TID)
-                    sock.sendto(stray, addr)
-                    if trace is not None:
-                        emit(stray, "out", addr)
-                except OSError:
-                    pass
-                continue
-            session.handle(view, n, clock())
-            if progress is not None and session.bytes != reported:
+        # An interruption (an exception from a callback, a signal) tells the peer.
+        try:
+            if progress is not None and session.bytes:  # DATA 1 was handled above
                 reported = session.bytes
                 progress(reported, total)
+
+            # Transfer phase.
+            while not session.is_done:
+                if session.is_stalled:
+                    # A non-blocking local source/sink had nothing ready: poll it.
+                    session.resume(clock())
+                    if session.is_stalled:
+                        remaining = 0.01
+                        if session.deadline is not None and session.deadline <= clock():
+                            session.on_timeout(clock())
+                            continue
+                    else:
+                        continue
+                elif session.deadline is not None:
+                    remaining = session.deadline - clock()
+                else:
+                    remaining = self.timeout
+                if remaining <= 0:
+                    session.on_timeout(clock())
+                    continue
+                sock.settimeout(remaining)
+                try:
+                    n, addr = recv_into(buf)
+                except socket.timeout:
+                    if not session.is_stalled:
+                        session.on_timeout(clock())
+                    continue
+                except ConnectionResetError:  # pragma: no cover - connreset is off
+                    continue
+                if trace is not None:
+                    emit(view[:n], "in", addr)
+                if addr[1] != peer_port or addr[0] != peer_host:
+                    try:
+                        stray = _encode_error(TFTPErrorCode.UNKNOWN_TID)
+                        sock.sendto(stray, addr)
+                        if trace is not None:
+                            emit(stray, "out", addr)
+                    except OSError:
+                        pass
+                    continue
+                session.handle(view, n, clock())
+                if progress is not None and session.bytes != reported:
+                    reported = session.bytes
+                    progress(reported, total)
+        finally:
+            if not session.is_done:
+                session.abort("cancelled")
 
         if session.error is not None:
             raise _failure(session.error)

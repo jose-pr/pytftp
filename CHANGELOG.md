@@ -484,6 +484,19 @@ Old names are not kept as aliases.
 - The `tsize` announced for an upload from a wrapped file object (a
   `gzip.GzipFile`, say) is the size of what is read, where `fstat` of the file
   underneath announced the compressed size (139 octets for 100000).
+- **A transfer ends everything it started.** `AsyncTFTPClient` left the task
+  that feeds an asynchronous stream pending for ever after a download or an
+  upload failed, was refused, timed out or was cancelled (asyncio logged
+  "Task was destroyed but it is pending" at exit), read up to 1 MiB from the
+  source of an upload before the server had answered, and closed its socket
+  twice (CPython 3.9.0 to 3.9.10 and 3.10.0 to 3.10.2 log a traceback for that
+  on the Proactor loop). Every task and the socket are now ended and closed
+  before the call returns, and the source is read after the server accepts the
+  request. `stream(buffer=N)` holds `N` octets, where it held `N` plus a second
+  1 MiB; closing it early ends the transfer. The blocking client sends ERROR 0
+  when an exception from `progress` (or a signal) interrupts a transfer, where
+  the server waited out its retries, and it reports progress for a file that
+  arrives as DATA 1 with no OACK.
 - **`deadline` bounds every call.** `size()`, `stat()` and the request phase of a
   transfer end by it (a `size()` with `deadline=0.5` took 6 seconds, a `get()`
   with a longer `timeout` waited the whole `timeout`), and the limit has one

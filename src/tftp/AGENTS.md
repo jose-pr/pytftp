@@ -508,12 +508,18 @@ fallback, `trace`, `on_negotiated`); coroutine methods `download(filename,
 dst, *, mode, progress)`, `get`, `upload(filename, src, *, mode,
 progress)`, `put`, `size`, `stat` (both in the executor), `listdir`, and the async generator **`stream(filename, *, mode,
 buffer=1 MiB)`** yielding chunks as they arrive (a slow consumer holds ACKs
-back; at most `buffer` bytes are held). Name resolution runs in the
+back; at most `buffer` bytes are held, and closing the generator early ends the
+transfer and sends the server ERROR 0). Name resolution runs in the
 executor. Destinations: a path (written on the loop — fine for local
 files) or an object with `async write(data)`; `download` returns only once
 that writer has taken every byte (it is not closed). Sources: a path, bytes
 or an object with `async read(n)`. Cancelling the task sends the server ERROR 0. Each
-attempt (including the option fallback) uses a fresh socket.
+attempt (including the option fallback) uses a fresh socket. A transfer owns
+what it starts: when a call returns or raises, whether it succeeded, failed,
+timed out or was cancelled, none of its tasks is pending and its socket is
+closed, and an upload's source is read only after the server has accepted the
+request. The blocking client likewise sends ERROR 0 when an exception from a
+`progress` callback or a signal interrupts a transfer.
 
 **`AsyncTFTPServer(root_or_handler, *, host=None, port=69, **server_options)`**
 (from `tftp` and `tftp.server`) — `TFTPServer`'s arguments except

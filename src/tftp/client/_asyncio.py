@@ -51,6 +51,10 @@ class _Protocol(asyncio.DatagramProtocol):
     def error_received(self, exc: Exception) -> None:
         self.driver.failed(exc)
 
+    def connection_lost(self, exc: Optional[Exception]) -> None:
+        if not self.driver.closed.done():
+            self.driver.closed.set_result(None)
+
 
 class _Transfer:
     """One client transfer on the event loop."""
@@ -63,6 +67,7 @@ class _Transfer:
         self.peer: Optional[Tuple[Any, ...]] = None
         self.first: "asyncio.Future[Tuple[bytes, Tuple[Any, ...]]]" = loop.create_future()
         self.done: "asyncio.Future[None]" = loop.create_future()
+        self.closed: "asyncio.Future[None]" = loop.create_future()
         self.engine: Optional[Transfer] = None
         self.timer: Optional[asyncio.TimerHandle] = None
         self.timer_at: Optional[float] = None
@@ -274,41 +279,44 @@ class AsyncTFTPClient(_ClientBase):
     ) -> AsyncIterator[bytes]:
         """Yield ``filename``'s contents as it arrives, with backpressure.
 
-        Only ``buffer`` bytes are held at a time; when the consumer is slow,
-        acknowledgements are held back and the server waits.
+        At most ``buffer`` bytes are held: half in the transfer's own buffer
+        and at most as much again waiting for the consumer. When the consumer
+        is slow, acknowledgements are held back and the server waits. Closing
+        the generator early ends the transfer (the server is sent ERROR 0).
         """
         queue: "asyncio.Queue[Optional[bytes]]" = asyncio.Queue()
-        held = [0]
-        room = asyncio.Event()
-        room.set()
+        taken = asyncio.Event()
 
         class _Sink:
             async def write(self, data: bytes) -> None:
-                held[0] += len(data)
-                if held[0] >= buffer:
-                    room.clear()
-                await queue.put(data)
-                await room.wait()
+                taken.clear()
+                queue.put_nowait(data)
+                await taken.wait()
 
-        task = asyncio.ensure_future(self.download(filename, _Sink(), mode=mode))
-
-        def finished(_: Any) -> None:
-            queue.put_nowait(None)
-
-        task.add_done_callback(finished)
+        task = asyncio.ensure_future(
+            self._download(
+                filename,
+                _Sink(),
+                _mode(mode),
+                None,
+                self._limit(None),
+                bridged=True,
+                capacity=max(buffer // 2, 1),
+            )
+        )
+        task.add_done_callback(lambda _: queue.put_nowait(None))
         try:
             while True:
                 chunk = await queue.get()
                 if chunk is None:
                     break
-                held[0] -= len(chunk)
-                if held[0] < buffer:
-                    room.set()
+                taken.set()
                 yield chunk
             await task  # re-raise a transfer error
         finally:
             if not task.done():
                 task.cancel()
+                await asyncio.wait({task})
 
     # -- internals ---------------------------------------------------------------
 
@@ -321,40 +329,49 @@ class AsyncTFTPClient(_ClientBase):
         limit: Optional[int],
         *,
         bridged: bool,
+        capacity: int = 1 << 20,
     ) -> TransferResult:
         bridge = None
         if bridged:
-            bridge = AsyncWriterBridge(sink, close_sink=False)
+            bridge = AsyncWriterBridge(sink, capacity=capacity, close_sink=False, start=False)
             target: Any = bridge
         else:
             target = sink
-        writer: Any = NetasciiWriter(target) if mode == "netascii" else target
-        result = await self._run(
-            TFTPOpcode.RRQ, filename, mode, None, as_write(writer), None, progress, bridge, limit
-        )
-        if mode == "netascii":
-            writer.flush()
-        if bridge is not None:
-            await bridge.finish()
-        return result
+        try:
+            writer: Any = NetasciiWriter(target) if mode == "netascii" else target
+            result = await self._run(
+                TFTPOpcode.RRQ, filename, mode, None, as_write(writer), None, progress, bridge, limit
+            )
+            if mode == "netascii":
+                writer.flush()
+            if bridge is not None:
+                await bridge.finish()
+            return result
+        finally:
+            if bridge is not None:
+                await bridge.aclose()
 
     async def _upload(
         self, filename: str, source: Any, mode: str, progress: Optional[Progress], *, bridged: bool
     ) -> TransferResult:
         bridge = None
         if bridged:
-            bridge = AsyncReaderBridge(source)
+            bridge = AsyncReaderBridge(source, start=False)
             source = bridge
-        size: Optional[int]
-        if mode == "netascii":
-            size = encoded_size(source) if bridge is None else None
-            reader: Any = NetasciiReader(source)
-        else:
-            size = _source_size(source) if bridge is None else bridge.size
-            reader = source
-        return await self._run(
-            TFTPOpcode.WRQ, filename, mode, size, None, as_readinto(reader), progress, bridge, None
-        )
+        try:
+            size: Optional[int]
+            if mode == "netascii":
+                size = encoded_size(source) if bridge is None else None
+                reader: Any = NetasciiReader(source)
+            else:
+                size = _source_size(source) if bridge is None else bridge.size
+                reader = source
+            return await self._run(
+                TFTPOpcode.WRQ, filename, mode, size, None, as_readinto(reader), progress, bridge, None
+            )
+        finally:
+            if bridge is not None:
+                await bridge.aclose()
 
     async def _run(
         self, opcode, filename, mode, size, write, read, progress, bridge, limit
@@ -368,9 +385,8 @@ class AsyncTFTPClient(_ClientBase):
         started = time.monotonic()
         attempts = [options, {}] if options and self.fallback else [options]
         for attempt, attempt_options in enumerate(attempts):
-            # Each attempt gets its own socket (the transport closes it).
+            # Each attempt gets its own socket, which its transport closes.
             sock = bind(local_host, local_port, family=family)
-            sock.setblocking(False)
             try:
                 return await self._exchange_async(
                     loop,
@@ -392,8 +408,6 @@ class AsyncTFTPClient(_ClientBase):
                 # refused for them: nothing has been read or written yet.
                 if not (_repeats_without_options(exc) and attempt + 1 < len(attempts)):
                     raise
-            finally:
-                sock.close()
         raise AssertionError("unreachable")  # pragma: no cover
 
     async def _exchange_async(
@@ -413,12 +427,18 @@ class AsyncTFTPClient(_ClientBase):
         limit,
     ) -> TransferResult:
         is_read = opcode == TFTPOpcode.RRQ
-        request = encode_request(opcode, filename, mode=mode, options=options)
-        fit_window(sock, int(options.get("blksize", DEFAULT_BLKSIZE)), int(options.get("windowsize", 1)))
-        driver = _Transfer(self, loop)
-        driver.server = server
-        driver.local = sock.getsockname()
-        driver.progress = progress
+        try:
+            request = encode_request(opcode, filename, mode=mode, options=options)
+            sock.setblocking(False)
+            fit_window(sock, int(options.get("blksize", DEFAULT_BLKSIZE)), int(options.get("windowsize", 1)))
+            driver = _Transfer(self, loop)
+            driver.server = server
+            driver.local = sock.getsockname()
+            driver.progress = progress
+        except BaseException:
+            sock.close()  # no transport owns it yet
+            raise
+        # From here the transport owns the socket, and is the only one to close it.
         transport, _ = await loop.create_datagram_endpoint(lambda: _Protocol(driver), sock=sock)
         driver.transport = transport
         try:
@@ -462,6 +482,7 @@ class AsyncTFTPClient(_ClientBase):
                 driver.engine = Sender(driver.send, read, negotiated, self.retries, now, **engine_kwargs)
             if bridge is not None:
                 bridge.set_wakeup(lambda: loop.call_soon(driver.resume))
+                bridge.start()
             driver.after()
             await driver.done
             engine = driver.engine
@@ -487,3 +508,4 @@ class AsyncTFTPClient(_ClientBase):
             if driver.engine is not None and not driver.engine.is_done:
                 driver.engine.abort("cancelled")
             transport.abort()
+            await asyncio.wait({driver.closed}, timeout=5)

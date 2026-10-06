@@ -5,6 +5,10 @@ The engine never awaits: it reads and writes synchronously and treats
 awaiting -- reading from an async source into a bounded buffer, or draining a
 bounded buffer into an async sink -- and calls the engine's wake-up when it
 can make progress. All of it runs on the event loop thread.
+
+A bridge's task starts with the bridge, or at :meth:`start` when it is built
+with ``start=False``; its owner ends the task with :meth:`aclose`, which never
+closes the stream it was given.
 """
 
 from __future__ import annotations
@@ -18,17 +22,27 @@ from .exceptions import WouldBlock
 __all__ = ["AsyncReaderBridge", "AsyncWriterBridge"]
 
 
+async def _end(task: "Optional[asyncio.Task[None]]") -> None:
+    """Cancel ``task`` and wait until it is over; its outcome is not looked at."""
+    if task is not None and not task.done():
+        task.cancel()
+        await asyncio.wait({task})
+
+
 class AsyncReaderBridge:
     """The engine's (non-blocking) view of an async source.
 
     :param source: an object with ``async read(n)`` returning ``b""`` at the end.
     :param capacity: bytes read ahead at most.
     :param size: total size when known (answers ``tsize``).
+    :param start: read from the source at once; ``False`` waits for :meth:`start`.
     """
 
     _CHUNK = 65536
 
-    def __init__(self, source: Any, *, capacity: int = 1 << 20, size: Optional[int] = None) -> None:
+    def __init__(
+        self, source: Any, *, capacity: int = 1 << 20, size: Optional[int] = None, start: bool = True
+    ) -> None:
         self.source = source
         self.capacity = capacity
         self.size = size if size is not None else getattr(source, "size", None)
@@ -38,7 +52,14 @@ class AsyncReaderBridge:
         self._space = asyncio.Event()
         self._space.set()
         self._wakeup: Optional[Callable[[], None]] = None
-        self._task = asyncio.get_running_loop().create_task(self._pump())
+        self._task: Optional["asyncio.Task[None]"] = None
+        if start:
+            self.start()
+
+    def start(self) -> None:
+        """Begin reading from the source (once)."""
+        if self._task is None:
+            self._task = asyncio.get_running_loop().create_task(self._pump())
 
     def set_wakeup(self, callback: Callable[[], None]) -> None:
         self._wakeup = callback
@@ -84,8 +105,13 @@ class AsyncReaderBridge:
         raise WouldBlock()
 
     def close(self) -> None:
-        self._task.cancel()
+        if self._task is not None:
+            self._task.cancel()
         asyncio.ensure_future(self.source.close())
+
+    async def aclose(self) -> None:
+        """End the task, waiting for it; the source is left open."""
+        await _end(self._task)
 
 
 class AsyncWriterBridge:
@@ -94,6 +120,7 @@ class AsyncWriterBridge:
     :param sink: an object with ``async write(data)`` and, with ``close_sink``, ``async close()``.
     :param capacity: bytes buffered ahead of the sink at most.
     :param close_sink: close the sink once everything is written.
+    :param start: take from the buffer at once; ``False`` waits for :meth:`start`.
 
     ``close()`` (what a server calls before the final ACK) raises
     :class:`WouldBlock` until everything is written, so the peer's last
@@ -102,7 +129,9 @@ class AsyncWriterBridge:
 
     copies_writes = True
 
-    def __init__(self, sink: Any, *, capacity: int = 1 << 20, close_sink: bool = True) -> None:
+    def __init__(
+        self, sink: Any, *, capacity: int = 1 << 20, close_sink: bool = True, start: bool = True
+    ) -> None:
         self.sink = sink
         self.capacity = capacity
         self.close_sink = close_sink
@@ -113,7 +142,14 @@ class AsyncWriterBridge:
         self._data = asyncio.Event()
         self._wakeup: Optional[Callable[[], None]] = None
         self._done = asyncio.get_running_loop().create_future()
-        self._task = asyncio.get_running_loop().create_task(self._pump())
+        self._task: Optional["asyncio.Task[None]"] = None
+        if start:
+            self.start()
+
+    def start(self) -> None:
+        """Begin writing to the sink (once)."""
+        if self._task is None:
+            self._task = asyncio.get_running_loop().create_task(self._pump())
 
     def set_wakeup(self, callback: Callable[[], None]) -> None:
         self._wakeup = callback
@@ -165,10 +201,16 @@ class AsyncWriterBridge:
             raise self._error
 
     def abort(self) -> None:
-        self._task.cancel()
+        if self._task is not None:
+            self._task.cancel()
+
+    async def aclose(self) -> None:
+        """End the task, waiting for it; the sink is left open unless ``close_sink`` closed it."""
+        await _end(self._task)
 
     async def finish(self) -> None:
         """Wait until everything is written (and the sink closed, if asked); re-raise its error."""
+        self.start()
         self._eof = True
         self._data.set()
         await self._done

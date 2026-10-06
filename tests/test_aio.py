@@ -698,3 +698,262 @@ def test_a_listing_is_bounded_and_the_server_is_told(loop_factory, root, make_se
             break
         time.sleep(0.05)
     assert server.stats_snapshot()["failed"] >= 1
+
+
+# -- who owns an asyncio transfer's tasks and socket ----------------------------------------------
+
+
+@pytest.fixture
+def sockets(monkeypatch):
+    """The sockets the clients bind, as they are made: each must be closed when its transfer is over."""
+    import netimps
+
+    made = []
+    real = netimps.bind
+
+    def recording(*args, **kwargs):
+        sock = real(*args, **kwargs)
+        if sys._getframe(1).f_globals["__name__"].startswith("tftp.client"):  # not the servers'
+            made.append(sock)
+        return sock
+
+    monkeypatch.setattr(netimps, "bind", recording)
+    return made
+
+
+def _tasks():
+    """The tasks other than the test's own (``run`` wraps it in ``wait_for``, itself a task before 3.12)."""
+    me = asyncio.current_task()
+    return {t for t in asyncio.all_tasks() if t is not me and t.get_coro().__qualname__ != "wait_for"}
+
+
+async def _settled(what):
+    """The tasks this test did not start, once the loop has had a turn; named in the failure."""
+    await asyncio.sleep(0)
+    left = _tasks()
+    assert not left, "%s: tasks still pending: %s" % (what, sorted(t.get_coro().__qualname__ for t in left))
+
+
+def _all_closed(sockets, what):
+    assert sockets, "%s: the client bound no socket" % what
+    assert [s for s in sockets if s.fileno() != -1] == [], "%s: a socket is still open" % what
+
+
+class _Stuck:
+    """A sink and a source that never complete a call."""
+
+    async def write(self, data):
+        await asyncio.Event().wait()
+
+    async def read(self, n):
+        await asyncio.Event().wait()
+
+
+class _Reads:
+    def __init__(self, data):
+        self.data = io.BytesIO(data)
+        self.taken = 0
+
+    async def read(self, n):
+        chunk = self.data.read(n)
+        self.taken += len(chunk)
+        return chunk
+
+
+@LOOPS
+def test_a_download_into_a_stream_the_server_refuses_leaves_no_task_and_no_socket(
+    loop_factory, root, make_server, sockets
+):
+    server = make_server(root)
+
+    async def main():
+        class Sink:
+            async def write(self, data):
+                pass
+
+        with pytest.raises(tftp.FileNotFound):
+            await async_client(server).download("missing", Sink())
+        await _settled("after the refusal")
+
+    run(main(), loop_factory)
+    _all_closed(sockets, "after the refusal")
+
+
+@LOOPS
+def test_an_upload_the_server_refuses_takes_nothing_from_its_source_and_leaves_no_task(
+    loop_factory, root, make_server, sockets
+):
+    server = make_server(root)  # read-only: the request is refused
+    source = _Reads(b"x" * 3_000_000)
+
+    async def main():
+        with pytest.raises(tftp.AccessViolation):
+            await async_client(server).upload("up.bin", source)
+        await _settled("after the refusal")
+
+    run(main(), loop_factory)
+    assert source.taken == 0, (
+        "%d octets were taken from the source of an upload that never started" % source.taken
+    )
+    _all_closed(sockets, "after the refusal")
+
+
+@LOOPS
+@pytest.mark.parametrize("direction", ["download", "upload"])
+def test_a_cancelled_transfer_leaves_no_task_and_no_socket(
+    loop_factory, root, make_server, sockets, direction
+):
+    server = make_server(root, writable=True, timeout=5)
+
+    async def main():
+        client = async_client(server, blksize=None, timeout=5)
+        if direction == "download":
+            call = client.download("big.bin", _Stuck())
+        else:
+            call = client.upload("up.bin", _Stuck())
+        task = asyncio.ensure_future(call)
+        await asyncio.sleep(0.3)
+        assert not task.done(), "the transfer ended before it could be cancelled"
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+        await _settled("after the cancel")
+
+    run(main(), loop_factory)
+    _all_closed(sockets, "after the cancel")
+
+
+@LOOPS
+@pytest.mark.parametrize("direction", ["download", "upload"])
+def test_a_transfer_that_times_out_leaves_no_task_and_no_socket(loop_factory, sockets, direction):
+    async def main():
+        class Sink:
+            async def write(self, data):
+                pass
+
+        with FakePeer() as peer:
+            client = AsyncTFTPClient("127.0.0.1", peer.port, timeout=0.1, retries=1)
+            with pytest.raises(tftp.TransferTimeoutError):
+                if direction == "download":
+                    await client.download("f", Sink())
+                else:
+                    await client.upload("f", AsyncSource(b"x" * 100_000))
+        await _settled("after the timeout")
+
+    run(main(), loop_factory)
+    _all_closed(sockets, "after the timeout")
+
+
+@LOOPS
+def test_a_transfer_that_succeeds_leaves_no_task_and_no_socket(loop_factory, root, make_server, sockets):
+    server = make_server(root, writable=True)
+
+    async def main():
+        client = async_client(server)
+
+        class Sink:
+            async def write(self, data):
+                pass
+
+        await client.download("big.bin", Sink())
+        await client.upload("up.bin", AsyncSource(b"y" * 5000))
+        assert (
+            b"".join([c async for c in client.stream("big.bin", buffer=8192)])
+            == (root / "big.bin").read_bytes()
+        )
+        await _settled("after the transfers")
+
+    run(main(), loop_factory)
+    _all_closed(sockets, "after the transfers")
+
+
+@LOOPS
+def test_stream_holds_about_buffer_octets_and_leaves_nothing_when_closed_early(
+    loop_factory, make_server, sockets
+):
+    class Counting(io.BytesIO):
+        taken = 0
+
+        def readinto(self, view):
+            n = super().readinto(view)
+            Counting.taken += n
+            return n
+
+    class Handler:
+        opens_fast = True
+
+        def open_read(self, context):
+            return Counting(bytes(6_000_000))
+
+    Counting.taken = 0
+    server = make_server(Handler(), timeout=5)
+
+    async def main():
+        client = AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=5, retries=1)
+        stream = client.stream("big", buffer=8192)
+        first = await stream.__anext__()
+        await asyncio.sleep(1.0)  # the consumer is busy: nothing more is taken
+        ahead = Counting.taken - len(first)
+        await stream.aclose()
+        await _settled("after aclose()")
+        return ahead
+
+    ahead = run(main(), loop_factory)
+    # buffer octets here, and the blocks in flight to the server's next ACK: nothing like the
+    # 1 MiB a second queue held.
+    assert ahead < 16 * 1024, "%d octets were read ahead of a consumer that stopped" % ahead
+    _all_closed(sockets, "after aclose()")
+
+
+@LOOPS
+def test_abandoning_a_stream_tells_the_server(loop_factory):
+    async def main():
+        with FakePeer(_data_for_ever) as peer:
+            client = AsyncTFTPClient("127.0.0.1", peer.port, timeout=5, retries=1, blksize=None)
+            stream = client.stream("f", buffer=2048)
+            await stream.__anext__()
+            await stream.aclose()
+            for _ in range(100):
+                if any(isinstance(tftp.decode(d), tftp.ErrorPacket) for _, d in peer.seen):
+                    break
+                await asyncio.sleep(0.05)
+            return [tftp.decode(d) for _, d in peer.seen]
+
+    seen = run(main(), loop_factory)
+    assert any(isinstance(p, tftp.ErrorPacket) for p in seen), "the server was never told"
+
+
+@LOOPS
+def test_a_transfer_is_closed_once_and_asyncio_logs_nothing(loop_factory, root, make_server):
+    """On some CPython 3.9 and 3.10 releases the Proactor loop logs a traceback for a socket closed twice."""
+    import logging
+
+    records = []
+
+    class Catch(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    handler = Catch(level=logging.DEBUG)
+    logger = logging.getLogger("asyncio")
+    logger.addHandler(handler)
+    server = make_server(root, writable=True)
+
+    async def main():
+        client = async_client(server)
+
+        class Sink:
+            async def write(self, data):
+                pass
+
+        await client.download("big.bin", Sink())
+        await client.upload("up.bin", AsyncSource(b"y" * 5000))
+        with pytest.raises(tftp.FileNotFound):
+            await client.download("missing", Sink())
+        await asyncio.sleep(0.1)  # the loop's own close callbacks run
+
+    try:
+        run(main(), loop_factory)
+    finally:
+        logger.removeHandler(handler)
+    assert [r.getMessage()[:200] for r in records if r.levelno >= logging.WARNING] == []

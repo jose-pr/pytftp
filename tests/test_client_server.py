@@ -789,3 +789,34 @@ def test_the_size_announced_for_an_upload_is_the_size_of_what_is_sent(spy_server
             return 0
 
     assert _source_size(Unsized()) is None
+
+
+# -- a transfer that is abandoned, and progress for the first packet ------------------------------
+
+
+def test_a_download_abandoned_by_its_caller_tells_the_server():
+    class Stop(BaseException):
+        pass
+
+    calls = []
+
+    def progress(done, total):
+        calls.append(done)
+        if len(calls) == 2:
+            raise Stop
+
+    with FakePeer(_data_for_ever) as peer:
+        client = tftp.TFTPClient("127.0.0.1", peer.port, timeout=5, retries=1, blksize=None)
+        with pytest.raises(Stop):
+            client.download("f", io.BytesIO(), progress=progress)
+        assert wait_until(lambda: any(tftp.decode(d).__class__ is tftp.ErrorPacket for _, d in peer.seen))
+        told = [p for p in (tftp.decode(d) for _, d in peer.seen) if isinstance(p, tftp.ErrorPacket)]
+    assert told[0].code == tftp.TFTPErrorCode.NOT_DEFINED
+
+
+def test_progress_is_reported_for_a_file_that_arrives_in_its_first_packet(root, make_server):
+    server = make_server(root)
+    calls = []
+    plain = {"blksize": None, "tsize": False, "timeout_option": False}  # no OACK: the answer is DATA 1
+    client_for(server, **plain).download("one.bin", io.BytesIO(), progress=lambda d, t: calls.append((d, t)))
+    assert calls == [(1, None)]
