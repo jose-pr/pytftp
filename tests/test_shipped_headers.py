@@ -14,7 +14,8 @@ import fnmatch
 import importlib
 import inspect
 import re
-from pathlib import Path
+import subprocess
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -149,6 +150,26 @@ def test_the_set_of_public_modules_is_the_pinned_surface():
 # -- the table of headers --------------------------------------------------------------------------
 
 
+def _nearest_parent_header(path, headers):
+    """The ``AGENTS.md`` of the closest directory above *path* that has one."""
+    directory = PurePosixPath(path).parent
+    for ancestor in directory.parents:
+        candidate = (ancestor / "AGENTS.md").as_posix()
+        if candidate == "AGENTS.md" or candidate in headers:
+            return candidate
+    return "AGENTS.md"
+
+
+def _committed_headers():
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--", "*AGENTS.md"], cwd=str(ROOT), capture_output=True, text=True, check=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        pytest.skip("not a git checkout")
+    return [p for p in out.split() if p != "AGENTS.md"]
+
+
 @pytest.mark.parametrize("path", SUBHEADERS, ids=_inside_package)
 def test_every_package_header_is_in_the_top_headers_table(path):
     rows = [line for line in _lines(TOP) if line.startswith("|")]
@@ -160,6 +181,56 @@ def test_every_package_header_is_in_the_top_headers_table(path):
 def test_every_header_in_the_top_headers_table_exists():
     named = re.findall(r"^\| `(tftp/(?:\w+/)?AGENTS\.md)` \|", _text(TOP), flags=re.M)
     assert sorted(named) == sorted(["tftp/AGENTS.md"] + [_inside_package(p) for p in SUBHEADERS])
+
+
+def test_the_root_file_names_the_headers_directly_below_it():
+    """A parent indexes its own children and no deeper: the package headers are the top header's."""
+    root = ROOT / "AGENTS.md"
+    if not root.exists():
+        pytest.skip("the root AGENTS.md is not part of this tree")
+    headers = _committed_headers()
+    children = [p for p in headers if _nearest_parent_header(p, headers) == "AGENTS.md"]
+    assert "src/tftp/AGENTS.md" in children and "tests/AGENTS.md" in children
+    rows = [line for line in _lines(root) if line.startswith("|")]
+    missing = [p for p in children if not any(p in row for row in rows)]
+    assert not missing, "a table row of the root AGENTS.md does not name: %s" % ", ".join(missing)
+
+
+def test_the_root_file_is_not_over_its_limit():
+    root = ROOT / "AGENTS.md"
+    if not root.exists():
+        pytest.skip("the root AGENTS.md is not part of this tree")
+    assert len(_lines(root)) <= ROOT_MAX_LINES
+
+
+def test_the_root_file_has_the_standard_sections_in_order():
+    root = ROOT / "AGENTS.md"
+    if not root.exists():
+        pytest.skip("the root AGENTS.md is not part of this tree")
+    headings = re.findall(r"^## (.*)$", _text(root), flags=re.M)
+    assert headings == ["Layout", "Environment", "Checks", "Conventions", "Releasing"]
+
+
+def test_the_tests_header_names_every_test_file_and_directory():
+    tests = ROOT / "tests"
+    header = tests / "AGENTS.md"
+    if not header.exists():
+        pytest.skip("tests/AGENTS.md is not part of this tree")
+    text = _text(header)
+    data = {"cases", "expected", "__pycache__"}
+    names = [
+        p.relative_to(tests).as_posix()
+        for p in tests.rglob("*")
+        if p.is_file()
+        and not data & set(p.relative_to(tests).parts)
+        and p.suffix in (".py", ".ini", ".json")
+        and p.name != "__init__.py"
+    ]
+    directories = [
+        p.name for p in tests.iterdir() if p.is_dir() and p.name not in data and p.name != "__pycache__"
+    ]
+    missing = [n for n in names + [d + "/" for d in directories] if n not in text]
+    assert not missing, "tests/AGENTS.md does not name: %s" % ", ".join(missing)
 
 
 # -- the wheel -------------------------------------------------------------------------------------
