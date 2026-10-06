@@ -78,7 +78,7 @@ class CaptureCmd(Base):
             raise ValueError("no such file: %s" % self.source)
         return read_datagrams(self.source)
 
-    def __call__(self) -> "int | None":
+    def __call__(self) -> _ty.Optional[int]:
         try:
             wanted = compile_filter(self.filter)
             datagrams = self._datagrams()

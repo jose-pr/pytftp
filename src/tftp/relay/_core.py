@@ -21,7 +21,7 @@ import selectors
 import socket
 import sys
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
@@ -89,12 +89,12 @@ class TFTPRelay(SelectorService):
         self,
         route: Any,
         *,
-        host: "IPAddressLike | Host | None" = None,
+        host: Optional[Union[IPAddressLike, Host]] = None,
         port: int = 69,
         idle_timeout: float = 30.0,
         max_duration: float = 3600.0,
         linger: float = 2.0,
-        upstream_src: "IPAddressLike | Host | None" = None,
+        upstream_src: Optional[Union[IPAddressLike, Host]] = None,
         limits: Optional[TFTPServerLimits] = None,
         max_sessions: Optional[int] = None,
         ignore_broadcast: bool = True,

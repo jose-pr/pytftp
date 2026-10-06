@@ -31,7 +31,7 @@ Every class is rebuilt by ``type(*args)``, so each one copies and pickles.
 from __future__ import annotations
 
 import errno
-from typing import Tuple
+from typing import Optional, Tuple
 
 from .packet._enums import TFTPErrorCode
 
@@ -142,9 +142,9 @@ class RemoteError(TFTPError):
     expects the builtin.
     """
 
-    _CODE: "int | None" = None
+    _CODE: Optional[int] = None
 
-    def __init__(self, code: "int | None" = None, message: str = "") -> None:
+    def __init__(self, code: Optional[int] = None, message: str = "") -> None:
         super().__init__(self._CODE if code is None else code, message)
 
     @classmethod

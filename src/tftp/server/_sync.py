@@ -22,7 +22,7 @@ import socket
 import sys
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, TypeVar, Union
 
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
@@ -268,7 +268,7 @@ class TFTPServer(SelectorService, ServerBase):
         self,
         root_or_handler: Any,
         *,
-        host: "IPAddressLike | Host | None" = None,
+        host: Optional[Union[IPAddressLike, Host]] = None,
         port: int = 69,
         writable: bool = False,
         create: bool = True,

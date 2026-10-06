@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import errno
 import socket
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Tuple
+from typing import TYPE_CHECKING, Any, NamedTuple, Union, Optional, Tuple
 
 if TYPE_CHECKING:
     from netimps import Host, InterfaceLike, IPAddressLike
@@ -35,7 +35,7 @@ class Arrival(NamedTuple):
 
 
 def _bind_interface(
-    host: "IPAddressLike | Host | None", port: int, interface: "InterfaceLike"
+    host: Optional[Union[IPAddressLike, Host]], port: int, interface: "InterfaceLike"
 ) -> socket.socket:
     """Listen on ``interface``'s address: IPv4 when it has one, unless ``host`` is a
     wildcard naming the family (``"0.0.0.0"`` or ``"::"``)."""
@@ -55,7 +55,9 @@ def _bind_interface(
     return bind("", port, family=socket.AF_INET6 if address.version == 6 else socket.AF_INET, **plain)
 
 
-def _bind(host: "IPAddressLike | Host | None", port: int, interface: "InterfaceLike" = None) -> socket.socket:
+def _bind(
+    host: Optional[Union[IPAddressLike, Host]], port: int, interface: "InterfaceLike" = None
+) -> socket.socket:
     from netimps import Host, bind, is_wildcard, split_host
 
     if interface is not None:
@@ -98,7 +100,7 @@ class Listener:
 
     def __init__(
         self,
-        host: "IPAddressLike | Host | None",
+        host: Optional[Union[IPAddressLike, Host]],
         port: int,
         pktinfo: bool = True,
         interface: "InterfaceLike" = None,

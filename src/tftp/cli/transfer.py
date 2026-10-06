@@ -52,7 +52,7 @@ class Get(ClientCmd):
     "Where to write it; '-' for stdout. Default: the remote file's basename"
     ("local",)
 
-    def __call__(self) -> "int | None":
+    def __call__(self) -> _ty.Optional[int]:
         mode = self.mode or "octet"
         if _is_url(self.host):
             url = TFTPURL.parse(self.host)
@@ -105,7 +105,7 @@ class Put(ClientCmd):
     "Name to store it under. Default: the local file's basename"
     ("remote",)
 
-    def __call__(self) -> "int | None":
+    def __call__(self) -> _ty.Optional[int]:
         mode = self.mode or "octet"
         url = TFTPURL.parse(self.host) if _is_url(self.host) else None
         if url is not None:
@@ -146,7 +146,7 @@ class Ls(ClientCmd):
     "Directory to list; default: the server's root"
     ("remote",)
 
-    def __call__(self) -> "int | None":
+    def __call__(self) -> _ty.Optional[int]:
         if _is_url(self.host):
             url = TFTPURL.parse(self.host)
             client = self._client(url.host, url.port, url)

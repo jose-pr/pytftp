@@ -61,7 +61,7 @@ RouteFunction = Callable[[Any, Any], Optional[UpstreamLike]]
 
 
 def by_subnet(
-    table: "dict[IPNetworkLike, UpstreamLike] | Sequence[Tuple[IPNetworkLike, UpstreamLike]]",
+    table: Union[Dict[IPNetworkLike, UpstreamLike], Sequence[Tuple[IPNetworkLike, UpstreamLike]]],
 ) -> RouteFunction:
     """Route by the client's address: ``{"10.1.0.0/16": "10.1.0.5", ...}``.
 
@@ -91,7 +91,7 @@ def by_subnet(
     return route
 
 
-def by_prefix(table: "dict[str, UpstreamLike] | Sequence[Tuple[str, UpstreamLike]]") -> RouteFunction:
+def by_prefix(table: Union[Dict[str, UpstreamLike], Sequence[Tuple[str, UpstreamLike]]]) -> RouteFunction:
     """Route by filename prefix: ``{"windows/": "wds.lan", "": "default.lan"}``.
 
     The longest matching prefix wins; leading ``/`` and ``\\`` are ignored

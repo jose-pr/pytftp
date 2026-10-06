@@ -35,11 +35,11 @@ class Profile:
 
     __slots__ = ("name", "_server", "_client")
 
-    STRICT: ClassVar["Profile"]
-    DEFAULT: ClassVar["Profile"]
-    PXE: ClassVar["Profile"]
-    HPA: ClassVar["Profile"]
-    LEGACY: ClassVar["Profile"]
+    STRICT: ClassVar[Profile]
+    DEFAULT: ClassVar[Profile]
+    PXE: ClassVar[Profile]
+    HPA: ClassVar[Profile]
+    LEGACY: ClassVar[Profile]
 
     def __init__(self, name: str, server: TFTPServerOptions, client: Mapping[str, Any]) -> None:
         self.name = name

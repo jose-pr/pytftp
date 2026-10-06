@@ -67,7 +67,7 @@ class RelayCmd(Traced):
     "LOW:HIGH: take transfer ports from this range (for firewalls)"
     ("--port-range",)
 
-    def __call__(self) -> "int | None":
+    def __call__(self) -> _ty.Optional[int]:
         try:
             routes = []
             if self.route_prefix:

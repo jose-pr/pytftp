@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from typing import Any, BinaryIO, Optional
+from typing import Any, BinaryIO, Optional, Union
 
 from ..exceptions import TFTPError
 from ..listing import DirectoryListing
@@ -65,7 +65,7 @@ class FilesystemBackend:
 
     def __init__(
         self,
-        root: "str | os.PathLike[str]",
+        root: Union[str, "os.PathLike[str]"],
         *,
         writable: bool = False,
         create: bool = True,

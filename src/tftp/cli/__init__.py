@@ -40,7 +40,7 @@ class Pytftp(Args):
     _subcommands_ = [Get, Put, Ls, Serve, RelayCmd, CaptureCmd]
 
 
-def run(argv: "_ty.Sequence[str] | None" = None) -> "int | None":
+def run(argv: _ty.Optional[_ty.Sequence[str]] = None) -> _ty.Optional[int]:
     """Console-script entry point.
 
     A ``ValueError`` out of the library is a caller error (an out-of-range

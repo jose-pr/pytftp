@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
@@ -81,7 +81,7 @@ class AsyncTFTPServer(ServerBase):
         self,
         root_or_handler: Any,
         *,
-        host: "IPAddressLike | Host | None" = None,
+        host: Optional[Union[IPAddressLike, Host]] = None,
         port: int = 69,
         **kwargs: Any,
     ) -> None:

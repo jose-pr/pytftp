@@ -188,7 +188,7 @@ class Serve(Traced):
             fit_mtu=self.fit_mtu,
         )
 
-    def __call__(self) -> "int | None":
+    def __call__(self) -> _ty.Optional[int]:
         try:
             handler = self._handler()
             options = self._options()

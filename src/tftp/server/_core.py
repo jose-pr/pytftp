@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import sys
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
@@ -52,7 +52,7 @@ class ServerBase:
         self,
         root_or_handler: Any,
         *,
-        host: "IPAddressLike | Host | None" = None,
+        host: Optional[Union[IPAddressLike, Host]] = None,
         port: int = 69,
         writable: bool = False,
         create: bool = True,
