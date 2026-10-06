@@ -28,7 +28,7 @@ from ..packet.codec import _encode_error
 from ..server.base import ServerBase
 from ..server.listener import _RECV_SIZE, Arrival
 from ..server.session import Session
-from .bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
+from .._bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
 
 __all__ = ["AsyncTFTPServer"]
 

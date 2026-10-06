@@ -13,8 +13,8 @@ import asyncio
 import inspect
 from typing import Any, Callable, Optional
 
-from ..exceptions import TFTPError
-from ..exceptions import WouldBlock
+from .exceptions import TFTPError
+from .exceptions import WouldBlock
 
 __all__ = ["AsyncReaderBridge", "AsyncWriterBridge", "is_async_reader", "is_async_writer"]
 

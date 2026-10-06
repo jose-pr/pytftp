@@ -1,10 +1,11 @@
 # asyncio
 
-`tftp.aio` runs the same engine on an event loop.
+`AsyncTFTPClient` and `AsyncTFTPServer` run the same engine on an event loop.
 
 ```python
 import asyncio
-from tftp.aio import AsyncTFTPClient, AsyncTFTPServer
+from tftp import AsyncTFTPClient
+from tftp.aio import AsyncTFTPServer
 
 async def main():
     client = AsyncTFTPClient("192.0.2.1", windowsize=8)

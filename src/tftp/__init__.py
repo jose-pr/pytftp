@@ -56,7 +56,7 @@ from .exceptions import (
     UnknownTransferID,
     WouldBlock,
 )
-from .client import MODES, TFTPClient, RemoteStat, download, upload
+from .client import MODES, AsyncTFTPClient, RemoteStat, TFTPClient, download, upload
 from .listing import ListEntry
 from .backends import FilesystemBackend
 from .server import (
@@ -94,6 +94,7 @@ __all__ = [
     "__version__",
     # Client
     "TFTPClient",
+    "AsyncTFTPClient",
     "RemoteStat",
     "ListEntry",
     "download",

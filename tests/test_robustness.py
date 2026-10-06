@@ -507,7 +507,7 @@ def test_interface_lookups_reuse_netimps_cache():
 
     import netimps
 
-    from tftp.client import _mtu_blksize
+    from tftp.client._core import _mtu_blksize
     from tftp.server.listener import Listener
 
     netimps.clear_interface_cache()

@@ -198,6 +198,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `str(event)` is the human line of a `PacketEvent` (`event.format()` is gone),
   and `CapturedTransfer.size` is the transferred byte count (`.bytes` is gone;
   the `"bytes"` key of `to_dict()` is unchanged).
+- **`AsyncTFTPClient` is a sibling of `TFTPClient`, not a subclass.** Both derive
+  from a private base that holds the arguments, the request options and the
+  answer to the first packet, and neither has the other's methods:
+  `issubclass(AsyncTFTPClient, TFTPClient)` is false, and `AsyncTFTPClient` no
+  longer has a `path()` that raises `TypeError` (a `TFTPPath` is synchronous;
+  use `TFTPClient(...).path(...)`). The twin is exported from `tftp` and
+  `tftp.client`, beside `TFTPClient`, and no longer from `tftp.aio`, which
+  keeps `AsyncTFTPServer` alone. `AsyncReaderBridge`, `AsyncWriterBridge`,
+  `is_async_reader` and `is_async_writer` are internal: the clients and the
+  server still take an async reader, an async writer or an async iterable.
+- **A host name that does not resolve is netimps' `ResolutionError`** (an
+  `OSError`; `NoAnswerError` when the lookup found no such name) from both
+  clients, where it was `socket.gaierror`.
 
 ### Renamed
 

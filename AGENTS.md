@@ -19,8 +19,9 @@ src/tftp/
 ├── errors.py          # exceptions, OSError -> ERROR code mapping
 ├── result.py          # TransferResult
 ├── transfer/          # I/O-free engine: base.py, sender.py, receiver.py
-├── client.py          # TFTPClient: request phase + blocking transfer loop
-├── aio/               # asyncio: client.py, server.py, bridge.py (async streams <-> engine)
+├── client/            # _core.py (shared base), _sync.py (TFTPClient), _asyncio.py (AsyncTFTPClient)
+├── _bridge.py         # async streams <-> engine (used by both asyncio drivers)
+├── aio/               # server.py: AsyncTFTPServer
 ├── path/              # pathlib-next: local.py (TFTPPath), uri.py (TFTPURIPath), _stream.py
 ├── server/
 │   ├── base.py        # ServerBase: config, admission, refusal, reporting (shared with aio)

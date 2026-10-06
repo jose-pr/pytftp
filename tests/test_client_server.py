@@ -429,7 +429,7 @@ _BAD_VALUE = [
 
 
 def _client_classes():
-    from tftp.aio import AsyncTFTPClient
+    from tftp import AsyncTFTPClient
 
     return pytest.mark.parametrize("cls", [tftp.TFTPClient, AsyncTFTPClient])
 

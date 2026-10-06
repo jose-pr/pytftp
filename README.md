@@ -168,7 +168,7 @@ for transfer in analyze("boot.pcapng").transfers:
 
 # asyncio
 async def fetch():
-    async for chunk in tftp.aio.AsyncTFTPClient("192.0.2.1").stream("vmlinuz"):
+    async for chunk in tftp.AsyncTFTPClient("192.0.2.1").stream("vmlinuz"):
         ...
 ```
 
@@ -182,11 +182,11 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 
 | Module | Purpose |
 | --- | --- |
-| `tftp.client` | `TFTPClient`, `download`, `upload` |
+| `tftp.client` | `TFTPClient`, `AsyncTFTPClient`, `download`, `upload` |
 | `tftp.server` | `TFTPServer`, `TFTPServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
 | `tftp.backends` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` (proxy), `Pipe` |
 | `tftp.relay` | `TFTPRelay` and routing helpers |
-| `tftp.aio` | `AsyncTFTPClient`, `AsyncTFTPServer` |
+| `tftp.aio` | `AsyncTFTPServer` |
 | `tftp.capture` | trace events, `PcapWriter`, pcap/pcapng reading, `analyze`, filters |
 | `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |

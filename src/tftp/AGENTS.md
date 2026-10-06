@@ -414,9 +414,10 @@ outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,
 `path`; `close()` renames it into place (refusing with ERROR 6 if
 `overwrite=False` and `path` appeared meanwhile); `abort()` deletes it.
 
-## asyncio (`tftp.aio`)
+## asyncio
 
-**`AsyncTFTPClient(...)`** — `TFTPClient`'s arguments and rules (options, backoff,
+**`AsyncTFTPClient(...)`** (from `tftp` and `tftp.client`) — a sibling of
+`TFTPClient`, not a subclass: the same arguments and rules (options, backoff,
 fallback, `trace`, `on_negotiated`); coroutine methods `download(filename,
 dst, *, mode, progress)`, `get`, `upload(filename, src, *, mode,
 progress)`, `put`, `size`, `stat` (both in the executor), `listdir`, and the async generator **`stream(filename, *, mode,
@@ -431,7 +432,7 @@ iterable of bytes. Cancelling the task sends the server ERROR 0. Each
 attempt (including the option fallback) uses a fresh socket.
 
 **`AsyncTFTPServer(root_or_handler, *, host=None, port=69, executor=None, **server_options)`**
-— `TFTPServer`'s arguments except `open_in_thread`/`workers`. `async with
+(from `tftp.aio`) — `TFTPServer`'s arguments except `open_in_thread`/`workers`. `async with
 AsyncTFTPServer(...) as server: await server.serve_forever()`, or `await
 server.start()` … `await server.stop()`; `shutdown()` is thread-safe; `await
 close()`. Handlers:
@@ -449,13 +450,6 @@ close()`. Handlers:
 - `max_sessions` defaults to 500; `None` is 510 on Windows (a selector
   loop's `select()`).
 
-**`AsyncReaderBridge(source, *, capacity=1 MiB, size=None)`** /
-**`AsyncWriterBridge(sink, *, capacity=1 MiB, close_sink=True)`** — the
-adapters doing that (engine-side `readinto`/`write`/`close` raising
-`WouldBlock`, `set_wakeup`; writer `await finish()`); create them on the
-running loop. `is_async_reader(obj)` / `is_async_writer(obj)` say which
-objects they take.
-
 ## Paths (`tftp.path`, `path` extra)
 
 `pip install tftp[path]` adds `pathlib-next[uri]`. Importing `tftp` never
@@ -469,7 +463,7 @@ client; `with_client()`, `with_mode()`; `client`, `transfer_mode`. Equality
 and hashing include the server (host, port). `as_uri()` is the `tftp://`
 URL. `relative_to()` works on the path text. A path is synchronous: binding
 it to an `AsyncTFTPClient` (`TFTPPath(..., client=)`, `with_client()`) raises
-`TypeError`, and so does `AsyncTFTPClient.path()`.
+`TypeError`, and `AsyncTFTPClient` has no `path()`.
 
 **`TFTPURIPath`** — the `tftp://host[:port]/path[;mode=netascii]` scheme
 for `pathlib_next.uri.UriPath`, registered through the

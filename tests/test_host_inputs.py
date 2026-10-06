@@ -11,7 +11,7 @@ import pytest
 import tftp
 from conftest import client_for
 from tftp._sockets import fit_window
-from tftp.aio import AsyncTFTPClient
+from tftp import AsyncTFTPClient
 from tftp.relay import TFTPRelay, Upstream
 
 # -- a host name as the listen address -----------------------------------------
@@ -47,6 +47,33 @@ def test_max_timeout_below_timeout_is_refused_when_the_client_is_built(cls):
     with pytest.raises(ValueError, match="max_timeout"):
         cls("127.0.0.1", 69, timeout=0.5, max_timeout=0.1)
     assert cls("127.0.0.1", 69, timeout=0.5, max_timeout=0.5).max_timeout == 0.5
+
+
+# -- a name that does not resolve ---------------------------------------------------
+
+
+@pytest.mark.parametrize("cls", [tftp.TFTPClient, AsyncTFTPClient])
+def test_a_name_that_does_not_resolve_is_netimps_resolution_error(cls):
+    # RFC 6761: ".invalid" never resolves.
+    with pytest.raises(netimps.ResolutionError) as caught:
+        cls("no-such-host.invalid", timeout=0.2, retries=0)._endpoint()
+    assert isinstance(caught.value, OSError)
+    assert not isinstance(caught.value, socket.gaierror)
+
+
+def test_the_sync_client_raises_it_from_a_transfer():
+    with pytest.raises(netimps.ResolutionError):
+        tftp.TFTPClient("no-such-host.invalid", timeout=0.2, retries=0).get("f")
+
+
+def test_the_async_client_raises_it_from_a_transfer():
+    import asyncio
+
+    async def run():
+        await AsyncTFTPClient("no-such-host.invalid", timeout=0.2, retries=0).get("f")
+
+    with pytest.raises(netimps.ResolutionError):
+        asyncio.run(run())
 
 
 # -- host:port text and argument types --------------------------------------------

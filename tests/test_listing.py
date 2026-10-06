@@ -91,7 +91,7 @@ def test_listing_not_offered_when_not_allowed(root, make_server):
 
 def test_async_client(root, server):
     async def main():
-        client = tftp.aio.AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5)
+        client = tftp.AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5)
         names = [e.name for e in await client.listdir("sub")]
         info = await client.stat("sub")
         with pytest.raises(NotADirectoryError):
@@ -106,7 +106,7 @@ def test_async_server_lists(root):
     async def main():
         async with tftp.aio.AsyncTFTPServer(root, host="127.0.0.1", port=0, options=LISTING) as server:
             await server.start()
-            client = tftp.aio.AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5)
+            client = tftp.AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5)
             return [e.name for e in await client.listdir("sub")]
 
     assert asyncio.run(main()) == ["nested.bin"]

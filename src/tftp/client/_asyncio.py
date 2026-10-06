@@ -1,10 +1,9 @@
-"""The asyncio client: :class:`TFTPClient`'s options and rules, without a thread per transfer."""
+"""The asyncio client: the synchronous client's options and rules, without a thread per transfer."""
 
 from __future__ import annotations
 
 import asyncio
 import errno
-import functools
 import io
 import os
 import socket
@@ -12,7 +11,6 @@ import time
 from typing import Any, AsyncIterator, List, Optional, Tuple
 
 from ..capture.events import PacketEvent, new_session_id
-from ..client import TFTPClient, Progress, RemoteStat, _NotListing, _mode, _source_size
 from .. import listing
 from ..listing import ListEntry
 from ..exceptions import RemoteError, TransferTimeoutError
@@ -22,8 +20,9 @@ from ..packet import TFTPErrorCode, TFTPOpcode, encode_ack, encode_request
 from ..packet.codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
-from .._sockets import fit_window, same_host, sockaddr
-from .bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
+from .._bridge import AsyncReaderBridge, AsyncWriterBridge, is_async_reader, is_async_writer
+from .._sockets import fit_window, same_host
+from ._core import Progress, RemoteStat, _ClientBase, _mode, _NotListing, _source_size
 
 __all__ = ["AsyncTFTPClient"]
 
@@ -161,8 +160,8 @@ class _Transfer:
             self.after()
 
 
-class AsyncTFTPClient(TFTPClient):
-    """:class:`TFTPClient` for asyncio: the same arguments, coroutine methods.
+class AsyncTFTPClient(_ClientBase):
+    """:class:`tftp.TFTPClient` for asyncio: the same arguments, coroutine methods.
 
     Sources and destinations may be what :class:`TFTPClient` takes (paths,
     binary files, bytes -- local file I/O happens on the loop, which is fine
@@ -199,21 +198,12 @@ class AsyncTFTPClient(TFTPClient):
             return result
         return await self._download(filename, dst, mode, progress)
 
-    def path(self, *segments: Any, mode: str = "octet") -> Any:
-        """Not available: a :class:`tftp.path.TFTPPath` is synchronous.
-
-        Raises ``TypeError``; use ``tftp.TFTPClient(...).path(...)``.
-        """
-        raise TypeError(
-            "AsyncTFTPClient has no path(): a TFTPPath is synchronous, use tftp.TFTPClient(...).path(...)"
-        )
-
-    async def get(self, filename: str, *, mode: str = "octet") -> bytes:  # type: ignore[override]
+    async def get(self, filename: str, *, mode: str = "octet") -> bytes:
         buffer = io.BytesIO()
         await self.download(filename, buffer, mode=mode)
         return buffer.getvalue()
 
-    async def upload(  # type: ignore[override]
+    async def upload(
         self,
         filename: str,
         src: Any,
@@ -230,21 +220,21 @@ class AsyncTFTPClient(TFTPClient):
             return await self._upload(filename, io.BytesIO(bytes(src)), mode, progress)
         return await self._upload(filename, src, mode, progress)
 
-    async def put(self, filename: str, data: bytes, *, mode: str = "octet") -> TransferResult:  # type: ignore[override]
+    async def put(self, filename: str, data: bytes, *, mode: str = "octet") -> TransferResult:
         return await self.upload(filename, data, mode=mode)
 
-    async def size(self, filename: str, *, mode: str = "octet") -> Optional[int]:  # type: ignore[override]
-        """:meth:`TFTPClient.size`, without blocking the loop (it runs in the executor)."""
+    async def size(self, filename: str, *, mode: str = "octet") -> Optional[int]:
+        """:meth:`tftp.TFTPClient.size`, without blocking the loop (it runs in the executor)."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: TFTPClient.size(self, filename, mode=mode))
+        return await loop.run_in_executor(None, lambda: self._size(filename, mode))
 
-    async def stat(self, filename: str, *, mode: str = "octet") -> RemoteStat:  # type: ignore[override]
-        """:meth:`TFTPClient.stat`, without blocking the loop (it runs in the executor)."""
+    async def stat(self, filename: str, *, mode: str = "octet") -> RemoteStat:
+        """:meth:`tftp.TFTPClient.stat`, without blocking the loop (it runs in the executor)."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: TFTPClient.stat(self, filename, mode=mode))
+        return await loop.run_in_executor(None, lambda: self._stat(filename, mode))
 
-    async def listdir(self, dirname: str = "") -> List[ListEntry]:  # type: ignore[override]
-        """:meth:`TFTPClient.listdir`, as a coroutine."""
+    async def listdir(self, dirname: str = "") -> List[ListEntry]:
+        """:meth:`tftp.TFTPClient.listdir`, as a coroutine."""
         lister = self._lister()
         sink = io.BytesIO()
         try:
@@ -334,18 +324,10 @@ class AsyncTFTPClient(TFTPClient):
         )
 
     async def _run(self, opcode, filename, mode, size, write, read, progress, bridge) -> TransferResult:
-        from netimps import Host, bind
+        from netimps import bind
 
         loop = asyncio.get_running_loop()
-        host, port = self._target()
-        ipv6 = {socket.AF_INET6: True, socket.AF_INET: False}.get(self.family)
-        address = await loop.run_in_executor(
-            None, functools.partial(Host(host).ip, ipv6=ipv6)
-        )  # DNS off the loop
-        if address is None:
-            raise socket.gaierror("cannot resolve %r" % host)
-        family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
-        server = sockaddr(address, port)
+        family, server, address = await loop.run_in_executor(None, self._endpoint)  # DNS off the loop
         options = self._options(opcode == TFTPOpcode.RRQ, size, address)
         local_host, local_port = self.src or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
         started = time.monotonic()

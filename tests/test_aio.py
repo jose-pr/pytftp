@@ -11,7 +11,8 @@ import pytest
 
 import tftp
 from conftest import client_for
-from tftp.aio import AsyncTFTPClient, AsyncTFTPServer
+from tftp import AsyncTFTPClient
+from tftp.aio import AsyncTFTPServer
 from tftp.backends import HTTPBackend, MemoryBackend
 
 
@@ -372,7 +373,7 @@ def test_a_send_the_host_refuses_ends_the_request_and_an_icmp_report_does_not():
     """Transport errors are loss only when they are the peer's ICMP report."""
     import errno
 
-    from tftp.aio.client import _Protocol, _Transfer
+    from tftp.client._asyncio import _Protocol, _Transfer
 
     async def main():
         loop = asyncio.get_running_loop()

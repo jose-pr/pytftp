@@ -15,6 +15,7 @@ EXPECTED = {
     "tftp": [
         "AccessViolation",
         "AckPacket",
+        "AsyncTFTPClient",
         "AtomicWriter",
         "DEFAULT_BLKSIZE",
         "DEFAULT_REGISTRY",
@@ -82,6 +83,7 @@ EXPECTED = {
         "upload_url",
     ],
     "tftp.client": [
+        "AsyncTFTPClient",
         "MODES",
         "RemoteStat",
         "TFTPClient",
@@ -227,12 +229,7 @@ EXPECTED = {
         "run",
     ],
     "tftp.aio": [
-        "AsyncReaderBridge",
-        "AsyncTFTPClient",
         "AsyncTFTPServer",
-        "AsyncWriterBridge",
-        "is_async_reader",
-        "is_async_writer",
     ],
     "tftp.transfer": [
         "Receiver",
@@ -321,8 +318,6 @@ POSITIONAL = {
     "tftp.TFTPServerLimits": 0,
     "tftp.Negotiated": 0,
     "tftp.encode_request": 2,
-    "tftp.aio.AsyncReaderBridge": 1,
-    "tftp.aio.AsyncWriterBridge": 1,
     "tftp.AtomicWriter": 1,
     "tftp.listing.DirectoryListing": 1,
     "tftp.OptionRegistry.register": 1,
@@ -331,7 +326,7 @@ POSITIONAL = {
     "tftp.aio.AsyncTFTPServer": 1,
     "tftp.relay.TFTPRelay": 1,
     "tftp.TFTPClient": 2,
-    "tftp.aio.AsyncTFTPClient": 2,
+    "tftp.AsyncTFTPClient": 2,
     "tftp.PortRange": 2,
     "tftp.relay.Upstream": 2,
 }
@@ -377,3 +372,37 @@ def test_an_option_given_by_position_is_refused():
         tftp.encode_request(tftp.TFTPOpcode.RRQ, "f", "octet")
     with pytest.raises(TypeError):
         tftp.TFTPServer(".", "127.0.0.1")
+
+
+# -- the twins ----------------------------------------------------------------------------------
+
+
+def test_the_clients_are_siblings_exported_from_the_same_modules():
+    import tftp
+    import tftp.client
+
+    assert tftp.client.AsyncTFTPClient is tftp.AsyncTFTPClient
+    assert tftp.client.TFTPClient is tftp.TFTPClient
+    assert not issubclass(tftp.AsyncTFTPClient, tftp.TFTPClient)
+    assert not issubclass(tftp.TFTPClient, tftp.AsyncTFTPClient)
+    assert not hasattr(tftp.AsyncTFTPClient, "path")
+
+
+def test_a_coroutine_method_overrides_nothing():
+    import inspect
+
+    import tftp
+
+    for name, member in vars(tftp.AsyncTFTPClient).items():
+        if inspect.iscoroutinefunction(member):
+            assert not hasattr(tftp.TFTPClient.__mro__[1], name), name
+
+
+def test_no_client_method_silences_a_signature_mismatch():
+    import pathlib
+
+    import tftp.client
+
+    package = pathlib.Path(tftp.client.__file__).parent
+    for path in package.glob("*.py"):
+        assert "type: ignore[override]" not in path.read_text(encoding="utf-8"), path.name
