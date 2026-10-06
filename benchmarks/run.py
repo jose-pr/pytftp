@@ -1,9 +1,9 @@
 """Loopback throughput benchmark for the tftp client and server.
 
-Serves an in-memory file (no disk in the measurement) from a server in its
-own process -- sharing a process would make client and server contend for
-one GIL -- and times complete downloads and uploads for several block and
-window sizes.
+Serves an in-memory file (no disk in the measurement) from the library's own
+memory backend, in a server in its own process -- sharing a process would make
+client and server contend for one GIL -- and times complete downloads and
+uploads for several block and window sizes.
 Each metric reports min/median/max milliseconds per transfer over
 ``--samples`` runs; compare on the median.
 
@@ -25,6 +25,7 @@ import sys
 import time
 
 import tftp
+from tftp.backends import MemoryBackend
 
 CASES = [
     # (name, blksize, windowsize)
@@ -37,19 +38,9 @@ CASES = [
 ]
 
 
-class PayloadHandler:
-    def __init__(self, payload: bytes) -> None:
-        self.payload = payload
-
-    def open_read(self, context):
-        return io.BytesIO(self.payload)
-
-    def open_write(self, context, size):
-        return io.BytesIO()
-
-
 def serve(payload: bytes, host: str, ports) -> None:
-    with tftp.TFTPServer(PayloadHandler(payload), host=host, port=0, writable=True) as server:
+    backend = MemoryBackend({"bench.bin": payload}, writable=True, max_upload=None)
+    with tftp.TFTPServer(backend, host=host, port=0) as server:
         ports.put(server.server_address[1])
         server.serve_forever()
 

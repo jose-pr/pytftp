@@ -5,6 +5,10 @@ caveats and the evidence behind each release.
 
 ## [Unreleased]
 
+Target: no metric of `benchmarks/run.py` is more than 10% slower than the
+`baseline-memory-backend` result of the same system and interpreter in
+`benchmarks/results/`, run on the median of the same number of samples.
+
 ## [0.0.0] - 2026-10-03
 
 First release. What it contains is in the changelog.

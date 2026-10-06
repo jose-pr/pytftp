@@ -1,9 +1,9 @@
 # Benchmarks
 
 `run.py` measures loopback throughput: a server in its own process serves an
-in-memory payload (4 MiB by default, so no disk is measured) and the client
-times complete downloads and uploads for several `blksize`/`windowsize`
-combinations.
+in-memory payload from the library's `MemoryBackend` (4 MiB by default, so no
+disk is measured) and the client times complete downloads and uploads for
+several `blksize`/`windowsize` combinations.
 
 ```bash
 python benchmarks/run.py                         # print a table
@@ -14,7 +14,16 @@ python benchmarks/run.py --size 1048576 --samples 15 --host ::1
 Results are committed under `results/`, one file per (version, interpreter,
 platform), so a before/after comparison is always recoverable. Compare on the
 **median**: a single run on a desktop is noisy, and a local run is a sanity
-check, not a release claim.
+check, not a release claim. On one Windows desktop (2026-10-06) the same code
+with the same handler measured up to twice as slow in one session as in another
+a few hours apart, so compare results of one session. Results recorded before
+the `baseline-memory-backend` ones served from a handler of their own, which
+opens on a worker thread where the memory backend does not, so they are not
+comparable with later ones.
+
+The `Benchmarks` workflow runs the same script on the three systems when
+dispatched by hand and keeps each result as a workflow artifact; shared runners
+are noisy, so it never fails on a number.
 
 ## Schema
 

@@ -1,0 +1,95 @@
+{
+  "name": "baseline-memory-backend-win-arm64-py3.14",
+  "version": "0.1.0",
+  "python": "3.14.7",
+  "implementation": "CPython",
+  "platform": "win32-ARM64",
+  "payload_bytes": 4194304,
+  "host": "127.0.0.1",
+  "metrics": {
+    "download/rfc1350": {
+      "min_ms": 232.60550000122748,
+      "median_ms": 279.2061000072863,
+      "max_ms": 295.24199999286793,
+      "samples": 9,
+      "mib_per_s_median": 14.32633456036818
+    },
+    "upload/rfc1350": {
+      "min_ms": 267.5564000091981,
+      "median_ms": 297.1925000019837,
+      "max_ms": 313.1201999785844,
+      "samples": 9,
+      "mib_per_s_median": 13.459289854129228
+    },
+    "download/blksize1428": {
+      "min_ms": 99.34029998839833,
+      "median_ms": 108.47070001182146,
+      "max_ms": 125.10619999375194,
+      "samples": 9,
+      "mib_per_s_median": 36.87631774814828
+    },
+    "upload/blksize1428": {
+      "min_ms": 96.44510000362061,
+      "median_ms": 106.88999999547377,
+      "max_ms": 111.62720000720583,
+      "samples": 9,
+      "mib_per_s_median": 37.42164842519767
+    },
+    "download/blksize8192": {
+      "min_ms": 21.77349998964928,
+      "median_ms": 24.26850001211278,
+      "max_ms": 29.501299984985963,
+      "samples": 9,
+      "mib_per_s_median": 164.82271248752656
+    },
+    "upload/blksize8192": {
+      "min_ms": 19.031500007258728,
+      "median_ms": 22.27879999554716,
+      "max_ms": 25.70440000272356,
+      "samples": 9,
+      "mib_per_s_median": 179.5428838536849
+    },
+    "download/blksize1428-w16": {
+      "min_ms": 28.07629999006167,
+      "median_ms": 33.75970001798123,
+      "max_ms": 37.15540000121109,
+      "samples": 9,
+      "mib_per_s_median": 118.48446514244804
+    },
+    "upload/blksize1428-w16": {
+      "min_ms": 28.046399995218962,
+      "median_ms": 32.084800011944026,
+      "max_ms": 38.65490001044236,
+      "samples": 9,
+      "mib_per_s_median": 124.66962544603497
+    },
+    "download/blksize8192-w16": {
+      "min_ms": 10.247500002151355,
+      "median_ms": 11.649699998088181,
+      "max_ms": 12.579800008097664,
+      "samples": 9,
+      "mib_per_s_median": 343.35648133912764
+    },
+    "upload/blksize8192-w16": {
+      "min_ms": 7.7936999732628465,
+      "median_ms": 8.91319999936968,
+      "max_ms": 9.327600011602044,
+      "samples": 9,
+      "mib_per_s_median": 448.7726069518097
+    },
+    "download/blksize65464-w8": {
+      "min_ms": 4.320699983509257,
+      "median_ms": 4.872599994996563,
+      "max_ms": 5.831299989949912,
+      "samples": 9,
+      "mib_per_s_median": 820.9169650920262
+    },
+    "upload/blksize65464-w8": {
+      "min_ms": 2.9431000002659857,
+      "median_ms": 3.3872000058181584,
+      "max_ms": 4.112299997359514,
+      "samples": 9,
+      "mib_per_s_median": 1180.9163890910609
+    }
+  }
+}
