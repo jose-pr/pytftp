@@ -484,6 +484,18 @@ Old names are not kept as aliases.
 - The `tsize` announced for an upload from a wrapped file object (a
   `gzip.GzipFile`, say) is the size of what is read, where `fstat` of the file
   underneath announced the compressed size (139 octets for 100000).
+- **A trace hook that raises is logged once.** `TFTPClient`, `TFTPServer` and
+  `TFTPRelay` logged one traceback per datagram (nine for a 3,000-octet
+  transfer, a pcap writer on a full disk wrote one per packet of every
+  transfer) and `AsyncTFTPClient` discarded the exception silently; all of them
+  now log the first failure of a hook with its traceback and count the rest.
+  The transfer is unaffected, as before.
+- **Trace events and pcaps from the clients and the relay name a real address
+  as the local end.** `PacketEvent.local` was the wildcard (`0.0.0.0`, `::`) of
+  an unconnected socket, so `pytftp get --trace --pcap` showed
+  `0.0.0.0:55758 > 127.0.0.1:55025` and wrote 0.0.0.0 into the pcap; it is now
+  the address the route to the peer uses, once per transfer for a client and
+  per peer for the relay.
 - **A transfer ends everything it started.** `AsyncTFTPClient` left the task
   that feeds an asynchronous stream pending for ever after a download or an
   upload failed, was refused, timed out or was cancelled (asyncio logged

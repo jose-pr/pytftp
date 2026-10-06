@@ -27,7 +27,8 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
-from .._sockets import same_host, sockaddr
+from .._sockets import local_towards, same_host, sockaddr
+from ..capture._hook import HookGuard, guard
 from ..capture.events import PacketEvent, new_session_id
 from ..exceptions import TFTPDecodeError, TFTPError
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
@@ -125,6 +126,8 @@ class TFTPRelay(SelectorService):
         self.max_sessions = max_sessions
         self.ignore_broadcast = ignore_broadcast
         self.trace = trace
+        self._trace_guard: Optional[HookGuard] = None
+        self._local_cache: Dict[Tuple, Tuple] = {}
         self.on_session_end = on_session_end
         #: Ports for both of a transfer's sockets (:class:`PortRange`), or ``None``.
         self.port_range = as_port_range(port_range)
@@ -242,21 +245,18 @@ class TFTPRelay(SelectorService):
     # -- forwarding ---------------------------------------------------------------
 
     def _emit(self, session: Optional[RelaySession], sock: socket.socket, data, peer, direction, leg) -> None:
-        trace = self.trace
+        self._trace_guard = trace = guard(self.trace, log, self._trace_guard)
         if trace is None:
             return
         try:
-            local = sock.getsockname()
+            local = local_towards(sock, peer, self._local_cache)
         except OSError:
             local = ()
-        try:
-            trace(
-                PacketEvent(
-                    time.time(), direction, local, peer, bytes(data), "relay", session and session.id, leg
-                )
+        trace(
+            PacketEvent(
+                time.time(), direction, local, peer, bytes(data), "relay", session and session.id, leg
             )
-        except Exception:
-            log.exception("trace hook failed")
+        )
 
     def _send(self, session: RelaySession, sock: socket.socket, data, peer, direction: str = "out") -> None:
         try:

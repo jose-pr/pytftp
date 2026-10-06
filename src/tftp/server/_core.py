@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 if TYPE_CHECKING:
     from netimps import Host, IPAddressLike
 
+from ..capture._hook import HookGuard, guard
 from ..capture.events import PacketEvent
 from ..exceptions import RemoteError, TFTPDecodeError, TFTPError
 from ..options import Negotiated, TFTPServerOptions
@@ -100,6 +101,7 @@ class ServerBase:
         self.backoff = backoff
         self.max_timeout = max_timeout
         self.trace = trace
+        self._trace_guard: Optional[HookGuard] = None
         #: Where transfer sockets take their ports (:class:`PortRange`), or ``None``.
         self.port_range = as_port_range(port_range)
         self._ports = PortAllocator(self.port_range) if self.port_range is not None else None
@@ -209,7 +211,8 @@ class ServerBase:
         )
         session = Session(sock, peer, context, now)
         if self.trace is not None:
-            session.trace = self.trace
+            self._trace_guard = guard(self.trace, log, self._trace_guard)
+            session.trace = self._trace_guard
             # The request arrived at the listening port, not the transfer's.
             arrived = (local, self._address[1]) if local is not None else self._address[:2]
             session.emit(data, "in", sender, arrived)

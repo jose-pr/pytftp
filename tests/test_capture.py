@@ -331,3 +331,93 @@ def test_flow_counters_are_the_same_with_or_without_payloads(keep):
     assert transfer.is_complete
     record = transfer.to_dict()
     assert (record["bytes"], record["retransmissions"], record["missing_blocks"]) == (1546, 1, 1)
+
+
+# -- a failing hook, and the observer's address ---------------------------------------------------
+
+
+def _hook_records(caplog):
+    return [r for r in caplog.records if "trace hook" in r.getMessage()]
+
+
+def test_a_failing_trace_hook_is_logged_once_with_its_traceback_and_does_not_end_the_transfer(
+    root, make_server, caplog
+):
+    calls = []
+
+    def broken(event):
+        calls.append(event)
+        raise RuntimeError("hook bug")
+
+    server = make_server(root)
+    client = client_for(server, trace=broken, blksize=1428)
+    with caplog.at_level("DEBUG"):
+        assert client.get("big.bin") == (root / "big.bin").read_bytes()
+        assert client.get("one.bin") == b"x"
+    assert len(calls) > 8, "the hook was not called for each datagram"
+    records = _hook_records(caplog)
+    assert len(records) == 1, "%d records for %d datagrams" % (len(records), len(calls))
+    assert records[0].exc_info and records[0].exc_info[0] is RuntimeError
+
+
+def test_a_failing_server_trace_hook_is_logged_once(root, make_server, caplog):
+    calls = []
+
+    def broken(event):
+        calls.append(event)
+        raise RuntimeError("hook bug")
+
+    server = make_server(root, trace=broken)
+    with caplog.at_level("DEBUG"):
+        assert client_for(server).get("big.bin") == (root / "big.bin").read_bytes()
+        server.shutdown()
+        assert server.wait_closed(5.0)
+    assert len(calls) > 8
+    assert len(_hook_records(caplog)) == 1
+
+
+def test_a_failing_trace_hook_is_logged_once_by_the_asyncio_client_too(root, make_server, caplog):
+    import asyncio
+
+    calls = []
+
+    def broken(event):
+        calls.append(event)
+        raise RuntimeError("hook bug")
+
+    server = make_server(root)
+    client = tftp.AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5, trace=broken)
+    with caplog.at_level("DEBUG"):
+        assert asyncio.run(client.get("big.bin")) == (root / "big.bin").read_bytes()
+    assert len(calls) > 8
+    records = _hook_records(caplog)
+    assert len(records) == 1 and records[0].exc_info
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", pytest.param("::1", marks=needs_ipv6)])
+def test_the_clients_events_name_the_address_it_uses_towards_the_server(root, make_server, host):
+    import asyncio
+
+    events = []
+    server = make_server(root, host=host)
+    client_for(server, host=host, trace=events.append).get("one.bin")
+    aevents = []
+    client = tftp.AsyncTFTPClient(host, server.server_address[1], timeout=0.5, trace=aevents.append)
+    asyncio.run(client.get("one.bin"))
+    for seen in (events, aevents):
+        assert seen and {e.local[0] for e in seen} == {host}, "local: %s" % sorted({e.local[0] for e in seen})
+        assert {e.remote[0] for e in seen} == {host}
+
+
+def test_a_pcap_taken_by_the_client_carries_the_address_the_server_saw(root, make_server, tmp_path):
+    path = tmp_path / "client.pcap"
+    seen = []
+    server = make_server(root, trace=seen.append)
+    with PcapWriter(path) as writer:
+        client_for(server, trace=writer).get("one.bin")
+    datagrams = list(read_datagrams(path))
+    assert datagrams
+    assert {d.source[0] for d in datagrams} | {d.destination[0] for d in datagrams} == {"127.0.0.1"}
+    request = [e for e in seen if e.opcode_name == "RRQ"][0]
+    first = datagrams[0]
+    assert first.source == (request.remote[0], request.remote[1]), "the pcap names another client address"

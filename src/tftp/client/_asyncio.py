@@ -21,7 +21,7 @@ from ..packet.codec import _encode_error
 from ..result import TransferResult
 from ..transfer import Receiver, Sender, Transfer, as_readinto, as_write
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
-from .._sockets import fit_window, same_host
+from .._sockets import fit_window, local_towards, same_host
 from ._core import (
     LISTING_LIMIT,
     Progress,
@@ -74,21 +74,17 @@ class _Transfer:
         self.progress: Optional[Progress] = None
         self.total: Optional[int] = None
         self.reported = -1
-        self.trace = client.trace
+        self.trace = client._trace_hook()
         self.session_id = new_session_id("c") if self.trace is not None else None
         self.local: Tuple[Any, ...] = ()
+        self.observer: Tuple[Any, ...] = ()  # the address a trace event names as local
 
     # -- I/O ---------------------------------------------------------------------
 
     def emit(self, data: bytes, direction: str, remote: Tuple[Any, ...]) -> None:
-        try:
-            self.trace(  # type: ignore[misc]
-                PacketEvent(
-                    time.time(), direction, self.local, remote, bytes(data), "client", self.session_id
-                )
-            )
-        except Exception:
-            pass
+        self.trace(  # type: ignore[misc]
+            PacketEvent(time.time(), direction, self.observer, remote, bytes(data), "client", self.session_id)
+        )
 
     def sendto(self, data, addr: Tuple[Any, ...]) -> None:
         assert self.transport is not None
@@ -434,6 +430,7 @@ class AsyncTFTPClient(_ClientBase):
             driver = _Transfer(self, loop)
             driver.server = server
             driver.local = sock.getsockname()
+            driver.observer = local_towards(sock, server) if driver.trace is not None else driver.local
             driver.progress = progress
         except BaseException:
             sock.close()  # no transport owns it yet

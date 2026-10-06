@@ -269,14 +269,9 @@ class Session:
         self, data, direction: str, remote: Tuple[Any, ...], local: Optional[Tuple[Any, ...]] = None
     ) -> None:
         """Report one datagram to the trace hook (exceptions are logged, not raised)."""
-        try:
-            self.trace(  # type: ignore[misc]
-                PacketEvent(
-                    time.time(), direction, local or self.local, remote, bytes(data), "server", self.id
-                )
-            )
-        except Exception:
-            log.exception("trace hook failed")
+        self.trace(  # type: ignore[misc]  # a HookGuard: it logs a failure once and returns
+            PacketEvent(time.time(), direction, local or self.local, remote, bytes(data), "server", self.id)
+        )
 
     def call_handler(
         self, handler: Any, policy: TFTPServerOptions, timeout: float, mtu: Optional[int] = None

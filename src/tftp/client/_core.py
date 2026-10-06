@@ -29,7 +29,8 @@ from typing import (
 )
 
 from .._arguments import check_family, check_int, check_seconds, check_source
-from .._sockets import same_host, sockaddr
+from .._sockets import local_towards, same_host, sockaddr
+from ..capture._hook import HookGuard, guard
 from ..capture.events import PacketEvent, new_session_id
 from ..exceptions import (
     RemoteError,
@@ -311,6 +312,7 @@ class _ClientBase:
         self.registry = registry
         self.on_negotiated = on_negotiated
         self.trace = trace
+        self._trace_guard: Optional[HookGuard] = None
 
     def _options(self, is_read: bool, size: Optional[int], server: Any = None) -> Dict[str, str]:
         tsize = None
@@ -432,19 +434,24 @@ class _ClientBase:
         local_host, local_port = self.src or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
         return bind(local_host, local_port, family=family)
 
-    def _emitter(self, sock) -> Optional[Callable[[Any, str, Tuple[Any, ...]], None]]:
-        """``emit(data, direction, remote)`` reporting to ``trace``, or ``None``."""
-        trace = self.trace
+    def _trace_hook(self) -> Optional[HookGuard]:
+        """``trace`` as a hook whose failures are logged once, or ``None``."""
+        self._trace_guard = guard(self.trace, log, self._trace_guard)
+        return self._trace_guard
+
+    def _emitter(self, sock, server) -> Optional[Callable[[Any, str, Tuple[Any, ...]], None]]:
+        """``emit(data, direction, remote)`` reporting to ``trace``, or ``None``.
+
+        The events' local address is the one the route to ``server`` uses.
+        """
+        trace = self._trace_hook()
         if trace is None:
             return None
         session_id = new_session_id("c")
-        local = sock.getsockname()
+        local = local_towards(sock, server)
 
         def emit(data, direction: str, remote) -> None:
-            try:
-                trace(PacketEvent(time.time(), direction, local, remote, bytes(data), "client", session_id))
-            except Exception:
-                log.exception("trace hook failed")
+            trace(PacketEvent(time.time(), direction, local, remote, bytes(data), "client", session_id))
 
         return emit
 
@@ -543,7 +550,7 @@ class _ClientBase:
             request = encode_request(TFTPOpcode.RRQ, filename, mode=mode, options=options)
             buf = bytearray(_RECV_BUFFER)
             view = memoryview(buf)
-            emit = self._emitter(sock)
+            emit = self._emitter(sock, server)
             n, peer = self._request(sock, server, request, buf, view, expires, emit)
 
             def send(packet) -> None:

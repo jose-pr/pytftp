@@ -274,7 +274,7 @@ class TFTPClient(_ClientBase):
         expires = None if self.deadline is None else started + self.deadline
         engine = {"backoff": self.backoff, "max_timeout": self.max_timeout, "expires": expires}
 
-        emit = self._emitter(sock)
+        emit = self._emitter(sock, server)
         trace = emit
         n, peer = self._request(sock, server, request, buf, view, expires, emit)
 

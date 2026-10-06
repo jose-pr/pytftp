@@ -300,3 +300,28 @@ def test_upstream_src_is_the_address_the_upstream_sees(root, make_server, make_r
     assert client_for(relay).get("one.bin") == (root / "one.bin").read_bytes()
     assert wait_for(lambda: seen)
     assert seen[0].peer[0] == "127.0.0.2"
+
+
+def test_a_failing_trace_hook_is_logged_once(root, make_server, make_relay, caplog):
+    calls = []
+
+    def broken(event):
+        calls.append(event)
+        raise RuntimeError("hook bug")
+
+    server = make_server(root)
+    relay = make_relay(upstream_of(server), trace=broken)
+    with caplog.at_level("DEBUG"):
+        assert client_for(relay).get("big.bin") == (root / "big.bin").read_bytes()
+        assert wait_for(lambda: len(calls) >= 16)
+    assert len(calls) > 16
+    assert len([r for r in caplog.records if "trace hook" in r.getMessage()]) == 1
+
+
+def test_the_events_of_both_legs_name_the_address_the_relay_uses_to_each_end(root, make_server, make_relay):
+    server = make_server(root)
+    events = []
+    relay = make_relay(upstream_of(server), trace=events.append)
+    client_for(relay).get("one.bin")
+    assert wait_for(lambda: len(events) >= 8)
+    assert {(e.leg, e.local[0]) for e in events} == {("client", "127.0.0.1"), ("upstream", "127.0.0.1")}

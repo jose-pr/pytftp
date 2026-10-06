@@ -701,9 +701,15 @@ methods `decode()`, `to_dict(payload=False)` (JSON-
 ready metadata; DATA payloads only as hex with `payload=True`);
 `str(event)` is the human line. `summarize(data)` is the one-line description on its own.
 
-**Trace hooks** — `TFTPClient(trace=)`, `TFTPServer(trace=)`, `TFTPRelay(trace=)` take
+**Trace hooks** — `TFTPClient(trace=)`, `AsyncTFTPClient(trace=)`, `TFTPServer(trace=)`,
+`AsyncTFTPServer(trace=)` and `TFTPRelay(trace=)` take
 `trace(PacketEvent)`, called for every datagram received and sent, on the
-thread doing the I/O; exceptions it raises are logged, never propagated.
+thread doing the I/O. An exception it raises never reaches the transfer: the
+first one is logged with its traceback (logger `tftp.client`, `tftp.server` or
+`tftp.relay`) and the later ones of that hook are counted and not logged, so a
+hook that always fails costs one record. `PacketEvent.local` is the address the
+route to that peer uses (the socket's own address when it has one), as plain
+IPv4 for a mapped address, for the clients and the relay's two legs alike.
 Roles are `"client"`, `"server"`, `"relay"`; one `session` id per transfer
 (`c…`, `s…`, `r…`). A server traces a transfer's request as arriving at the
 listening address. Requests a server refuses before a transfer exists are

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import socket
-from typing import Tuple
+from typing import Dict, Optional, Tuple
 
-__all__ = ["fit_window", "sockaddr", "same_host"]
+__all__ = ["fit_window", "sockaddr", "same_host", "local_towards"]
 
 #: Upper bound for buffer growth; the kernel may grant less (Linux rmem_max).
 _MAX_BUFFER = 8 << 20
@@ -29,6 +29,40 @@ def fit_window(sock: socket.socket, blksize: int, windowsize: int) -> Tuple[int,
     except OSError:
         return (0, 0)
     return granted
+
+
+def local_towards(sock: socket.socket, peer: Tuple, cache: "Optional[Dict[Tuple, Tuple]]" = None) -> Tuple:
+    """``sock``'s address as ``peer`` sees it: ``getsockname()``, with a wildcard host replaced.
+
+    A socket bound to the wildcard has no address of its own; the one the
+    route to ``peer`` picks is (netimps ``get_source_ip``), as plain IPv4 for a
+    mapped address. ``cache`` remembers the answer per (socket address, peer).
+    """
+    import ipaddress
+
+    local = sock.getsockname()
+    try:
+        if not ipaddress.ip_address(local[0].partition("%")[0]).is_unspecified:
+            return local
+        zone = peer[3] if len(peer) > 3 and peer[3] else 0
+        key = (local[0], local[1], peer[0], zone)
+        if cache is not None and key in cache:
+            return cache[key]
+        from netimps import get_source_ip, unmap
+
+        dst = "%s%%%d" % (str(unmap(peer[0].partition("%")[0])), zone) if zone else str(unmap(peer[0]))
+        source = get_source_ip(dst, peer[1] or 80, ipv6=":" in dst)
+        if source is None:
+            return local
+        source = unmap(source)
+        found = (str(source), local[1]) if source.version == 4 else (str(source),) + tuple(local[1:])
+        if cache is not None:
+            if len(cache) >= 256:
+                cache.clear()
+            cache[key] = found
+        return found
+    except (OSError, ValueError, TypeError, IndexError):
+        return local
 
 
 def _zone_index(zone: str) -> int:
