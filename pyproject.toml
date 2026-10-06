@@ -33,7 +33,12 @@ classifiers = [
 # `split_host`, `Host.ip`, `get_interface`) and its keyword-only options
 # (`Backoff`, `max_udp_payload`), and needs its link-local IPv6 bind fixes for
 # `interface=` with host '::' and for replies to a link-local IPv6 client.
-dependencies = ["netimps>=0.4.0,<0.5"]
+#
+# pktcap supplies reading pcap and pcapng captures, dissecting their frames
+# (IP fragments reassembled), writing pcap and pcapng, the filter grammar and
+# live capture on Linux. It is imported inside the functions that use it, so
+# importing tftp loads none of it.
+dependencies = ["netimps>=0.4.0,<0.5", "pktcap>=0.1.0,<0.2"]
 
 [project.optional-dependencies]
 # The CLI is optional: importing tftp never requires duho.

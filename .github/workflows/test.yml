@@ -49,6 +49,11 @@ jobs:
         # yet, and mypy needs netimps installed to see its types. Remove this
         # step when netimps 0.4.0 is on PyPI.
         run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
+      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
+        # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
+        # yet. It requires netimps 0.4, installed by the step above. Remove
+        # this step when pktcap 0.1.0 is on PyPI.
+        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install package with all extras
         run: python -m pip install -e ".[dev]"
       - name: Check formatting
@@ -110,6 +115,11 @@ jobs:
         # yet. Installing it first makes the project install below find it
         # satisfied. Remove this step when netimps 0.4.0 is on PyPI.
         run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
+      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
+        # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
+        # yet. It requires netimps 0.4, installed by the step above. Remove
+        # this step when pktcap 0.1.0 is on PyPI.
+        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install package with all extras
         # Install every extra that has tests depending on it, or those tests
         # silently skip (pytest.importorskip) instead of actually running.
@@ -165,6 +175,13 @@ jobs:
         # same version from its branch; the pin then finds it satisfied.
         # Remove this step when netimps 0.4.0 is on PyPI.
         run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
+      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
+        # TEMPORARY: the floor, pktcap 0.1.0, is not published yet, so the
+        # floor pin below cannot be installed from PyPI. This installs the
+        # same version from its repository, after netimps, which it requires;
+        # the pin then finds it satisfied. Remove this step when pktcap 0.1.0
+        # is on PyPI.
+        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install at the floors
         run: python -m pip install -c floors.txt -e ".[dev]"
       - name: Install TFTP peers for interop tests (Linux)
@@ -197,6 +214,11 @@ jobs:
         # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
         # yet. Remove this step when netimps 0.4.0 is on PyPI.
         run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
+      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
+        # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
+        # yet. It requires netimps 0.4, installed by the step above. Remove
+        # this step when pktcap 0.1.0 is on PyPI.
+        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install the package with no extra
         run: python -m pip install .
       - name: Import it, transfer a file and start the script
@@ -238,6 +260,8 @@ jobs:
           # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
           # yet. Remove this when netimps 0.4.0 is on PyPI.
           "$BIN/python" -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
+          # TEMPORARY: pktcap 0.1.0 is not published yet; it requires the netimps above.
+          "$BIN/python" -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
           "$BIN/python" -m pip install dist/*.whl
           cd "$RUNNER_TEMP"
           "$BIN/python" "$GITHUB_WORKSPACE/tests/integration/smoke_installed.py"
@@ -248,6 +272,8 @@ jobs:
           [ -d "$RUNNER_TEMP/full/Scripts" ] && BIN="$RUNNER_TEMP/full/Scripts"
           # TEMPORARY: see above.
           "$BIN/python" -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
+          # TEMPORARY: pktcap 0.1.0 is not published yet; it requires the netimps above.
+          "$BIN/python" -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
           "$BIN/python" -m pip install "$(ls dist/*.whl)[cli,path]"
           cd "$RUNNER_TEMP"
           "$BIN/python" "$GITHUB_WORKSPACE/tests/integration/smoke_installed.py" --extras
@@ -269,6 +295,11 @@ jobs:
         # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
         # yet. Remove this step when netimps 0.4.0 is on PyPI.
         run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
+      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
+        # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
+        # yet. It requires netimps 0.4, installed by the step above. Remove
+        # this step when pktcap 0.1.0 is on PyPI.
+        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install package with all extras
         run: python -m pip install -e ".[dev]"
       - name: Install TFTP peers for interop tests
