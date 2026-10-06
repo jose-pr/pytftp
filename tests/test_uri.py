@@ -623,3 +623,26 @@ def test_every_url_with_options_in_the_documents_parses():
         url = TFTPURL.parse(text.replace("&amp;", "&"))
         assert TFTPURL.parse(str(url)) == url, (name, text)
     assert any(TFTPURL.parse(text).options for _, text in found)
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_a_url_of_any_parts_parses_back_to_itself(seed):
+    import random
+
+    rng = random.Random(seed)
+    alphabet = list("abcXYZ019 ._-/%;?#&=+~") + ["é", "中", "\udce9"]
+    for _ in range(10):
+        filename = "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 20))).strip("/") or "f"
+        options = {
+            "o%d" % number: "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 8)))
+            for number in range(rng.randint(0, 3))
+        }
+        url = TFTPURL(
+            rng.choice(["h", "Example.COM", "10.0.0.1", "2001:db8::1", "fe80::1%eth0"]),
+            rng.choice([0, 69, 6969, 65535]),
+            filename,
+            rng.choice(["octet", "netascii"]),
+            options,
+        )
+        again = TFTPURL.parse(str(url))
+        assert again == url and str(again) == str(url), "seed %d: %r" % (seed, url)

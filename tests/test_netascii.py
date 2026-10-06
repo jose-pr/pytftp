@@ -62,3 +62,33 @@ def test_encoded_size_keeps_position():
     assert encoded_size(stream) == len(encode(data[3:]))
     assert stream.tell() == 3
     assert encoded_size(object()) is None
+
+
+SEEDS = range(40)
+
+
+@pytest.mark.parametrize("seed", SEEDS)
+def test_any_octets_survive_encode_decode_the_reader_and_the_writer_at_any_split(seed):
+    rng = random.Random(seed)
+    alphabet = [b"\r", b"\n", b"\0", b"a", b"\r\n", b"\r\0", b"\xff"]
+    data = b"".join(rng.choice(alphabet) for _ in range(rng.randint(0, 300)))
+    where = "seed %d" % seed
+    assert decode(encode(data)) == data, where
+    reader = NetasciiReader(io.BytesIO(data))
+    block = bytearray(rng.randint(1, 40))
+    wire = bytearray()
+    while True:
+        n = reader.readinto(block)
+        wire += block[:n]
+        if n < len(block):
+            break
+    assert bytes(wire) == encode(data), where
+    sink = io.BytesIO()
+    writer = NetasciiWriter(sink)
+    position = 0
+    while position < len(wire):
+        step = rng.randint(1, 40)
+        writer.write(memoryview(wire)[position : position + step])
+        position += step
+    writer.flush()
+    assert sink.getvalue() == data, where

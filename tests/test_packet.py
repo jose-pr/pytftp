@@ -408,3 +408,103 @@ def test_errors_map_os_errors():
     assert TFTPError.from_exception(RuntimeError("boom")).code == TFTPErrorCode.NOT_DEFINED
     # The OS text could leak server paths, so it never becomes the message.
     assert "secret" not in TFTPError.from_exception(FileNotFoundError(2, "/secret/path")).message
+
+
+# -- the RFCs' own printed packets, both ways --------------------------------------------------
+# The octets are written from the RFCs' figures and examples, never taken from the encoder.
+
+_RFC_1350_ERRORS = [
+    (0, "Not defined, see error message (if any)."),
+    (1, "File not found."),
+    (2, "Access violation."),
+    (3, "Disk full or allocation exceeded."),
+    (4, "Illegal TFTP operation."),
+    (5, "Unknown transfer ID."),
+    (6, "File already exists."),
+    (7, "No such user."),
+]
+
+RFC_EXAMPLES = [
+    # RFC 1350 section 5, figure 5-1: opcode 1 or 2, filename, 0, mode, 0.
+    (
+        "rfc1350-5-rrq-netascii",
+        tftp.RequestPacket(TFTPOpcode.RRQ, "foo", "netascii"),
+        b"\x00\x01foo\x00netascii\x00",
+    ),
+    ("rfc1350-5-wrq-octet", tftp.RequestPacket(TFTPOpcode.WRQ, "foo", "octet"), b"\x00\x02foo\x00octet\x00"),
+    ("rfc1350-5-wrq-mail", tftp.RequestPacket(TFTPOpcode.WRQ, "foo", "mail"), b"\x00\x02foo\x00mail\x00"),
+    # figure 5-2: opcode 3, block number, up to 512 octets; a short one ends the transfer.
+    ("rfc1350-5-data-full", tftp.DataPacket(1, b"\xa5" * 512), b"\x00\x03\x00\x01" + b"\xa5" * 512),
+    ("rfc1350-5-data-last-empty", tftp.DataPacket(3, b""), b"\x00\x03\x00\x03"),
+    # figure 5-3: opcode 4, block number; block 0 acknowledges a WRQ.
+    ("rfc1350-5-ack-0", tftp.AckPacket(0), b"\x00\x04\x00\x00"),
+    ("rfc1350-5-ack-258", tftp.AckPacket(258), b"\x00\x04\x01\x02"),
+] + [
+    # figure 5-4: opcode 5, error code, message, 0; the codes are the table of appendix 5.
+    (
+        "rfc1350-5-error-%d" % code,
+        tftp.ErrorPacket(code, text),
+        b"\x00\x05\x00" + bytes([code]) + text.encode("ascii") + b"\x00",
+    )
+    for code, text in _RFC_1350_ERRORS
+]
+RFC_EXAMPLES += [
+    # RFC 2347, the example exchange.
+    (
+        "rfc2347-examples-rrq",
+        tftp.RequestPacket(TFTPOpcode.RRQ, "foofile", "octet", {"blksize": "1432"}),
+        b"\x00\x01foofile\x00octet\x00blksize\x001432\x00",
+    ),
+    ("rfc2347-examples-oack", tftp.OptionAckPacket({"blksize": "1432"}), b"\x00\x06blksize\x001432\x00"),
+    ("rfc2347-examples-data-1", tftp.DataPacket(1, b"\x00" * 1432), b"\x00\x03\x00\x01" + b"\x00" * 1432),
+    (
+        "rfc2347-examples-wrq",
+        tftp.RequestPacket(TFTPOpcode.WRQ, "barfile", "octet", {"blksize": "2048"}),
+        b"\x00\x02barfile\x00octet\x00blksize\x002048\x00",
+    ),
+    ("rfc2347-examples-oack-2048", tftp.OptionAckPacket({"blksize": "2048"}), b"\x00\x06blksize\x002048\x00"),
+    # RFC 2347 section 6: error code 8 ends a negotiation the client cannot accept.
+    ("rfc2347-6-error-8", tftp.ErrorPacket(8, "no"), b"\x00\x05\x00\x08no\x00"),
+    # RFC 2348, "Blocksize Option Specification".
+    (
+        "rfc2348-blksize-1428",
+        tftp.RequestPacket(TFTPOpcode.RRQ, "foobar", "octet", {"blksize": "1428"}),
+        b"\x00\x01foobar\x00octet\x00blksize\x001428\x00",
+    ),
+    # RFC 2349, "Timeout Interval Option Specification" and "Transfer Size Option Specification".
+    (
+        "rfc2349-timeout-1",
+        tftp.RequestPacket(TFTPOpcode.RRQ, "foobar", "octet", {"timeout": "1"}),
+        b"\x00\x01foobar\x00octet\x00timeout\x001\x00",
+    ),
+    (
+        "rfc2349-tsize-673312",
+        tftp.RequestPacket(TFTPOpcode.WRQ, "foobar", "octet", {"tsize": "673312"}),
+        b"\x00\x02foobar\x00octet\x00tsize\x00673312\x00",
+    ),
+    # RFC 7440 section 3, "Windowsize Option Specification": the figure prints the octets in hex.
+    (
+        "rfc7440-3-windowsize-16",
+        tftp.RequestPacket(TFTPOpcode.RRQ, "foobar", "octet", {"windowsize": "16"}),
+        b"\x00\x01" + b"foobar" + b"\x00" + b"octet" + b"\x00" + b"windowsize" + b"\x00" + b"16" + b"\x00",
+    ),
+]
+
+
+@pytest.mark.parametrize("packet, wire", [p[1:] for p in RFC_EXAMPLES], ids=[p[0] for p in RFC_EXAMPLES])
+def test_a_packet_the_rfcs_print_is_encoded_and_decoded_as_printed(packet, wire):
+    assert packet.encode() == wire
+    assert tftp.decode(wire) == packet
+    assert type(packet).decode(wire) == packet
+    assert tftp.decode(tftp.decode(wire).encode()) == packet
+
+
+def test_every_packet_kind_has_an_example_from_an_rfc():
+    kinds = {type(packet) for _, packet, _ in RFC_EXAMPLES}
+    assert kinds == {
+        tftp.RequestPacket,
+        tftp.DataPacket,
+        tftp.AckPacket,
+        tftp.ErrorPacket,
+        tftp.OptionAckPacket,
+    }

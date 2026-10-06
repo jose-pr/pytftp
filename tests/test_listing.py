@@ -186,3 +186,21 @@ def test_names_that_merely_look_like_paths_are_entries():
         ListEntry("a%b", False, 5, None),
         ListEntry("a b", False, 5, None),
     ]
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_a_listing_of_any_entries_reads_back_as_written(seed):
+    import random
+
+    rng = random.Random(seed)
+    alphabet = list("ab .%\n\r\t;?#é中\U0001f600") + ["\udce9"]
+    entries = []
+    for number in range(rng.randint(0, 12)):
+        name = "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 12))) + str(number)
+        is_dir = rng.choice([True, False])
+        size = (
+            0 if is_dir else rng.choice([0, 1, 512, 2**40, rng.randint(0, 2**31)])
+        )  # a directory has no size
+        mtime = rng.choice([None, 0, 1_700_000_000, rng.randint(0, 2**31)])
+        entries.append(ListEntry(name, is_dir, size, mtime))
+    assert loads(dumps(entries)) == entries, "seed %d" % seed
