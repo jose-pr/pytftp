@@ -335,6 +335,11 @@ Old names are not kept as aliases.
   but called `on_complete` for none of them and left `completed` and `failed` where they
   were, on both servers; each now yields a `TransferResult` whose `error` is
   `TransferAbortedError`, and counts as failed.
+- **On Windows one file is reachable under one name.** `FilesystemBackend` refuses a name
+  component ending in a dot or a space (the file system drops it, so `f.` opened `f`), one
+  with a character Windows does not allow in a name, and every name
+  `os.path.isreserved` reserves: `CONIN$`, `CONOUT$`, the superscript `COM` and `LPT`
+  names, and a device name followed by spaces. Before Python 3.13 the same list is used.
 - **A number in an option is ASCII digits, and nothing else.** A server
   acknowledged a `blksize` padded with white space as 1024, and echoed
   a `timeout` as it was written; the acknowledgement is now written from the

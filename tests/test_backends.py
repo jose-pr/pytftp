@@ -743,3 +743,80 @@ def test_proxy_upstream_down(make_server):
         proxy = make_server(handler)
         with pytest.raises(tftp.RemoteError):
             client_for(proxy, timeout=1, retries=3).get("x")
+
+
+# -- the names a Windows host refuses ---------------------------------------------------------
+
+#: One file under several names, device names, and the names ``os.path.isreserved`` adds to the classic ones.
+_WINDOWS_REFUSED = [
+    "one.bin.",
+    "one.bin ",
+    "one.bin...  ",
+    "sub./nested.bin",
+    "sub /nested.bin",
+    "NUL",
+    "nul.txt",
+    "NUL ",
+    "NUL .txt",
+    "PRN ",
+    "AUX.",
+    "sub/CON",
+    "COM1",
+    "LPT9.log",
+    "COM¹",
+    "LPT²",
+    "CONIN$",
+    "conout$",
+    "one.bin:stream",
+    "a*b",
+]
+
+
+@pytest.fixture(params=["list", "platform"])
+def windows_rules(request, monkeypatch):
+    """The Windows branch of ``resolve`` on any host: with the explicit list, or with the platform's test."""
+    from tftp.backends import filesystem
+
+    monkeypatch.setattr(filesystem, "_WINDOWS", True)
+    if request.param == "list":
+        monkeypatch.delattr(os.path, "isreserved", raising=False)
+    elif not hasattr(os.path, "isreserved"):
+        pytest.skip("os.path.isreserved needs Python 3.13 on Windows")
+    return request.param
+
+
+@pytest.mark.parametrize("name", _WINDOWS_REFUSED)
+def test_a_name_windows_would_alias_or_treat_as_a_device_is_refused(root, windows_rules, name):
+    with pytest.raises(tftp.TFTPError) as info:
+        tftp.FilesystemBackend(root).resolve(name)
+    assert info.value.code == tftp.TFTPErrorCode.ACCESS_VIOLATION
+
+
+@pytest.mark.parametrize(
+    "name", ["one.bin", "sub/nested.bin", "a.b.c", "CLOCK$", "console.txt", "com10", ".hidden"]
+)
+def test_an_ordinary_name_is_still_served_under_the_windows_rules(root, windows_rules, name):
+    (root / "sub" / "nested.bin").write_bytes(b"n")
+    assert os.path.dirname(tftp.FilesystemBackend(root).resolve(name)).startswith(os.path.realpath(root))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the file system drops the trailing dot")
+def test_windows_rules_do_not_apply_elsewhere(root, monkeypatch):
+    from tftp.backends import filesystem
+
+    monkeypatch.setattr(filesystem, "_WINDOWS", False)
+    assert tftp.FilesystemBackend(root).resolve("NUL.").endswith("NUL.")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows file names")
+def test_one_file_is_reachable_under_one_name_through_a_server(root, make_server):
+    client = client_for(make_server(root, writable=True, overwrite=True))
+    assert client.get("one.bin") == b"x"
+    for name in ("one.bin.", "one.bin ", "CONOUT$", "NUL "):
+        with pytest.raises(tftp.RemoteError) as info:
+            client.get(name)
+        assert info.value.code == tftp.TFTPErrorCode.ACCESS_VIOLATION, name
+    with pytest.raises(tftp.RemoteError):
+        client.put("CONOUT$", b"y")
+    assert (root / "one.bin").read_bytes() == b"x"
+    assert not (root / "CONOUT$").exists()

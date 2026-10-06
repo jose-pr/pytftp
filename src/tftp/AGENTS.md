@@ -465,8 +465,9 @@ carried over.
   boot loaders send `\boot\bcd`).
 - **Containment**: `..` components are refused (ERROR 2), and the resolved
   path, symlinks included, must stay inside `root` (ERROR 2). On Windows,
-  drive letters, `:` streams and reserved device names (`CON`, `NUL`, ...) are
-  refused too.
+  drive letters, `:` streams, reserved device names (`CON`, `NUL`, `CONOUT$`, ...,
+  with an extension or trailing spaces too) and a component ending in a dot or
+  a space (the file system would open another name) are refused too.
 - Reads: a missing file is ERROR 1, and so is a directory — unless
   `context.listing`, when a directory (`""`, `.` or `/` for the root) is
   answered with a `DirectoryListing`.

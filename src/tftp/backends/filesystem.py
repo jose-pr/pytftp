@@ -17,9 +17,29 @@ _WINDOWS = sys.platform == "win32"
 #: Read buffer of a served file: an open file costs this much until it ends,
 #: and a request nothing follows up is held open for a while.
 _READ_BUFFER = 16 * 1024
+#: What ``os.path.isreserved`` (Python 3.13 on Windows) reads, for the Pythons without it:
+#: the DOS device names, the superscript digits Windows treats as digits, and the console devices.
 _RESERVED = frozenset(
-    ["CON", "PRN", "AUX", "NUL"] + ["COM%d" % i for i in range(1, 10)] + ["LPT%d" % i for i in range(1, 10)]
+    ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
+    + ["%s%s" % (device, digit) for device in ("COM", "LPT") for digit in "123456789¹²³"]
 )
+#: Characters a Windows file name cannot hold; ``:`` opens an alternate data stream.
+_NOT_IN_A_NAME = frozenset('<>:"|?*\\') | frozenset(map(chr, range(32)))
+
+
+def _refused_on_windows(part: str) -> bool:
+    """A name component Windows would alias, treat as a device or read as a stream.
+
+    A trailing dot or space is dropped by the file system, so ``f.`` and ``f ``
+    open ``f``; a device name opens the device whatever its extension or
+    padding.
+    """
+    if part[-1] in ". " or not _NOT_IN_A_NAME.isdisjoint(part):
+        return True
+    isreserved = getattr(os.path, "isreserved", None)
+    if isreserved is not None:
+        return bool(isreserved(part))
+    return part.partition(".")[0].rstrip(" ").upper() in _RESERVED
 
 
 class FilesystemBackend:
@@ -70,9 +90,8 @@ class FilesystemBackend:
                 continue
             if part == ".." or "\0" in part:
                 raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION)
-            if _WINDOWS:
-                if ":" in part or part.split(".", 1)[0].upper() in _RESERVED:
-                    raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION)
+            if _WINDOWS and _refused_on_windows(part):
+                raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION)
             parts.append(part)
         if not parts:
             raise TFTPError(TFTPErrorCode.FILE_NOT_FOUND)
