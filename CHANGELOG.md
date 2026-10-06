@@ -349,6 +349,13 @@ Old names are not kept as aliases.
   such 27-octet requests for a 768 MiB file, a small download took 4.3 s
   where an idle server takes 0.01 s. The OACK leaves `tsize` out for
   netascii, as tftp-hpa does; an octet transfer still answers it.
+- **A directory listing from a server can no longer name a path.**
+  `listing.loads` (and so `listdir()`, `TFTPPath.iterdir()` and a recursive
+  `copy()`) skips a line whose name is empty, `.`, `..` or holds `/`, a
+  backslash or a NUL, and one whose size or time is not ASCII digits: it
+  returned `../up.txt`, `/abs.txt`, `a/b`, `C:\x`, negative sizes and times
+  and read `1_0` as 10, which a caller joining `entry.name` to a local path
+  would have followed out of its directory.
 - An ERROR's text is read one way: up to its first NUL, with an octet that is
   not UTF-8 shown as U+FFFD, whether the ERROR answers a request (`decode`)
   or arrives mid-transfer. The first read left a lone surrogate in the text.

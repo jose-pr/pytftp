@@ -201,3 +201,49 @@ def test_uri_path_refuses_what_the_url_grammar_refuses(root, spy_server):
         with pytest.raises(ValueError):
             UriPath(base + text).read_bytes()
     assert spy.requests == []
+
+
+class _Hostile:
+    """A server whose directory lists names no directory can contain."""
+
+    opens_fast = True
+
+    def open_read(self, context):
+        import io
+
+        from tftp.listing import ListEntry, dumps
+
+        name = context.filename.replace("\\", "/").strip("/")
+        if context.listing and name in ("", ".", "pub"):
+            entries = [
+                ListEntry("ok.txt", False, 2, 1),
+                ListEntry("..", True, 0, 1),
+                ListEntry("../outside.txt", False, 5, 1),
+                ListEntry("/abs.txt", False, 5, 1),
+                ListEntry("a/b.txt", False, 5, 1),
+            ]
+            stream = io.BytesIO(dumps(entries))
+            stream.lists_directories = True
+            stream.size = len(stream.getvalue())
+            return stream
+        return io.BytesIO(b"ok" if name.endswith("ok.txt") else b"planted")
+
+    def open_write(self, context, size):
+        raise tftp.TFTPError(2)
+
+
+def test_a_recursive_copy_creates_only_the_entries_a_directory_can_contain(make_server, tmp_path):
+    """Whatever names a server lists, what lands on disk is under the copy target and is its own entry."""
+    options = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS)
+    client = client_for(make_server(_Hostile(), options=options))
+    assert [p.name for p in client.path("pub").iterdir()] == ["ok.txt"]
+    target = tmp_path / "a" / "b" / "dest"
+    target.parent.mkdir(parents=True)
+    client.path("pub").copy(LocalPath(str(target)), recursive=True)
+    created = sorted(
+        os.path.relpath(os.path.join(base, name), tmp_path)
+        for base, _, files in os.walk(tmp_path)
+        for name in files
+    )
+    assert created == [os.path.join("a", "b", "dest", "ok.txt")]
+    assert (target / "ok.txt").read_bytes() == b"ok"

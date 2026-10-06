@@ -464,7 +464,9 @@ carried over.
 (`%`, CR, LF in names as `%25`, `%0D`, `%0A`). **`ListEntry(name, is_dir,
 size, mtime=None)`** (a named tuple: it is only handed out),
 **`dumps(entries) -> bytes`**, **`loads(data) -> list`** (malformed lines
-skipped),
+skipped: a name that is empty, `.`, `..` or holds `/`, a backslash or a NUL, and
+a size or time that is not ASCII digits, so no entry a server lists names
+anything outside its directory),
 **`DirectoryListing(directory, *, root=None)`** (a `BytesIO` with `size`,
 `mtime`, `lists_directories`; sorted by name; leaves out symlinks resolving
 outside `root` and in-progress uploads `.name.*.part`), `LIST_OPTION`,

@@ -24,6 +24,8 @@ import os
 import re
 from typing import Iterable, List, NamedTuple, Optional
 
+from .options.base import read_decimal
+
 __all__ = ["ListEntry", "dumps", "loads", "DirectoryListing", "LIST_OPTION", "MTIME_OPTION"]
 
 #: The option asking for a listing; its value is the format version, ``1``.
@@ -49,6 +51,8 @@ def _escape(name: str) -> str:
     return name
 
 
+#: A separator or a NUL: what makes a name a path instead of one directory entry.
+_NOT_A_NAME = re.compile("[/\\\\\0]")
 _CODES = re.compile("%(25|0[dD]|0[aA])")
 _DECODED = {"25": "%", "0d": "\r", "0a": "\n"}
 
@@ -70,19 +74,26 @@ def dumps(entries: Iterable[ListEntry]) -> bytes:
 
 
 def loads(data: bytes) -> List[ListEntry]:
-    """Entries from a listing; malformed lines are skipped."""
+    """Entries from a listing; malformed lines are skipped.
+
+    A line is malformed when its name is empty, ``.``, ``..`` or holds a ``/``,
+    a backslash or a NUL (a listing never names anything outside its
+    directory), or when its size or time is not ASCII digits.
+    """
     entries = []
     for line in data.decode("utf-8", "surrogateescape").split("\n"):
         fields = line.split(" ", 3)
-        if len(fields) != 4 or fields[0] not in ("f", "d") or not fields[3]:
+        if len(fields) != 4 or fields[0] not in ("f", "d"):
             continue
-        kind, size, mtime, name = fields
-        try:
-            entries.append(
-                ListEntry(_unescape(name), kind == "d", int(size), None if mtime == "-" else int(mtime))
-            )
-        except ValueError:
+        kind, size_text, mtime_text, name = fields
+        name = _unescape(name)
+        size = read_decimal(size_text)
+        mtime = None if mtime_text == "-" else read_decimal(mtime_text)
+        if size is None or (mtime is None and mtime_text != "-"):
             continue
+        if name in ("", ".", "..") or _NOT_A_NAME.search(name):
+            continue
+        entries.append(ListEntry(name, kind == "d", size, mtime))
     return entries
 
 

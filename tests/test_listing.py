@@ -138,3 +138,51 @@ def test_uri_path_listing(root, server, tmp_path_factory):
     target = LocalPath(tmp_path_factory.mktemp("tree") / "copy")
     (base / "sub").copy(target, recursive=True)  # needs listing
     assert (target / "nested.bin").read_bytes() == b"nested"
+
+
+def _line(name: bytes, size: bytes = b"5", mtime: bytes = b"-", kind: bytes = b"f") -> bytes:
+    return kind + b" " + size + b" " + mtime + b" " + name + b"\n"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [b"..", b".", b"../up.txt", b"/abs.txt", b"a/b", b"C:\\x", b"a\\b", b"a\x00b", b"dir/..", b"a/"],
+)
+def test_a_name_no_directory_can_contain_is_not_an_entry(name):
+    """The format's "name" is one directory entry: never a path, never "." or "..", never a NUL."""
+    assert loads(_line(b"ok.txt") + _line(name) + _line(name, kind=b"d", size=b"0")) == [
+        ListEntry("ok.txt", False, 5, None)
+    ]
+
+
+@pytest.mark.parametrize(
+    "size,mtime",
+    [
+        (b"-7", b"-"),
+        (b"+7", b"-"),
+        (b"1_0", b"-"),
+        (b" 7", b"-"),
+        (b"\xd9\xa7", b"-"),  # ARABIC-INDIC DIGIT SEVEN
+        (b"", b"-"),
+        (b"5", b"-9"),
+        (b"5", b"1_0"),
+        (b"5", b"+9"),
+        (b"5", b"\xd9\xa9"),
+        (b"5", b""),
+        (b"9" * 40, b"-"),
+    ],
+)
+def test_a_size_or_time_that_is_not_ascii_digits_is_not_an_entry(size, mtime):
+    """RFC-style numerals: a sign, an underscore and a non-ASCII digit are not digits."""
+    assert loads(_line(b"ok.txt") + _line(b"bad", size, mtime)) == [ListEntry("ok.txt", False, 5, None)]
+
+
+def test_names_that_merely_look_like_paths_are_entries():
+    wire = _line(b"...", mtime=b"007") + _line(b"a..b") + _line(b".hidden") + _line(b"a%25b") + _line(b"a b")
+    assert loads(wire) == [
+        ListEntry("...", False, 5, 7),
+        ListEntry("a..b", False, 5, None),
+        ListEntry(".hidden", False, 5, None),
+        ListEntry("a%b", False, 5, None),
+        ListEntry("a b", False, 5, None),
+    ]
