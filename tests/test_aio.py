@@ -957,3 +957,39 @@ def test_a_transfer_is_closed_once_and_asyncio_logs_nothing(loop_factory, root, 
     finally:
         logger.removeHandler(handler)
     assert [r.getMessage()[:200] for r in records if r.levelno >= logging.WARNING] == []
+
+
+def test_async_transfers_in_flight_at_shutdown_are_reported(root):
+    import socket
+
+    results, stats = [], []
+
+    async def scenario(server):
+        loop = asyncio.get_running_loop()
+        peers = []
+        try:
+            for operation, name in (
+                (tftp.TFTPOpcode.RRQ, "big.bin"),
+                (tftp.TFTPOpcode.WRQ, "unfinished.bin"),
+            ):
+                raw = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                peers.append(raw)
+                raw.settimeout(2)
+                raw.bind(("127.0.0.1", 0))
+                raw.sendto(tftp.packet.encode_request(operation, name), server.server_address)
+                await loop.run_in_executor(None, raw.recvfrom, 2048)
+            server.shutdown()
+            assert await server.wait_closed(5)
+            for raw in peers:
+                data, _ = await loop.run_in_executor(None, raw.recvfrom, 2048)
+                assert tftp.decode(data).message == "server shutting down"
+            stats.append(server.stats_snapshot())
+        finally:
+            for raw in peers:
+                raw.close()
+
+    serve(str(root), scenario, timeout=5, writable=True, on_complete=results.append)
+    assert sorted(r.operation for r in results) == ["read", "write"]
+    assert all(isinstance(r.error, tftp.TransferAbortedError) for r in results)
+    assert (stats[0]["failed"], stats[0]["completed"], stats[0]["active"]) == (2, 0, 0)
+    assert not (root / "unfinished.bin").exists()

@@ -388,11 +388,7 @@ class TFTPServer(SelectorService, ServerBase):
                     self._run_timers(clock())
         finally:
             for session in list(self._sessions.values()):
-                if session.transfer is not None and not session.transfer.is_done:
-                    session.transfer.abort("server shutting down")
-                if session.transfer is not None and session.stream is not None:
-                    session.close_stream(session.transfer.error is None and session.transfer.is_done)
-                self._release(session)
+                self._abandon(session)
             while self._pending_opens:
                 session, outcome = self._pending_opens.popleft()
                 self._opened(session, outcome, time.monotonic())

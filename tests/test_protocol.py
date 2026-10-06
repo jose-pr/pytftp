@@ -727,3 +727,22 @@ def test_an_octet_read_request_asking_tsize_is_still_answered_with_the_size(make
         oack, tid = expect(client)
         assert oack == tftp.OptionAckPacket({"blksize": "1024", "tsize": "3000"})
         client.sendto(encode_error(TFTPErrorCode.NOT_DEFINED, "done"), tid)
+
+
+def test_transfers_in_flight_at_shutdown_are_reported(root, make_server):
+    results = []
+    server = make_server(root, writable=True, on_complete=results.append, timeout=5)
+    with raw_socket() as reader, raw_socket() as writer:
+        reader.sendto(encode_request(TFTPOpcode.RRQ, "big.bin"), server.server_address)
+        assert isinstance(expect(reader)[0], tftp.DataPacket)
+        writer.sendto(encode_request(TFTPOpcode.WRQ, "unfinished.bin"), server.server_address)
+        assert expect(writer)[0] == tftp.AckPacket(0)
+        server.shutdown()
+        assert server.wait_closed(5)
+        for peer in (reader, writer):
+            assert expect(peer)[0].message == "server shutting down"
+    assert sorted(r.operation for r in results) == ["read", "write"]
+    assert all(isinstance(r.error, tftp.TransferAbortedError) for r in results)
+    stats = server.stats_snapshot()
+    assert (stats["failed"], stats["completed"], stats["active"]) == (2, 0, 0)
+    assert not (root / "unfinished.bin").exists()

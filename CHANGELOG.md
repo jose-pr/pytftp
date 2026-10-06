@@ -331,6 +331,10 @@ Old names are not kept as aliases.
 
 ### Fixed
 
+- **Transfers in flight when a server stops are reported.** `shutdown()` sent them ERROR 0
+  but called `on_complete` for none of them and left `completed` and `failed` where they
+  were, on both servers; each now yields a `TransferResult` whose `error` is
+  `TransferAbortedError`, and counts as failed.
 - **A number in an option is ASCII digits, and nothing else.** A server
   acknowledged a `blksize` padded with white space as 1024, and echoed
   a `timeout` as it was written; the acknowledgement is now written from the

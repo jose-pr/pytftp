@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 from ..capture._hook import HookGuard, guard
 from ..capture.events import PacketEvent
-from ..exceptions import RemoteError, TFTPDecodeError, TFTPError
+from ..exceptions import RemoteError, TFTPDecodeError, TFTPError, TransferAbortedError
 from ..options import Negotiated, TFTPServerOptions
 from ..packet import TFTPErrorCode, TFTPOpcode, RequestPacket, decode
 from ..packet.codec import _encode_error
@@ -256,6 +256,9 @@ class ServerBase:
 
     def _refuse(self, session: Session, exc: BaseException) -> None:
         """The handler (or the mode) refused: ERROR to the client, report, release."""
+        if session.closed:  # the server stopped while the handler was opening it: already reported
+            session.close_stream(ok=False)
+            return
         error = TFTPError.from_exception(exc)
         if not isinstance(exc, (TFTPError, OSError)):
             log.error("handler failed for %r", session.context, exc_info=exc)
@@ -267,6 +270,29 @@ class ServerBase:
         finally:
             self._release(session)
         self._report(session, error, None)
+
+    def _abandon(self, session: Session) -> None:
+        """Serving stops with ``session`` in flight: the peer gets ERROR 0, the result reports the abort.
+
+        A transfer that already finished was reported when it did; a request
+        whose handler had not returned yet has no transfer and counts as refused.
+        """
+        if session.closed:
+            return
+        try:
+            transfer = session.transfer
+            if transfer is None:
+                self.stats.add("refused")
+                session.close_stream(ok=False)
+                self._report(session, TransferAbortedError("server shutting down"), None)
+            elif not transfer.is_done:
+                transfer.abort("server shutting down")
+                session.close_stream(ok=False)
+                self._report(session, transfer.error, transfer)
+        except Exception:
+            log.exception("could not report the transfer that was in flight at shutdown")
+        finally:
+            self._release(session)
 
     def _survive(self, session: Optional[Session], exc: BaseException) -> None:
         """An exception escaped one dispatch: end that transfer, keep serving.

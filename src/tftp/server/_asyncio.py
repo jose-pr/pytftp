@@ -157,11 +157,7 @@ class AsyncTFTPServer(ServerBase):
                 except Exception:
                     pass  # raised from listening.result() above, or already reported there
             for session in list(self._sessions.values()):
-                if session.transfer is not None and not session.transfer.is_done:
-                    session.transfer.abort("server shutting down")
-                if session.stream is not None:
-                    session.close_stream(ok=False)
-                self._release(session)
+                self._abandon(session)
             self._serving = False
             if not ready.done():
                 ready.cancel()
