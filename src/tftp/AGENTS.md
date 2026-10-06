@@ -12,7 +12,8 @@ asyncio twins, `download` and `upload` and the URL one-shots, the exceptions,
 `TransferResult` and `TFTPURL`, the handler contract with `FilesystemBackend`,
 the policy classes and `Profile`, the packet types and `decode`, and the
 engine's `Sender` and `Receiver`. Every other name has one home, its role
-module, and is imported from it (`from tftp.options import OptionRegistry`):
+module or one of the topic modules `tftp.transfer`, `tftp.listing` and
+`tftp.netascii`, and is imported from it (`from tftp.options import OptionRegistry`):
 "Where names live" below lists every public module's exports. Modules starting
 with `_` are internal.
 
@@ -39,10 +40,8 @@ takes every field by keyword.
 | `tftp.exceptions` | `AccessViolation`, `CaptureFilterError`, `CaptureFormatError`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
 | `tftp.cli` | `CaptureCmd`, `Get`, `Ls`, `Put`, `Pytftp`, `RelayCmd`, `Serve`, `run` |
 | `tftp.transfer` | `Receiver`, `Sender`, `Transfer`, `as_readinto`, `as_write` |
-| `tftp.uri` | `TFTPURL`, `download_url`, `upload_url` |
 | `tftp.listing` | `DirectoryListing`, `LIST_OPTION`, `ListEntry`, `MTIME_OPTION`, `dumps`, `loads` |
 | `tftp.netascii` | `NetasciiReader`, `NetasciiWriter`, `decode`, `encode`, `encoded_size` |
-| `tftp.result` | `TransferResult` |
 
 ## Protocol coverage
 

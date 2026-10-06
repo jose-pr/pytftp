@@ -2,4 +2,4 @@
 
 ::: tftp.exceptions
 
-::: tftp.result
+::: tftp.TransferResult

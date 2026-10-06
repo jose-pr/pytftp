@@ -224,11 +224,6 @@ EXPECTED = {
         "as_readinto",
         "as_write",
     ],
-    "tftp.uri": [
-        "TFTPURL",
-        "download_url",
-        "upload_url",
-    ],
     "tftp.listing": [
         "DirectoryListing",
         "LIST_OPTION",
@@ -244,13 +239,11 @@ EXPECTED = {
         "encode",
         "encoded_size",
     ],
-    "tftp.result": [
-        "TransferResult",
-    ],
 }
 
-#: Root names whose home is not a module of EXPECTED.
-_NOT_REEXPORTED = {"__version__"}
+#: Root names whose home is not a module of EXPECTED: the version, and the URL and result
+#: types, which have no module path of their own.
+_NOT_REEXPORTED = {"__version__", "TFTPURL", "download_url", "upload_url", "TransferResult"}
 
 
 @pytest.mark.parametrize("module", sorted(EXPECTED))

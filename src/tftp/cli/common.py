@@ -39,8 +39,8 @@ from .._text import escape
 from ..client import TFTPClient
 from ..exceptions import TFTPError
 from ..options import PROFILES
-from ..result import TransferResult
-from ..uri import TFTPURL, _client_keywords
+from .._result import TransferResult
+from .._uri import TFTPURL, _client_keywords
 
 __all__ = [
     "AUTO",

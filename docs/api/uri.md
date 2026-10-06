@@ -1,3 +1,7 @@
-# `tftp.uri`
+# `tftp://` URLs
 
-::: tftp.uri
+::: tftp.TFTPURL
+
+::: tftp.download_url
+
+::: tftp.upload_url

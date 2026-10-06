@@ -194,7 +194,7 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 | `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |
-| `tftp.uri` | `tftp://` URLs |
+| `tftp.listing` | the `x-list` directory listing format: `loads`, `dumps`, `DirectoryListing` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` (`path` extra) |
 | `tftp.netascii` | streaming netascii translation |
 | `tftp.exceptions` | every exception: `TFTPError`, the typed `RemoteError` subclasses, `TFTPValueError` and its decode, filter and capture-format subclasses |

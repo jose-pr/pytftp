@@ -20,7 +20,9 @@ engine's ``Sender`` and ``Receiver``. Everything else lives in its role module,
 which is that name's one home: :mod:`tftp.client`, :mod:`tftp.server`,
 :mod:`tftp.relay`, :mod:`tftp.capture`, :mod:`tftp.options`, :mod:`tftp.packet`,
 :mod:`tftp.backends`, :mod:`tftp.path`, :mod:`tftp.exceptions` and
-:mod:`tftp.cli` (needs the ``cli`` extra).
+:mod:`tftp.cli` (needs the ``cli`` extra); the engine, the ``x-list`` format and netascii
+keep their own topic modules: :mod:`tftp.transfer`, :mod:`tftp.listing` and
+:mod:`tftp.netascii`.
 """
 
 from __future__ import annotations
@@ -68,9 +70,9 @@ from .server import (
 )
 from .netascii import NetasciiReader, NetasciiWriter
 from .options import Profile, TFTPServerOptions
-from .result import TransferResult
+from ._result import TransferResult
 from .transfer import Receiver, Sender
-from .uri import TFTPURL, download_url, upload_url
+from ._uri import TFTPURL, download_url, upload_url
 
 __all__ = [
     "__version__",

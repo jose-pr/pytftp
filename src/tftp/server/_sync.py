@@ -31,7 +31,7 @@ from ..capture._events import PacketEvent
 from ..options._policy import TFTPServerOptions
 from ..packet._enums import TFTPErrorCode
 from ..packet._codec import _encode_error
-from ..result import TransferResult
+from .._result import TransferResult
 from ..transfer._engine import Transfer
 from .._loggers import SERVER as log
 from ._core import DEFAULT_MAX_SESSIONS, SELECT_SESSIONS, ServerBase

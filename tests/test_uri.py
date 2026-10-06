@@ -11,7 +11,7 @@ import pytest
 
 import tftp
 from tftp.exceptions import TFTPValueError
-from tftp.uri import TFTPURL, download_url, upload_url
+from tftp import TFTPURL, download_url, upload_url
 
 
 @pytest.mark.parametrize(
@@ -490,7 +490,7 @@ def test_each_spelling_parses_back_through_str(text):
 
 
 def test_the_known_names_are_readable_values():
-    from tftp.uri import _client_keywords
+    from tftp._uri import _client_keywords  # internal: no public name
 
     url = TFTPURL(
         "h",
@@ -601,7 +601,7 @@ def _documented_urls():
     import re
 
     root = pathlib.Path(__file__).resolve().parent.parent
-    sources = [root / "README.md", root / "src" / "tftp" / "AGENTS.md", root / "src" / "tftp" / "uri.py"]
+    sources = [root / "README.md", root / "src" / "tftp" / "AGENTS.md", root / "src" / "tftp" / "_uri.py"]
     sources += [root / "src" / "tftp" / "cli" / "transfer.py", root / "src" / "tftp" / "path" / "_uri.py"]
     sources += sorted((root / "docs").glob("*.md"))
     found = []

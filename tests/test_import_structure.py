@@ -104,19 +104,17 @@ _PUBLIC = {
     "tftp.path",
     "tftp.relay",
     "tftp.server",
+    # Topic modules: each exports names a caller reads qualified by the module.
+    "tftp.listing",
+    "tftp.netascii",
+    "tftp.transfer",
 }
 
-_SURFACE = "a public module of the pinned surface (tests/test_surface.py)"
 _LEAVING = "leaves for another package with the rest of the capture decoding"
 _COMMAND = "a command module of the command line package, which is laid out separately"
 
 #: Modules public by name that are not in the role-based surface, each with why.
 _PUBLIC_FOR_NOW = {
-    "tftp.transfer": _SURFACE,
-    "tftp.uri": _SURFACE,
-    "tftp.listing": _SURFACE,
-    "tftp.netascii": _SURFACE,
-    "tftp.result": _SURFACE,
     "tftp.capture.frames": _LEAVING,
     "tftp.capture.live": _LEAVING,
     "tftp.capture.pcap": _LEAVING,

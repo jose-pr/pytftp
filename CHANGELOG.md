@@ -301,6 +301,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `tftp.options._handler`, `tftp.transfer.base` is `tftp.transfer._engine`). A name's home is its
   package: `from tftp.server import TFTPServerLimits`. The loggers keep their names:
   `tftp.client`, `tftp.server`, `tftp.relay` and `tftp.backends`.
+- **`tftp.uri` and `tftp.result` are gone as module paths.** `TFTPURL`, `download_url`,
+  `upload_url` and `TransferResult` are imported from `tftp`, where they were already
+  exported. `tftp.transfer`, `tftp.listing` and `tftp.netascii` stay public topic modules.
 
 ### Renamed
 

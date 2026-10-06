@@ -17,7 +17,7 @@ from ..options._handler import DEFAULT_BLKSIZE
 from ..packet._enums import TFTPErrorCode, TFTPOpcode
 from ..packet._codec import encode_ack, encode_request
 from ..packet._codec import _encode_error
-from ..result import TransferResult
+from .._result import TransferResult
 from .._sockets import fit_window
 from ..transfer._receiver import Receiver
 from ..transfer._sender import Sender

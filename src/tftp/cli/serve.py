@@ -14,7 +14,7 @@ import os as _os
 import typing as _ty
 
 from ..options import LISTING_OPTIONS, PROFILES, STANDARD_OPTIONS, TFTPServerOptions
-from ..result import TransferResult
+from .._result import TransferResult
 from ..server import TFTPServer, TFTPServerLimits
 from .common import (
     PROFILE_NAMES,

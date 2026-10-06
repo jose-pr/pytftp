@@ -20,7 +20,7 @@ import time as _time
 import typing as _ty
 
 from .._text import escape
-from ..uri import TFTPURL
+from .._uri import TFTPURL
 from .common import ClientCmd, error, write_line
 
 __all__ = ["Get", "Put", "Ls"]

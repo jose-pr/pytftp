@@ -26,7 +26,7 @@ from ..options._policy import TFTPServerOptions
 from ..packet._enums import TFTPErrorCode, TFTPOpcode
 from ..packet._codec import RequestPacket, decode
 from ..packet._codec import _encode_error
-from ..result import TransferResult
+from .._result import TransferResult
 from ..transfer._receiver import Receiver
 from ..transfer._engine import Transfer
 from .._loggers import SERVER as log
