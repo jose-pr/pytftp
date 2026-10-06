@@ -15,6 +15,7 @@ pytest.importorskip("duho")
 
 import tftp  # noqa: E402
 import tftp.options  # noqa: E402
+from conftest import free_ports  # noqa: E402
 from tftp.cli import main  # noqa: E402
 
 
@@ -220,13 +221,14 @@ def test_serve_deployment_flags(root):
     (root / "127.0.0.1").mkdir()
     (root / "127.0.0.1" / "Menu.CFG").write_bytes(b"per-client menu")
     args = ["serve", str(root), "-l", "127.0.0.1", "-p", "0", "--per-client", "--ignore-case"]
-    args += ["--remap", "^pxelinux/=", "--port-range", "45100:45120"]
+    ports = free_ports(21)
+    args += ["--remap", "^pxelinux/=", "--port-range", "%d:%d" % (ports[0], ports[-1])]
     proc, port = _serve_subprocess(args)
     try:
         events = []
         client = tftp.TFTPClient("127.0.0.1", port, trace=events.append)
         assert client.get("pxelinux/menu.cfg") == b"per-client menu"
-        assert all(45100 <= e.remote[1] <= 45120 for e in events if e.direction == "in")
+        assert all(e.remote[1] in ports for e in events if e.direction == "in")
     finally:
         _stop(proc)
 
@@ -890,7 +892,7 @@ def test_the_bounding_flags_refuse_what_cannot_be_honoured(serve_refused, flags)
 def test_the_new_flags_are_documented_where_a_user_reads_them():
     import pathlib
 
-    root = pathlib.Path(__file__).resolve().parents[1]
+    root = pathlib.Path(__file__).resolve().parents[2]
     texts = {
         "README.md": (root / "README.md").read_text(encoding="utf-8"),
         "the shipped header": (root / "src" / "tftp" / "AGENTS.md").read_text(encoding="utf-8"),
@@ -924,11 +926,12 @@ def _alone(root, *flags):
 
 
 def test_port_range_alone_pins_the_transfer_ports(root):
-    proc, port = _alone(root, "--port-range", "45100:45120")
+    ports = free_ports(21)
+    proc, port = _alone(root, "--port-range", "%d:%d" % (ports[0], ports[-1]))
     try:
         events = []
         assert tftp.TFTPClient("127.0.0.1", port, trace=events.append).get("513.bin")
-        assert {e.remote[1] for e in events if e.direction == "in"} <= set(range(45100, 45121))
+        assert {e.remote[1] for e in events if e.direction == "in"} <= set(ports)
     finally:
         _stop(proc)
 

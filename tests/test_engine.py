@@ -15,38 +15,13 @@ from typing import Callable, List, Optional
 
 import pytest
 
+from conftest import Link, neg
 from tftp import Receiver, Sender, TFTPError
 from tftp.options import Negotiated
 from tftp.packet import decode, encode_ack, encode_oack
 from tftp.transfer import as_readinto, as_write
 
 DATA, ACK, ERROR, OACK = 3, 4, 5, 6
-
-
-class Link:
-    """Two queues between a sender and a receiver, with a loss rule.
-
-    ``rule(direction, packet, count)`` returns how many copies to deliver
-    (0 = lost, 2 = duplicated); ``count`` numbers packets per direction.
-    """
-
-    def __init__(self, rule: Optional[Callable[[str, bytes, int], int]] = None) -> None:
-        self.rule = rule or (lambda *_: 1)
-        self.to_receiver: List[bytes] = []
-        self.to_sender: List[bytes] = []
-        self.sent = {"s": [], "r": []}
-
-    def from_sender(self, packet) -> None:
-        packet = bytes(packet)
-        self.sent["s"].append(packet)
-        for _ in range(self.rule("s", packet, len(self.sent["s"]) - 1)):
-            self.to_receiver.append(packet)
-
-    def from_receiver(self, packet) -> None:
-        packet = bytes(packet)
-        self.sent["r"].append(packet)
-        for _ in range(self.rule("r", packet, len(self.sent["r"]) - 1)):
-            self.to_sender.append(packet)
 
 
 def run(
@@ -99,11 +74,6 @@ def run(
                 if not side.is_done and side.deadline is not None and side.deadline <= now:
                     side.on_timeout(now)
     return sink.getvalue(), sender, receiver, link
-
-
-def neg(**kwargs) -> Negotiated:
-    kwargs.setdefault("timeout", 1.0)
-    return Negotiated(**kwargs)
 
 
 def blocks_of(link: Link, kind: int = DATA) -> List[int]:

@@ -4,7 +4,7 @@ Not collected by pytest (no ``test_`` prefix): it needs root, Linux,
 qemu-system-x86_64, the iPXE ROMs, OVMF and dnsmasq, and takes minutes under
 emulation. Run::
 
-    sudo python tests/firmware_boot.py [ipxe|uefi ...]
+    sudo python tests/integration/firmware_boot.py [ipxe|uefi ...]
 
 It builds a small boot network: a tap interface (192.168.77.1/24), dnsmasq
 doing **DHCP only** (its TFTP is off) and pointing PXE at 192.168.77.1, and
@@ -206,7 +206,7 @@ def uefi(workdir: str) -> bool:
 
 
 def main() -> int:
-    if sys.platform != "linux" or os.geteuid() != 0:
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
         print("needs root on Linux")
         return 2
     for tool in ("qemu-system-x86_64", "dnsmasq", "ip"):

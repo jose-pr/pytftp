@@ -8,10 +8,8 @@ import os
 import pytest
 
 import tftp
-from conftest import client_for, wait_until
+from conftest import LISTING, client_for, wait_until
 from tftp.listing import DirectoryListing, ListEntry, dumps, loads
-
-LISTING = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS)
 
 
 @pytest.fixture

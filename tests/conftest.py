@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import http.server
 import os
+import random
 import socket
 import threading
+from typing import Callable, List, Optional
 
 import pytest
 
 import tftp
 import tftp.relay
+from tftp.options import Negotiated
+from tftp.packet import decode
+
+# The options a server allows to serve the x-list directory listing.
+LISTING = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS)
 
 
 def _ipv6_loopback() -> bool:
@@ -661,3 +668,106 @@ def wait_until(predicate, timeout: float = 5.0) -> bool:
     while not predicate() and time.monotonic() < end:
         time.sleep(0.01)
     return predicate()
+
+
+class Link:
+    """Two queues between a sender and a receiver, with a loss rule.
+
+    ``rule(direction, packet, count)`` returns how many copies to deliver
+    (0 = lost, 2 = duplicated); ``count`` numbers packets per direction.
+    """
+
+    def __init__(self, rule: Optional[Callable[[str, bytes, int], int]] = None) -> None:
+        self.rule = rule or (lambda *_: 1)
+        self.to_receiver: List[bytes] = []
+        self.to_sender: List[bytes] = []
+        self.sent = {"s": [], "r": []}
+
+    def from_sender(self, packet) -> None:
+        packet = bytes(packet)
+        self.sent["s"].append(packet)
+        for _ in range(self.rule("s", packet, len(self.sent["s"]) - 1)):
+            self.to_receiver.append(packet)
+
+    def from_receiver(self, packet) -> None:
+        packet = bytes(packet)
+        self.sent["r"].append(packet)
+        for _ in range(self.rule("r", packet, len(self.sent["r"]) - 1)):
+            self.to_sender.append(packet)
+
+
+def neg(**kwargs) -> Negotiated:
+    kwargs.setdefault("timeout", 1.0)
+    return Negotiated(**kwargs)
+
+
+def raw_socket(timeout: float = 2.0) -> socket.socket:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("127.0.0.1", 0))
+    sock.settimeout(timeout)
+    return sock
+
+
+class FakeServer:
+    """Answers requests with a script: ``script(request) -> list of packets``."""
+
+    def __init__(self, script):
+        self.sock = raw_socket(3.0)
+        self.address = self.sock.getsockname()
+        self.requests = []
+        self.script = script
+        self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
+
+    def run(self):
+        try:
+            while True:
+                data, peer = self.sock.recvfrom(70000)
+                packet = decode(data)
+                self.requests.append(packet)
+                for reply in self.script(packet):
+                    self.sock.sendto(reply, peer)
+        except OSError:
+            pass
+
+    def close(self):
+        self.sock.close()
+
+
+@pytest.fixture
+def fake_server():
+    """Start servers that answer from a script; every one is closed after the test."""
+    servers = []
+
+    def make(script):
+        servers.append(FakeServer(script))
+        return servers[-1]
+
+    yield make
+    for fake in servers:
+        fake.close()
+
+
+def free_ports(count: int) -> range:
+    """``count`` consecutive loopback ports that were free a moment ago, chosen at random.
+
+    The ports are not held: the server under test binds them. The block lies below every
+    system's ephemeral range, because those hand out the next port to the next bind, which
+    would be the server's own socket. A random start keeps two suites on one host apart.
+    """
+    for _ in range(200):
+        start = random.randrange(20000, 30000)
+        held = []
+        try:
+            for port in range(start, start + count):
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                held.append(sock)
+                sock.bind(("127.0.0.1", port))
+        except OSError:
+            continue
+        else:
+            return range(start, start + count)
+        finally:
+            for sock in held:
+                sock.close()
+    pytest.skip("no block of %d consecutive free ports" % count)

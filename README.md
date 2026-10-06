@@ -234,7 +234,7 @@ python benchmarks/run.py
 
 `pytest -m "not slow"` skips the rollover tests; tests marked `interop` run
 against curl, tftp-hpa, BusyBox and dnsmasq where installed (their servers need
-passwordless `sudo`). `sudo python tests/firmware_boot.py ipxe` network-boots
+passwordless `sudo`). `sudo python tests/integration/firmware_boot.py ipxe` network-boots
 iPXE in QEMU against the server (its `uefi` scenario does not pass yet). See
 [AGENTS.md](https://github.com/jose-pr/pytftp/blob/main/AGENTS.md) for the layout and conventions.
 

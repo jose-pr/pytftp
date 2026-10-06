@@ -10,7 +10,7 @@ import pytest
 
 import tftp
 from conftest import client_for
-from tftp._sockets import fit_window
+from tftp._sockets import fit_window  # internal: no public name
 from tftp import AsyncTFTPClient
 from tftp.relay import TFTPRelay, Upstream
 

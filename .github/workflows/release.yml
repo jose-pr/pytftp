@@ -151,7 +151,7 @@ jobs:
           python -m venv "$RUNNER_TEMP/smoke"
           "$RUNNER_TEMP/smoke/bin/pip" install dist/*.whl
       - name: Smoke-test the installed distribution
-        run: '"$RUNNER_TEMP/smoke/bin/python" tests/smoke_installed.py'
+        run: '"$RUNNER_TEMP/smoke/bin/python" tests/integration/smoke_installed.py'
 
   # Docs are DEPLOYED by docs.yml. This job only GATES the release on a strict
   # docs BUILD: a release must never ship if the docs site is broken, but the

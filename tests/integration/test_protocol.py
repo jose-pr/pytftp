@@ -11,16 +11,9 @@ import threading
 import pytest
 
 import tftp
-from conftest import client_for
+from conftest import client_for, raw_socket
 from tftp import TFTPErrorCode, TFTPOpcode, decode
 from tftp.packet import encode_ack, encode_data, encode_error, encode_oack, encode_request
-
-
-def raw_socket(timeout: float = 2.0) -> socket.socket:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("127.0.0.1", 0))
-    sock.settimeout(timeout)
-    return sock
 
 
 def expect(sock: socket.socket):
@@ -199,33 +192,7 @@ def test_reply_address_on_dual_stack_listener(root, make_server):
         client.sendto(encode_ack(1), source)
 
 
-class FakeServer:
-    """Answers requests with a script: ``script(request) -> list of packets``."""
-
-    def __init__(self, script):
-        self.sock = raw_socket(3.0)
-        self.address = self.sock.getsockname()
-        self.requests = []
-        self.script = script
-        self.thread = threading.Thread(target=self.run, daemon=True)
-        self.thread.start()
-
-    def run(self):
-        try:
-            while True:
-                data, peer = self.sock.recvfrom(70000)
-                packet = decode(data)
-                self.requests.append(packet)
-                for reply in self.script(packet):
-                    self.sock.sendto(reply, peer)
-        except OSError:
-            pass
-
-    def close(self):
-        self.sock.close()
-
-
-def test_client_falls_back_when_options_are_refused():
+def test_client_falls_back_when_options_are_refused(fake_server):
     def script(packet):
         if isinstance(packet, tftp.RequestPacket):
             if packet.options:
@@ -233,7 +200,7 @@ def test_client_falls_back_when_options_are_refused():
             return [encode_data(1, b"hi")]
         return []
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
     try:
         assert tftp.TFTPClient(*fake.address, timeout=0.5).get("f") == b"hi"
         assert [bool(r.options) for r in fake.requests if isinstance(r, tftp.RequestPacket)] == [True, False]
@@ -243,13 +210,13 @@ def test_client_falls_back_when_options_are_refused():
         fake.close()
 
 
-def test_client_refuses_an_oack_it_did_not_ask_for():
+def test_client_refuses_an_oack_it_did_not_ask_for(fake_server):
     def script(packet):
         if isinstance(packet, tftp.RequestPacket):
             return [encode_oack({"blksize": "9000"})]
         return []
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
     try:
         with pytest.raises(tftp.TFTPProtocolError) as info:
             tftp.TFTPClient(*fake.address, timeout=0.5, blksize=1428).get("f")
@@ -262,7 +229,7 @@ def test_client_refuses_an_oack_it_did_not_ask_for():
         fake.close()
 
 
-def test_client_reports_remote_errors():
+def test_client_reports_remote_errors(fake_server):
     def script(packet):
         return (
             [encode_error(TFTPErrorCode.ACCESS_VIOLATION, "go away")]
@@ -270,7 +237,7 @@ def test_client_reports_remote_errors():
             else []
         )
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
     try:
         with pytest.raises(tftp.RemoteError) as info:
             tftp.TFTPClient(*fake.address, timeout=0.5).get("f")
@@ -279,11 +246,11 @@ def test_client_reports_remote_errors():
         fake.close()
 
 
-def test_client_accepts_host_with_port():
+def test_client_accepts_host_with_port(fake_server):
     def script(packet):
         return [encode_data(1, b"ok")] if isinstance(packet, tftp.RequestPacket) else []
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
     try:
         assert tftp.TFTPClient("127.0.0.1:%d" % fake.address[1], 1).get("f") == b"ok"
     finally:
@@ -555,7 +522,7 @@ def test_an_oversized_data_from_the_server_is_a_protocol_error_and_not_an_oserro
 
 
 def test_hosts_are_compared_by_address_and_scope_and_not_by_text():
-    from tftp._sockets import same_host
+    from tftp._sockets import same_host  # internal: no public name
 
     assert same_host(("fe80::1", 1, 0, 7), ("fe80::1%7", 2))  # the zone is in the text on one side
     assert same_host(("fe80::1", 1, 0, 7), ("FE80:0:0:0:0:0:0:1", 2, 0, 7))
@@ -597,7 +564,7 @@ def test_a_request_context_copies_itself_with_another_filename():
 @pytest.mark.parametrize(
     "code", [TFTPErrorCode.OPTION_REFUSED, TFTPErrorCode.ILLEGAL_OPERATION, TFTPErrorCode.NOT_DEFINED]
 )
-def test_client_repeats_a_request_without_options_after_an_error_for_them(code):
+def test_client_repeats_a_request_without_options_after_an_error_for_them(code, fake_server):
     """RFC 2347: after "an error for a request which carries an option", the client "may attempt to repeat the request without appending any options"."""
 
     def script(packet):
@@ -605,7 +572,7 @@ def test_client_repeats_a_request_without_options_after_an_error_for_them(code):
             return [encode_error(code, "no")] if packet.options else [encode_data(1, b"hi")]
         return []
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
     try:
         assert tftp.TFTPClient(*fake.address, timeout=0.5).get("f") == b"hi"
         sent = [bool(r.options) for r in fake.requests if isinstance(r, tftp.RequestPacket)]
@@ -614,13 +581,13 @@ def test_client_repeats_a_request_without_options_after_an_error_for_them(code):
         fake.close()
 
 
-def test_client_does_not_repeat_a_request_after_other_errors():
+def test_client_does_not_repeat_a_request_after_other_errors(fake_server):
     def script(packet):
         if isinstance(packet, tftp.RequestPacket):
             return [encode_error(TFTPErrorCode.FILE_NOT_FOUND, "no")]
         return []
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
     try:
         with pytest.raises(tftp.FileNotFound):
             tftp.TFTPClient(*fake.address, timeout=0.5).get("f")
@@ -629,7 +596,7 @@ def test_client_does_not_repeat_a_request_after_other_errors():
         fake.close()
 
 
-def test_client_refuses_an_acknowledged_timeout_it_did_not_ask_for_with_error_8():
+def test_client_refuses_an_acknowledged_timeout_it_did_not_ask_for_with_error_8(fake_server):
     """RFC 2349: "The specified timeout value must match the value specified by the client"; RFC 2347: ERROR 8 refuses an OACK."""
 
     def script(packet):
@@ -637,7 +604,7 @@ def test_client_refuses_an_acknowledged_timeout_it_did_not_ask_for_with_error_8(
             return [encode_oack({"timeout": "9"})]
         return []
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
     try:
         with pytest.raises(tftp.TFTPProtocolError) as info:
             tftp.TFTPClient(*fake.address, timeout=2.0).get("f")
@@ -651,13 +618,13 @@ def test_client_refuses_an_acknowledged_timeout_it_did_not_ask_for_with_error_8(
 
 
 @pytest.mark.parametrize("code", [TFTPErrorCode.ILLEGAL_OPERATION, TFTPErrorCode.NOT_DEFINED])
-def test_stat_probes_again_for_the_size_after_an_error_for_its_options(code):
+def test_stat_probes_again_for_the_size_after_an_error_for_its_options(code, fake_server):
     def script(packet):
         if isinstance(packet, tftp.RequestPacket):
             return [encode_error(code, "no")] if len(packet.options) > 1 else [encode_data(1, b"hi")]
         return []
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
     try:
         assert tftp.TFTPClient(*fake.address, timeout=0.5).stat("f").size == 2
     finally:

@@ -8,10 +8,8 @@ import shutil
 import pytest
 
 import tftp
-from conftest import client_for
+from conftest import LISTING, client_for
 from tftp.exceptions import AccessViolation, DiskFull
-
-LISTING = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS)
 
 
 @pytest.fixture

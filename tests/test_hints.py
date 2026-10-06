@@ -15,7 +15,7 @@ import typing
 
 import pytest
 
-from test_surface import EXPECTED
+from surface import EXPECTED
 
 pytest.importorskip("pathlib_next")
 

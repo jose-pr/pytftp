@@ -11,7 +11,7 @@ import time
 import pytest
 
 import tftp
-from conftest import BAD_FIRST_ANSWERS, FakePeer, client_for, needs_ipv6, wait_until
+from conftest import BAD_FIRST_ANSWERS, LISTING, FakePeer, client_for, needs_ipv6, wait_until
 from tftp.netascii import encode
 
 NAMES = ["empty.bin", "one.bin", "511.bin", "512.bin", "513.bin", "1428x3.bin", "big.bin"]
@@ -25,11 +25,18 @@ SHAPES = [
 ]
 
 
-@pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("name", NAMES)
+def _cases(names):
+    """Each file over each shape, but not the biggest over 8-octet blocks: its 37,500 lock-step round trips exercise nothing the smaller files do not."""
+    return [
+        pytest.param(name, shape.values[0], id="%s-%s" % (name, shape.id))
+        for shape in SHAPES
+        for name in names
+        if not (name == "big.bin" and shape.id == "blksize8")
+    ]
+
+
+@pytest.mark.parametrize("name, shape", _cases(NAMES))
 def test_download(root, make_server, name, shape):
-    if shape.get("blksize") == 8 and name == "big.bin":
-        pytest.skip("37,500 lock-step round trips add nothing over the smaller files")
     server = make_server(root)
     expected = (root / name).read_bytes()
     result_sink = io.BytesIO()
@@ -40,11 +47,8 @@ def test_download(root, make_server, name, shape):
         assert result.negotiated.tsize == (len(expected) or None)
 
 
-@pytest.mark.parametrize("shape", SHAPES)
-@pytest.mark.parametrize("name", ["empty.bin", "512.bin", "513.bin", "big.bin"])
+@pytest.mark.parametrize("name, shape", _cases(["empty.bin", "512.bin", "513.bin", "big.bin"]))
 def test_upload(root, make_server, name, shape):
-    if shape.get("blksize") == 8 and name == "big.bin":
-        pytest.skip("37,500 lock-step round trips add nothing over the smaller files")
     server = make_server(root, writable=True)
     data = (root / name).read_bytes()
     result = client_for(server, **shape).upload("up-" + name, data)
@@ -638,7 +642,12 @@ def test_a_download_to_a_named_pipe_is_written_in_place(root, make_server, tmp_p
     pipe = where / "pipe"
     os.mkfifo(pipe)
     got = []
-    reader = threading.Thread(target=lambda: got.append(pipe.open("rb").read()), daemon=True)
+
+    def read():
+        with pipe.open("rb") as handle:
+            got.append(handle.read())
+
+    reader = threading.Thread(target=read, daemon=True)
     reader.start()
     client_for(make_server(root)).download("one.bin", pipe)
     reader.join(5)
@@ -740,8 +749,6 @@ def test_a_server_sending_more_than_its_tsize_is_a_protocol_error():
 
 
 def test_a_listing_is_bounded_and_the_server_is_told(root, make_server):
-    from test_listing import LISTING
-
     server = make_server(root, options=LISTING)
     client = client_for(server)
     with pytest.raises(tftp.TransferTooLargeError):
@@ -760,7 +767,7 @@ def test_max_size_is_validated_when_the_client_is_built():
 def test_the_size_announced_for_an_upload_is_the_size_of_what_is_sent(spy_server, tmp_path):
     import gzip
 
-    from tftp.client._core import _source_size
+    from tftp.client._core import _source_size  # the size a file object reports is not reachable otherwise
 
     payload = b"A" * 100_000
     plain = tmp_path / "plain.gz"

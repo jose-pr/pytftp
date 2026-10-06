@@ -4,7 +4,7 @@ Release CI installs the built wheel into a fresh venv and runs this, so it
 proves what users get: the package imports from site-packages (not a
 checkout), its shipped docs are present, and a real loopback transfer works.
 
-    python tests/smoke_installed.py
+    python tests/integration/smoke_installed.py
 """
 
 from __future__ import annotations

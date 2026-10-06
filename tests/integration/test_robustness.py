@@ -11,8 +11,7 @@ import time
 import pytest
 
 import tftp
-from conftest import client_for
-from test_engine import Link, neg
+from conftest import Link, client_for, neg
 from tftp import TFTPErrorCode, TFTPOpcode, decode
 from tftp.packet import encode_ack, encode_data, encode_error, encode_oack, encode_request
 from tftp.exceptions import WouldBlock
@@ -500,7 +499,7 @@ def test_interface_lookups_reuse_netimps_cache():
 
     import netimps
 
-    from tftp.client._core import _mtu_blksize
+    from tftp.client._core import _mtu_blksize  # internal: no public name
     from tftp.server._listener import Listener  # internal: no public name
 
     netimps.clear_interface_cache()

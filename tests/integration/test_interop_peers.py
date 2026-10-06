@@ -1,10 +1,10 @@
 """Interoperability with independent TFTP implementations.
 
-Runs where the peers are installed (Linux): tftp-hpa (server ``in.tftpd`` and
-client ``tftp``), BusyBox (``tftp`` and ``tftpd``), dnsmasq's TFTP server.
-The peer servers need root (they chroot, drop privileges or bind port 69), so
-those tests also need passwordless ``sudo -n``; each test skips, naming what
-is missing, rather than fail.
+Runs wherever the peers are found: tftp-hpa (server ``in.tftpd`` and client
+``tftp``), BusyBox (``tftp`` and ``tftpd``), dnsmasq's TFTP server. The peer
+servers need root (they chroot, drop privileges or bind port 69), so those
+tests also need passwordless ``sudo -n``; each test skips, naming the binary or
+the privilege that is missing, rather than fail.
 """
 
 from __future__ import annotations
@@ -14,14 +14,15 @@ import os
 import shutil
 import socket
 import subprocess
-import sys
 import time
 
 import pytest
 
 import tftp
+from tftp import TFTPOpcode
+from tftp.packet import encode_request
 
-pytestmark = [pytest.mark.interop, pytest.mark.skipif(sys.platform != "linux", reason="Linux peers")]
+pytestmark = pytest.mark.interop
 
 SHAPES = [
     pytest.param({"blksize": None}, id="rfc1350"),
@@ -38,9 +39,15 @@ def _which(*names):
     return None
 
 
+def _is_root() -> bool:
+    return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
 def _can_sudo() -> bool:
-    if os.geteuid() == 0:
+    if _is_root():
         return True
+    if not hasattr(os, "geteuid"):
+        return False
     try:
         return subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=5).returncode == 0
     except (OSError, subprocess.SubprocessError):
@@ -48,7 +55,7 @@ def _can_sudo() -> bool:
 
 
 def _root_cmd(argv):
-    return argv if os.geteuid() == 0 else ["sudo", "-n", *argv]
+    return argv if _is_root() else ["sudo", "-n", *argv]
 
 
 def _free_port() -> int:
@@ -73,9 +80,24 @@ class PeerServer:
         self.port = port
         self.pattern = pattern
         self.proc = subprocess.Popen(_root_cmd(argv), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        time.sleep(0.6)
-        if self.proc.poll() is not None:
-            pytest.skip("peer server exited: %s" % self.proc.stderr.read().decode(errors="replace")[:200])
+        if not self._answers():
+            self.stop()
+            pytest.skip("peer server did not answer: %s" % self._stderr)
+
+    def _answers(self) -> bool:
+        """Ask for a file that is not there until the peer answers, whatever it answers."""
+        request = encode_request(TFTPOpcode.RRQ, "ready-probe")
+        deadline = time.monotonic() + 10.0
+        while self.proc.poll() is None and time.monotonic() < deadline:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                probe.settimeout(0.25)
+                probe.sendto(request, ("127.0.0.1", self.port))
+                try:
+                    probe.recvfrom(2048)
+                    return True
+                except OSError:
+                    continue
+        return False
 
     def stop(self):
         subprocess.run(_root_cmd(["pkill", "-f", self.pattern]), capture_output=True)
@@ -83,24 +105,25 @@ class PeerServer:
             self.proc.wait(5)
         except subprocess.TimeoutExpired:  # pragma: no cover
             self.proc.kill()
+            self.proc.wait(5)
+        self._stderr = self.proc.stderr.read().decode(errors="replace")[:200]
         self.proc.stderr.close()
 
 
 def _peer(kind, root):
+    binary = {"tftp-hpa": "in.tftpd", "busybox": "busybox", "dnsmasq": "dnsmasq"}[kind]
+    if _which(binary) is None:
+        pytest.skip("%s (the %s server) is not installed" % (binary, kind))
     if not _can_sudo():
-        pytest.skip("peer servers need root: passwordless sudo is not available")
+        pytest.skip("the %s server needs root: passwordless sudo is not available" % kind)
     if kind == "tftp-hpa":
         binary = _which("in.tftpd")
-        if binary is None:
-            pytest.skip("in.tftpd (tftp-hpa server) not installed")
         port = _free_port()
         address = "127.0.0.1:%d" % port
         return PeerServer(
             [binary, "-L", "-c", "-a", address, "-s", str(root)], port, "in.tftpd -L -c -a " + address
         )
     if kind == "busybox":
-        if _which("busybox") is None:
-            pytest.skip("busybox not installed")
         port = _free_port()
         return PeerServer(
             ["busybox", "udpsvd", "-E", "127.0.0.1", str(port), "busybox", "tftpd", "-c", str(root)],
@@ -109,8 +132,6 @@ def _peer(kind, root):
         )
     if kind == "dnsmasq":
         binary = _which("dnsmasq")
-        if binary is None:
-            pytest.skip("dnsmasq not installed")
         # dnsmasq has no TFTP listen-port option: it takes port 69.
         argv = [
             binary,

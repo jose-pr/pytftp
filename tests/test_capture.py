@@ -600,7 +600,8 @@ def test_a_transfer_is_written_under_the_directory_whatever_its_name(tmp_path, n
     path = transfer.write_to(target)
     assert os.path.dirname(os.path.realpath(path)) == os.path.realpath(target)
     assert os.path.basename(path).startswith(transfer.session + "-") and len(os.path.basename(path)) < 130
-    assert open(path, "rb").read() == b"payload" and not path.endswith(".partial")
+    with open(path, "rb") as written:
+        assert written.read() == b"payload" and not path.endswith(".partial")
     assert sorted(p.name for p in tmp_path.iterdir()) == ["recovered"]
 
 

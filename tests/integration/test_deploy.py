@@ -9,25 +9,7 @@ import pytest
 
 import tftp
 from tftp.relay import TFTPRelay
-from conftest import client_for, wait_until
-
-
-def _free_ports(count: int) -> range:
-    """``count`` consecutive ports that were free a moment ago."""
-    for start in range(40000, 60000, 97):
-        held = []
-        try:
-            for port in range(start, start + count):
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                held.append(sock)
-                sock.bind(("127.0.0.1", port))
-        except OSError:
-            continue
-        finally:
-            for sock in held:
-                sock.close()
-        return range(start, start + count)
-    pytest.skip("no free port block")
+from conftest import client_for, free_ports, wait_until
 
 
 def test_port_range_values():
@@ -131,7 +113,7 @@ def _results_after(results, count, seconds=5.0):
 
 
 def test_two_servers_given_one_range_do_not_share_a_cursor(root, make_server):
-    ports = _free_ports(3)
+    ports = free_ports(3)
     shared = tftp.server.PortRange(ports[0], ports[-1])
     one_results, other_results = [], []
     one = make_server(root, port_range=shared, on_complete=one_results.append)
@@ -151,7 +133,7 @@ def test_two_servers_given_one_range_do_not_share_a_cursor(root, make_server):
 
 
 def test_transfers_use_ports_from_the_range(root, make_server):
-    ports = _free_ports(3)
+    ports = free_ports(3)
     results = []
     server = make_server(root, port_range=(ports[0], ports[-1]), on_complete=results.append)
     client = client_for(server)
@@ -166,7 +148,7 @@ def test_transfers_use_ports_from_the_range(root, make_server):
 
 
 def test_full_range_answers_busy(root, make_server):
-    ports = _free_ports(2)
+    ports = free_ports(2)
     server = make_server(root, port_range=ports)
     held = []
     try:
@@ -184,7 +166,7 @@ def test_full_range_answers_busy(root, make_server):
 
 
 def test_relay_port_range(root, make_server):
-    ports = _free_ports(4)
+    ports = free_ports(4)
     upstream = make_server(root)
     events = []
     relay = TFTPRelay(
@@ -211,6 +193,6 @@ def test_v4_client_of_dual_stack_listener_without_pktinfo(root, make_server):
     assert not server.has_pktinfo
     client = tftp.TFTPClient("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
     assert client.get("one.bin") == b"x"
-    ports = _free_ports(2)
+    ports = free_ports(2)
     ranged = make_server(root, "::", reply_from_request_address=False, port_range=ports)
     assert tftp.TFTPClient("127.0.0.1", ranged.server_address[1], timeout=0.5).get("one.bin") == b"x"

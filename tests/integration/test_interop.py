@@ -39,6 +39,9 @@ def _udp_receive_buffer():
         return None
 
 
+MAX_BLOCKS = 1000
+
+
 def curl(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["curl", "-sS", "--max-time", "20", *args], capture_output=True, timeout=30)
 
@@ -54,12 +57,16 @@ def test_curl_downloads_from_server(root, make_server, tmp_path, name, blksize):
             pytest.skip(
                 "this host's default UDP receive buffer (%d) cannot hold a %s-octet block" % (space, blksize)
             )
+    # Lock-step round trips are the cost, not octets: a file of more than MAX_BLOCKS blocks proves
+    # nothing more about the block size and cannot finish in curl's deadline on a slow host.
+    served = (root / name).read_bytes()[: int(blksize or 512) * MAX_BLOCKS + 3]
+    (root / name).write_bytes(served)
     server = make_server(root)
     out = tmp_path / "out.bin"
     extra = ["--tftp-blksize", blksize] if blksize else []
     proc = curl(*extra, "-o", str(out), "tftp://127.0.0.1:%d/%s" % (server.server_address[1], name))
     assert proc.returncode == 0, proc.stderr
-    assert out.read_bytes() == (root / name).read_bytes()
+    assert out.read_bytes() == served
 
 
 @pytest.mark.parametrize("blksize", [None, "1428"])

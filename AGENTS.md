@@ -41,7 +41,8 @@ src/tftp/
 ├── _sockets.py        # window-sized socket buffers (everything else is netimps)
 ├── _streams.py        # the Protocols for the streams a transfer reads and writes
 └── _text.py           # escaping what a peer wrote before it is printed
-tests/                 # pytest; engine tests need no sockets; typing/ holds the consumer-side type check
+tests/                 # pytest; the top level: engine, codec, contract and guard tests, none needing a peer;
+                       # integration/ real sockets and processes on loopback; typing/ the consumer-side type check
 benchmarks/            # run.py, compare_tftpy.py + committed results/*.json
 examples/              # runnable scripts
 docs/                  # mkdocs site (hand-written index + mkdocstrings API pages)
@@ -90,8 +91,13 @@ py -3.14 -m venv .venv/3.14-nt-arm64
   as a consumer would, never executed; it has its own configuration and no cache, because two
   runs on one configuration share `.mypy_cache` and the second reads a degraded package.
 
-- `-m "not slow"` skips the 70,000-block rollover tests; `interop` tests need
-  curl with TFTP on `PATH` and skip otherwise.
+- `-m "not slow"` skips the 70,000-block rollover tests. `interop` tests run wherever the binary is
+  found (curl with TFTP, tftp-hpa, BusyBox, dnsmasq) and each skip names the binary that is missing; the
+  peer servers also need root or passwordless `sudo`. Run `pytest -rs` to see why a test skipped.
+- Warnings are errors (`filterwarnings = ["error"]` in `pyproject.toml`, no exception): a leaked socket or
+  file, an unawaited coroutine or a thread's exception fails the test that left it.
+- A test that needs a block of ports asks `conftest.free_ports`, which picks a random block below the
+  ephemeral ranges, so two suites on one host do not fight over a fixed block.
 - The reply-from-request-address tests send to `127.0.0.2`, which Linux and
   Windows answer on without configuration; elsewhere they skip.
 - Running the same checkout from Windows and from WSL: give one side its own

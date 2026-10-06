@@ -11,7 +11,7 @@ import time
 import pytest
 
 import tftp
-from conftest import BAD_FIRST_ANSWERS, FakePeer, client_for
+from conftest import BAD_FIRST_ANSWERS, LISTING, FakePeer, client_for
 from tftp import AsyncTFTPClient, AsyncTFTPServer
 from tftp.backends import HTTPBackend, MemoryBackend
 from tftp.server import ThreadedHandler
@@ -140,9 +140,7 @@ def test_async_client_timeout_and_cancel(root, make_server):
     run(main())
 
 
-def test_async_client_trace_and_fallback(root, make_server):
-    from test_protocol import FakeServer
-
+def test_async_client_trace_and_fallback(root, make_server, fake_server):
     from tftp.packet import encode_data, encode_error
 
     def script(packet):
@@ -150,7 +148,7 @@ def test_async_client_trace_and_fallback(root, make_server):
             return [encode_error(8)] if packet.options else [encode_data(1, b"plain")]
         return []
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
     events = []
 
     async def main():
@@ -165,10 +163,8 @@ def test_async_client_trace_and_fallback(root, make_server):
     assert {e.role for e in events} == {"client"}
 
 
-def test_async_client_repeats_a_request_without_options_after_error_4(root, make_server):
+def test_async_client_repeats_a_request_without_options_after_error_4(root, make_server, fake_server):
     """RFC 2347: after "an error for a request which carries an option", the client "may attempt to repeat the request without appending any options"."""
-    from test_protocol import FakeServer
-
     from tftp.packet import encode_data, encode_error
 
     def script(packet):
@@ -176,7 +172,7 @@ def test_async_client_repeats_a_request_without_options_after_error_4(root, make
             return [encode_error(4, "no")] if packet.options else [encode_data(1, b"plain")]
         return []
 
-    fake = FakeServer(script)
+    fake = fake_server(script)
 
     async def main():
         assert await AsyncTFTPClient(*fake.address, timeout=0.5).get("f") == b"plain"
@@ -373,13 +369,6 @@ def test_async_server_releases_a_session_whose_error_could_not_be_encoded():
 # -- link-local servers and send failures ---------------------------------------------------------
 
 
-def _loop_factories():
-    if sys.platform == "win32":
-        return [asyncio.SelectorEventLoop, asyncio.ProactorEventLoop]
-    return [None]
-
-
-@pytest.mark.parametrize("loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default"))
 @pytest.mark.parametrize("strict", [True, False])
 def test_async_client_hears_a_server_named_by_a_link_local_address_with_its_zone(
     link_local, loop_factory, strict
@@ -401,7 +390,10 @@ def test_a_send_the_host_refuses_ends_the_request_and_an_icmp_report_does_not():
     """Transport errors are loss only when they are the peer's ICMP report."""
     import errno
 
-    from tftp.client._asyncio import _Protocol, _Transfer
+    from tftp.client._asyncio import (
+        _Protocol,
+        _Transfer,
+    )  # the ICMP error callback cannot be provoked on every host
 
     async def main():
         loop = asyncio.get_running_loop()
@@ -439,12 +431,7 @@ def test_async_client_deadline_ends_a_transfer_before_its_retries_do():
 
 # -- the first answer and the time limit ----------------------------------------------------------
 
-LOOPS = pytest.mark.parametrize(
-    "loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default")
-)
 
-
-@LOOPS
 @pytest.mark.parametrize("is_read, answer", [pytest.param(r, a, id=i) for i, r, a in BAD_FIRST_ANSWERS])
 def test_a_first_answer_a_server_may_not_send_is_a_protocol_error(loop_factory, is_read, answer):
     class Sink:
@@ -469,7 +456,6 @@ def test_a_first_answer_a_server_may_not_send_is_a_protocol_error(loop_factory, 
     run(main(), loop_factory)
 
 
-@LOOPS
 @pytest.mark.parametrize("call", ["get", "size", "stat"])
 def test_the_time_limit_bounds_every_call_that_waits_for_a_server(loop_factory, call):
     import time
@@ -487,7 +473,6 @@ def test_the_time_limit_bounds_every_call_that_waits_for_a_server(loop_factory, 
     assert 0.4 <= elapsed < 1.5
 
 
-@LOOPS
 def test_the_time_limit_is_one_start_across_the_fallback_to_a_request_without_options(loop_factory):
     import time
 
@@ -512,9 +497,10 @@ def test_the_time_limit_is_one_start_across_the_fallback_to_a_request_without_op
     assert 1.9 <= elapsed < 3.0
 
 
-@LOOPS
 def test_an_engine_with_nothing_outstanding_is_woken_after_one_timeout(loop_factory):
-    from tftp.client._asyncio import _Transfer
+    from tftp.client._asyncio import (
+        _Transfer,
+    )  # drives an engine that is idle, which a real peer never leaves
 
     class Idle:
         deadline = None
@@ -555,7 +541,6 @@ def dest(tmp_path):
     return path
 
 
-@LOOPS
 @pytest.mark.parametrize("host", ["127.0.0.1", None, "h:+70"], ids=["not-found", "host-is-none", "bad-host"])
 def test_a_failed_download_to_a_path_leaves_the_file_that_was_there(loop_factory, dest, host):
     from tftp.packet import encode_error
@@ -571,7 +556,6 @@ def test_a_failed_download_to_a_path_leaves_the_file_that_was_there(loop_factory
     assert _beside(dest.parent) == ["important.cfg"]
 
 
-@LOOPS
 def test_a_download_to_a_path_replaces_the_file_on_success(loop_factory, root, make_server, dest):
     server = make_server(root)
 
@@ -583,7 +567,6 @@ def test_a_download_to_a_path_replaces_the_file_on_success(loop_factory, root, m
     assert _beside(dest.parent) == ["important.cfg"]
 
 
-@LOOPS
 def test_a_download_that_fails_while_data_arrives_leaves_the_file_and_no_temporary(loop_factory, dest):
     async def main():
         with FakePeer(_data_for_ever) as peer:
@@ -599,7 +582,6 @@ def test_a_download_that_fails_while_data_arrives_leaves_the_file_and_no_tempora
     assert _beside(dest.parent) == ["important.cfg"]
 
 
-@LOOPS
 def test_a_download_into_a_directory_that_does_not_exist_sends_nothing(loop_factory, tmp_path):
     async def main():
         with FakePeer() as peer:
@@ -622,7 +604,6 @@ def _data_for_ever(data):
     return []
 
 
-@LOOPS
 def test_a_failing_sink_is_raised_as_itself_and_the_server_is_told(loop_factory):
     import errno
 
@@ -646,7 +627,6 @@ def test_a_failing_sink_is_raised_as_itself_and_the_server_is_told(loop_factory)
     assert any(isinstance(p, tftp.ErrorPacket) and p.code == tftp.TFTPErrorCode.DISK_FULL for p in seen)
 
 
-@LOOPS
 def test_max_size_ends_a_download_the_server_does_not_end(loop_factory, tmp_path):
     class Sink:
         def __init__(self):
@@ -680,10 +660,7 @@ def test_max_size_ends_a_download_the_server_does_not_end(loop_factory, tmp_path
     assert not (tmp_path / "x.bin").exists()
 
 
-@LOOPS
 def test_a_listing_is_bounded_and_the_server_is_told(loop_factory, root, make_server):
-    from test_listing import LISTING
-
     server = make_server(root, options=LISTING)
 
     async def main():
@@ -760,7 +737,6 @@ class _Reads:
         return chunk
 
 
-@LOOPS
 def test_a_download_into_a_stream_the_server_refuses_leaves_no_task_and_no_socket(
     loop_factory, root, make_server, sockets
 ):
@@ -779,7 +755,6 @@ def test_a_download_into_a_stream_the_server_refuses_leaves_no_task_and_no_socke
     _all_closed(sockets, "after the refusal")
 
 
-@LOOPS
 def test_an_upload_the_server_refuses_takes_nothing_from_its_source_and_leaves_no_task(
     loop_factory, root, make_server, sockets
 ):
@@ -798,7 +773,6 @@ def test_an_upload_the_server_refuses_takes_nothing_from_its_source_and_leaves_n
     _all_closed(sockets, "after the refusal")
 
 
-@LOOPS
 @pytest.mark.parametrize("direction", ["download", "upload"])
 def test_a_cancelled_transfer_leaves_no_task_and_no_socket(
     loop_factory, root, make_server, sockets, direction
@@ -823,7 +797,6 @@ def test_a_cancelled_transfer_leaves_no_task_and_no_socket(
     _all_closed(sockets, "after the cancel")
 
 
-@LOOPS
 @pytest.mark.parametrize("direction", ["download", "upload"])
 def test_a_transfer_that_times_out_leaves_no_task_and_no_socket(loop_factory, sockets, direction):
     async def main():
@@ -844,7 +817,6 @@ def test_a_transfer_that_times_out_leaves_no_task_and_no_socket(loop_factory, so
     _all_closed(sockets, "after the timeout")
 
 
-@LOOPS
 def test_a_transfer_that_succeeds_leaves_no_task_and_no_socket(loop_factory, root, make_server, sockets):
     server = make_server(root, writable=True)
 
@@ -867,7 +839,6 @@ def test_a_transfer_that_succeeds_leaves_no_task_and_no_socket(loop_factory, roo
     _all_closed(sockets, "after the transfers")
 
 
-@LOOPS
 def test_stream_holds_about_buffer_octets_and_leaves_nothing_when_closed_early(
     loop_factory, make_server, sockets
 ):
@@ -905,7 +876,6 @@ def test_stream_holds_about_buffer_octets_and_leaves_nothing_when_closed_early(
     _all_closed(sockets, "after aclose()")
 
 
-@LOOPS
 def test_abandoning_a_stream_tells_the_server(loop_factory):
     async def main():
         with FakePeer(_data_for_ever) as peer:
@@ -923,7 +893,6 @@ def test_abandoning_a_stream_tells_the_server(loop_factory):
     assert any(isinstance(p, tftp.ErrorPacket) for p in seen), "the server was never told"
 
 
-@LOOPS
 def test_a_transfer_is_closed_once_and_asyncio_logs_nothing(loop_factory, root, make_server):
     """On some CPython 3.9 and 3.10 releases the Proactor loop logs a traceback for a socket closed twice."""
     import logging
@@ -995,13 +964,6 @@ def test_async_transfers_in_flight_at_shutdown_are_reported(root):
     assert not (root / "unfinished.bin").exists()
 
 
-def _loop_factories():
-    if sys.platform == "win32":
-        return [asyncio.SelectorEventLoop, asyncio.ProactorEventLoop]
-    return [None]
-
-
-@pytest.mark.parametrize("loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default"))
 @pytest.mark.parametrize("last", ["final ACK", "ERROR"])
 def test_async_server_last_datagram_reaches_the_peer_when_the_transfer_is_released_at_once(
     root, loop_factory, last
@@ -1041,7 +1003,6 @@ def test_async_server_last_datagram_reaches_the_peer_when_the_transfer_is_releas
     assert (root / "last.bin").exists() == (last == "final ACK")
 
 
-@pytest.mark.parametrize("loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default"))
 def test_the_largest_block_size_arrives_in_full_between_the_asyncio_peers(root, tmp_path, loop_factory):
     payload = os.urandom(2 * 65464 + 17)
     (root / "largest.bin").write_bytes(payload)
@@ -1058,7 +1019,6 @@ def test_the_largest_block_size_arrives_in_full_between_the_asyncio_peers(root, 
     assert (root / "largest-up.bin").read_bytes() == payload
 
 
-@pytest.mark.parametrize("loop_factory", _loop_factories(), ids=lambda f: getattr(f, "__name__", "default"))
 @pytest.mark.parametrize("strict, taken", [(True, b"real"), (False, b"rival")])
 def test_strict_source_decides_whether_an_answer_from_another_address_is_taken(
     rivals, loop_factory, strict, taken

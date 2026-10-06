@@ -315,6 +315,10 @@ class _FailsHalfWay(io.RawIOBase):
     def readable(self):
         return True
 
+    def close(self):
+        self.inner.close()
+        super().close()
+
     def readinto(self, buffer):
         if self.given >= self.limit:
             raise OSError(5, "the source failed half-way")
