@@ -9,6 +9,40 @@ Target: no metric of `benchmarks/run.py` is more than 10% slower than the
 `baseline-memory-backend` result of the same system and interpreter in
 `benchmarks/results/`, run on the median of the same number of samples.
 
+### Upgrading from 0.0.0
+
+This release breaks the documented API: the changelog's "Renamed" table maps every old name to its
+new one, "Removed" lists what is gone and "Changed" has the detail of each behaviour. No old name is
+kept as an alias and there is no deprecation period, so an upgrade is a search and replace and a read
+of this list.
+
+- **Dependencies.** `netimps>=0.4.0,<0.5` (0.3 is no longer supported) and `pktcap>=0.1.0,<0.2` are
+  required; the `cli` extra is `duho>=0.6.0,<0.7` and the `path` extra `pathlib-next[uri]>=0.9.0,<0.10`.
+- **Names.** Acronyms are upper case and every role is named for what it is: `TFTPClient`,
+  `TFTPServer`, `TFTPRelay`, `TFTPHandler`, `FilesystemBackend`, `TFTPError`, `TFTPURL`,
+  `RequestPacket`, `TransferTimeoutError`. Every exception lives in `tftp.exceptions`.
+- **Imports.** `tftp` exports what the common task needs; every other name has one home, its role
+  module (`tftp.client`, `tftp.server`, `tftp.relay`, `tftp.capture`, `tftp.options`, `tftp.packet`,
+  `tftp.backends`, `tftp.path`, `tftp.exceptions`, `tftp.cli`) or one of the topic modules
+  `tftp.transfer`, `tftp.listing` and `tftp.netascii`. The modules below them are private.
+- **Calls.** Options are keyword-only, constructors check their arguments and raise `TypeError` or
+  `ValueError` (`TFTPValueError` for malformed text) instead of failing later, the client's
+  whole-transfer limit is `deadline=`, and a server opens nothing in its constructor: `bind()`,
+  `serve_forever()`, `shutdown()`, `wait_closed()` and `close()` (`aclose()` on the asyncio server) are
+  one lifecycle on the three servers.
+- **Handlers.** `TFTPServer` takes plain hooks and `AsyncTFTPServer` coroutine hooks; a synchronous
+  handler reaches the asyncio server through `tftp.server.ThreadedHandler`.
+- **Values.** `TFTPURL`, `Upstream`, `PortRange` and the packet types are frozen values that compare by
+  type, not tuples; a `tftp://` URL carries transfer options in either spelling.
+- **Capture.** Reading, writing and live capture are pktcap's; `tftp.capture` keeps events, flows,
+  analysis, filters and replay, and adds `trace_to`, `TFTPLayer` and `replay_transfers`.
+- **Command line.** The entry point is `tftp.cli.main(argv)`, which returns the exit status; the command
+  refuses flag combinations it used to ignore (exit 2), and `pytftp replay` is new.
+- **Defaults that bound a request.** A server ends a transfer silent for 60 seconds (`max_idle`),
+  `MemoryBackend` takes uploads up to 16 MiB, and `max_sessions` is 500 on every platform.
+
+The version in development is 0.1.0; the number of the release is chosen when it is cut.
+
 ## [0.0.0] - 2026-10-03
 
 First release. What it contains is in the changelog.

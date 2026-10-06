@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+This release breaks the documented API: names, public module paths, constructor signatures and
+what malformed input raises. Old names are not kept as aliases. "Renamed" is the lookup from an old
+name to its new one, "Removed" lists what is gone, "Changed" has the detail of each behaviour that
+differs and "Fixed" the defects corrected on the way.
+
 ### Added
 
 - `TransferResult.to_dict()` and `RelaySummary.to_dict()`: the JSON-ready objects the
@@ -38,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `--per-client-only` (a client with no directory of its own is refused, where
   `--per-client` serves it the whole root, other clients' directories included; the
   help of `--per-client` says it is not isolation).
+- Documentation: a command-line guide in the docs site (checked against each command's `--help`), an API
+  page for `tftp.listing`, and the shipped API header split into a top header, `tftp/AGENTS.md`, and one
+  header per package (`tftp/client/AGENTS.md`, `server`, `options`, `backends`, `relay`, `capture`,
+  `packet`, `path`, `transfer` and `cli`), with the environment variables and the loggers listed; a test
+  checks every signature a header prints against the live object.
 
 ### Changed
 
@@ -332,10 +342,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `tftp.options._handler`, `tftp.transfer.base` is `tftp.transfer._engine`). A name's home is its
   package: `from tftp.server import TFTPServerLimits`. The loggers keep their names:
   `tftp.client`, `tftp.server`, `tftp.relay` and `tftp.backends`.
-- **`tftp.uri` and `tftp.result` are gone as module paths.** `TFTPURL`, `download_url`,
-  `upload_url` and `TransferResult` are imported from `tftp`, where they were already
-  exported. `tftp.transfer`, `tftp.listing` and `tftp.netascii` stay public topic modules.
-
 - **Annotations are complete and true.** The package is checked with mypy (Linux, macOS
   and Windows). Every public callable is annotated, and every public annotation resolves
   with `typing.get_type_hints` on Python 3.9, except the signatures that name a netimps
@@ -363,9 +369,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   duho (a run without the `cli` extra still prints one line naming it and exits 1).
   `-v`, `-q` and `--loglevel` are accepted before the subcommand
   (`pytftp -v get ...`) as well as after it.
-- **`PYTFTP_MCP=stdio` no longer serves the commands as tools.** Nothing in the
-  command is designed to be called as one (`serve` and `relay` never return,
-  `get` replaces files); the variable is ignored.
 - **The three handlers behind `pytftp serve`'s deployment flags are library classes.**
   `tftp.backends.Remap(inner, rules)`, `PerClient(root, make, *, fallback=True)` and
   `CaseInsensitive(root, ...)` (a `FilesystemBackend`) are public, documented and
@@ -447,6 +450,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   second and raised `struct.error` for the third); a text stream is a `TypeError` at the call; an
   empty input is a capture with nothing in it, as before.
 
+- **Inputs that now raise** (the detail is in the entries above):
+  - `TFTPError("no such file")`, a `code` that is not an `int`: `TypeError`; outside 0..65535: `ValueError`.
+  - `TFTPClient(timeout=..., max_timeout=...)` with `max_timeout` below `timeout`: `ValueError`.
+  - Host text with a signed or non-digit port, or brackets round an IPv4 address: `ValueError`; a host that
+    is not text, an address or a `Host`: `TypeError`.
+  - A `tftp://` URL with a fragment, userinfo, a repeated name or both option delimiters unencoded, and a
+    value no URL can carry: `TFTPValueError`.
+  - The encoders given an empty file name, an unknown mode, a request over 512 octets, an OACK with no
+    options, an ERROR code outside 0..65535 or a NUL in its message: `ValueError`; an option value that is
+    not text or an `int`: `TypeError`.
+  - A `PortRange` bound that is not an `int`: `TypeError`; one out of range: `TFTPValueError`.
+  - A handler of the other kind, or an asynchronous handler for the synchronous server: `TypeError` when the
+    server is built.
+  - A capture frame over 262,144 octets, or a block too short for its kind: `pktcap.CaptureFormatError`; a
+    text stream: `TypeError`; a trailing `and` or an `or` in a filter: `pktcap.CaptureFilterError`.
+  - On the command line, the flag combinations and arguments that used to be ignored: exit 2 with one
+    `error:` line.
+
 ### Renamed
 
 Old names are not kept as aliases.
@@ -495,9 +516,43 @@ Old names are not kept as aliases.
 | `await AsyncTFTPServer.close()` | `await AsyncTFTPServer.aclose()` |
 | `tftp.aio.AsyncTFTPServer` | `tftp.AsyncTFTPServer`, `tftp.server.AsyncTFTPServer` |
 | `TransferResult.ok`, `CapturedTransfer.complete`, `Transfer.done`, `Transfer.stalled` | `is_ok`, `is_complete`, `is_done`, `is_stalled` (the `"ok"` and `"complete"` keys of the command line's and `CapturedTransfer`'s dictionaries are unchanged) |
+| `TFTPClient(max_duration=)` | `deadline=` |
+| `TFTPRelay(max_lifetime=)` | `max_duration=` |
+| `download(host, filename, dest)`, `download_url(url, dest)`, `TFTPClient.download(filename, dest)` | `dst` |
+| `upload(host, filename, source)`, `TFTPClient.upload(filename, source)` | `src` |
+| `TFTPRelay(upstream_source=)` | `upstream_src=` |
+| `TFTPClient(local_address=)` (`client.local_address`) | `src=` (`client.src`) |
+| the type aliases `PathOrFile`, `Progress` (`tftp.client`), `SendFn` (`tftp.transfer`), `Predicate` (`tftp.capture`) | `SinkLike` and `SourceLike`, `ProgressFunction`, `SendFunction`, `EventPredicate` |
+| `read_datagrams`, `read_frames`, `FrameDecoder`, `UDPDatagram`, `LINKTYPES`, `sniff`, `live_capture_supported`, `CaptureFormatError`, `CaptureFilterError`, `PcapWriter` (`tftp.capture`) | pktcap's own, each named in the table under "Reading a capture is pktcap's" |
+| `_tftp_fast_open_`, `_tftp_copies_`, `_tftp_listing_` (marker attributes of a handler or stream) | `opens_fast`, `copies_writes`, `lists_directories` |
+| entry point `pytftp = "tftp.cli:run"` | `pytftp = "tftp.cli:main"` |
+
+### Removed
+
+- **`tftp.uri` and `tftp.result` are gone as module paths.** `TFTPURL`, `download_url`,
+  `upload_url` and `TransferResult` are imported from `tftp`, where they were already
+  exported. `tftp.transfer`, `tftp.listing` and `tftp.netascii` stay public topic modules.
+- **`PYTFTP_MCP=stdio` no longer serves the commands as tools.** Nothing in the
+  command is designed to be called as one (`serve` and `relay` never return,
+  `get` replaces files); the variable is ignored.
+- The package `tftp.aio`, `AsyncTFTPServer.close()` and `stop()`, and `AsyncTFTPServer(executor=)`; an
+  asynchronous stream is no longer accepted as an async iterable or as a `write` plus `async drain()` pair
+  (see "`AsyncTFTPServer.close()` is `aclose()`" and "One hook contract per server").
+- `tftp.cli.run` and the command classes `Pytftp`, `Get`, `Put`, `Ls`, `Serve`, `RelayCmd` and `CaptureCmd`
+  as importable names: `tftp.cli` exports `main` and nothing else.
+- The capture reader, the frame decoder and live capture, and the modules `tftp.capture.pcap`,
+  `tftp.capture.frames` and `tftp.capture.live`: they are pktcap's (the table under "Reading a capture is
+  pktcap's"). `CaptureFormatError` and `CaptureFilterError` leave `tftp.exceptions` with them.
+- `PacketEvent.format()` (use `str(event)`), `CapturedTransfer.bytes` (use `size`), `PortRange.of`,
+  `PortRange.ordered()` and `PortRange.taken()`.
 
 ### Fixed
 
+- **The documentation cited the wrong section for broadcast requests.** RFC 1123 4.2.3.4 is access
+  control; "Broadcast Request" is 4.2.3.5. The header, the protocol page and the server's docstrings say so.
+  The header also named `stream_mtime` as importable (it is not), the guide said handlers always run on the
+  event-loop thread (their `open_read` and `open_write` run in a worker unless the handler has
+  `opens_fast`), and the capture guide showed a trace time in milliseconds (it prints microseconds).
 - **A capture can no longer make `analyze()` or `pytftp capture` allocate what it claims.**
   A pcap record or pcapng block that stated 1 GiB made a 48-octet file take 1 GiB; the
   ceilings are checked before the octets are read and a longer one is a
