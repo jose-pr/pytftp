@@ -5,17 +5,18 @@ from __future__ import annotations
 import copy
 import errno
 import posixpath
+import sys
 from typing import Any, Callable, Iterator, Optional, Tuple
 
 from pathlib_next import Path, Pathname
 from pathlib_next.utils.stat import FileStat
 
 from ..client import TFTPClient
-from ..client._core import _ClientBase
+from ..client._core import _ClientBase, _mode
 from ..exceptions import FileNotFound, TFTPError
 from ._stream import open_reader, open_writer, os_error
 
-__all__ = ["TFTPPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir"]
+__all__ = ["TFTPPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir", "tftp_unlink"]
 
 
 def check_client(client: Any) -> Any:
@@ -34,10 +35,21 @@ def check_client(client: Any) -> Any:
 
 
 def client_factory(client: TFTPClient) -> Callable[..., TFTPClient]:
-    """A function returning a copy of ``client`` with some settings changed."""
+    """A function returning a copy of ``client`` with some settings changed.
+
+    An ``on_negotiated`` override runs after the client's own hook, which stays.
+    """
 
     def make(**overrides: Any) -> TFTPClient:
         derived = copy.copy(client)
+        own, outer = overrides.get("on_negotiated"), client.on_negotiated
+        if own is not None and outer is not None:
+
+            def chained(negotiated: Any, peer: Any) -> None:
+                outer(negotiated, peer)
+                own(negotiated, peer)
+
+            overrides["on_negotiated"] = chained
         for name, value in overrides.items():
             setattr(derived, name, value)
         return derived
@@ -66,6 +78,21 @@ def tftp_scandir(client: TFTPClient, dirname: str, path: Any) -> Iterator[Tuple[
         raise os_error(exc, path) from None
     for entry in entries:
         yield entry.name, FileStat(st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir)
+
+
+def tftp_unlink(path: Any, missing_ok: bool, caller: Any) -> None:
+    """``unlink()`` for a TFTP path, which cannot delete.
+
+    ``missing_ok=True`` returns without doing anything, and so does a plain
+    call made by :meth:`pathlib_next.Path.copy` on its target: the write that
+    follows replaces the file. Anything else, a deletion nobody can do,
+    raises ``NotImplementedError``. ``caller`` is the frame of the call.
+    """
+    if missing_ok:
+        return
+    if caller.f_code is getattr(Path.copy, "__code__", None) and caller.f_locals.get("target") is path:
+        return
+    raise NotImplementedError("TFTP cannot delete a file")
 
 
 def tftp_open(client: TFTPClient, filename: str, transfer_mode: str, mode: str, path: Any) -> Any:
@@ -103,7 +130,7 @@ class TFTPPath(Path):
     TFTP can read and write whole files: ``open("r")``,
     ``open("w")``/``"x"``, ``read_bytes``/``write_bytes``/``read_text``/
     ``write_text``, ``stat()`` (a probe), ``exists()``, ``is_file()``, and
-    ``copy()``/``move()`` to and from any pathlib_next path. Against a server
+    ``copy()`` to and from any pathlib_next path and ``move()`` to one. Against a server
     speaking pytftp's ``x-list``/``x-mtime`` extensions, ``iterdir()``,
     ``is_dir()``, ``walk()``, ``glob()`` and ``st_mtime`` work too (one
     listing per directory); other servers report directories as missing.
@@ -135,8 +162,10 @@ class TFTPPath(Path):
             if inherited is None:
                 raise TypeError("TFTPPath needs client= (or a TFTPPath to join onto)")
             client, mode = inherited._client, inherited._mode
+        if not isinstance(mode, str):
+            raise TypeError("a transfer mode is text, not %s" % type(mode).__name__)
         self._client = check_client(client)
-        self._mode = mode
+        self._mode = _mode(mode)
         names = [name for name in text.split("/") if name and name != "."]
         if text.startswith("/"):
             self._segments = ["", *names] if names else ["", ""]
@@ -199,7 +228,7 @@ class TFTPPath(Path):
     def as_uri(self) -> str:
         from ..uri import TFTPURL
 
-        return str(TFTPURL(self._client.host, self._client.port, self.as_posix().lstrip("/"), self._mode))
+        return str(TFTPURL(self._client.host, self._client.port, self.as_posix(), self._mode))
 
     def __str__(self) -> str:
         return self.as_posix()
@@ -228,6 +257,9 @@ class TFTPPath(Path):
 
     def _open(self, mode: str = "r", buffering: int = -1) -> Any:
         return tftp_open(self._client, self.as_posix(), self._mode, mode, self)
+
+    def unlink(self, missing_ok: bool = False) -> None:
+        tftp_unlink(self, missing_ok, sys._getframe(1))
 
     def _scandir(self) -> Iterator[Tuple[str, FileStat]]:
         return tftp_scandir(self._client, self.as_posix(), self)

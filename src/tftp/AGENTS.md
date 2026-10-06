@@ -557,12 +557,15 @@ an error is seen by `wait_closed()` and `aclose()`. Handlers:
 loads it.
 
 **`TFTPPath(*segments, client, mode="octet")`** — a `pathlib_next.Path`
-bound to a `TFTPClient` (`client.path("boot", "x")`). Joined like a
+bound to a `TFTPClient` (`client.path("boot", "x")`); `mode` is checked when
+the path is built (`ValueError` for anything but `octet` and `netascii`,
+`TypeError` for a value that is not text). The client's own `on_negotiated`
+hook fires for the path's reads and writes. Joined like a
 `PurePosixPath` (`\` counts as `/`); the path text is the filename sent,
 so `/boot/x` and `boot/x` stay distinct. Joining onto a `TFTPPath` keeps its
 client; `with_client()`, `with_mode()`; `client`, `transfer_mode`. Equality
 and hashing include the server (host, port). `as_uri()` is the `tftp://`
-URL. `relative_to()` works on the path text. A path is synchronous: binding
+URL, the path text unchanged (`/boot/x` is `tftp://h//boot/x`). `relative_to()` works on the path text. A path is synchronous: binding
 it to an `AsyncTFTPClient` (`TFTPPath(..., client=)`, `with_client()`) raises
 `TypeError`, and `AsyncTFTPClient` has no `path()`.
 
@@ -589,9 +592,14 @@ Both support what TFTP can do, plus listing against a server speaking
   (not atomic). `a` and `+` modes raise `NotImplementedError`. `open()`
   returns only once the server has answered, so `FileNotFoundError`/
   `PermissionError` surface there. At most 1 MiB is buffered; an abandoned
-  read sends the server an ERROR.
+  read sends the server an ERROR. A `with` block over `open("wb")` that
+  raises abandons the upload the same way: the server discards it and keeps
+  the file it had (a failed `copy()` therefore leaves its target as it was);
+  one that ends normally commits.
 - `read_bytes`, `read_text`, `write_bytes`, `write_text` (text newline
-  handling is pathlib's), `copy()`/`move()` to and from any pathlib_next path.
+  handling is pathlib's), `copy()` to and from any pathlib_next path, and
+  `move()` to one: `move()` from a TFTP path copies and then raises
+  `NotImplementedError`, because the source cannot be deleted.
 - `stat()` is one `TFTPClient.stat()` probe (`FileStat`: `st_size` and
   `st_mtime` 0 when unknown, directory mode for a listed directory);
   `exists()`, `is_file()`, `is_dir()`.
@@ -601,7 +609,13 @@ Both support what TFTP can do, plus listing against a server speaking
   a directory raises `FileNotFoundError`; listing a file raises
   `NotADirectoryError`.
 - Deleting, renaming, creating directories and permissions raise
-  `NotImplementedError`.
+  `NotImplementedError`. `unlink()` raises it too, with two exceptions that
+  do nothing, because the write that follows replaces the file:
+  `unlink(missing_ok=True)` and the call `copy(overwrite=True)` makes on its
+  target. So `copy(target, overwrite=True)` onto a name the server has
+  replaces it (the server must allow overwriting).
+- `tftp.path.TFTPURIPath` without `uritools` raises `ImportError` naming the
+  `path` extra.
 - TFTP errors become pathlib's: `FileNotFoundError`, `PermissionError`,
   `FileExistsError`, `OSError(ENOSPC)`, `TimeoutError`, else `OSError(EIO)`.
 

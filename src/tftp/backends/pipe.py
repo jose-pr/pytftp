@@ -168,10 +168,14 @@ class Pipe:
             self._lock.notify_all()
 
     def abort(self, error: Optional[BaseException] = None) -> None:
-        """Give up from the transfer side; the worker's next call raises."""
+        """Give up from the transfer side; the worker's next call raises.
+
+        Bytes still buffered are dropped: nothing will read them.
+        """
         with self._lock:
             self._closed = True
             self._eof = True
+            del self._buffer[:]
             if self._error is None:
                 self._error = error or TFTPError(0, "transfer aborted")
             self._lock.notify_all()

@@ -18,7 +18,10 @@ kernel.copy("s3://boot-images/vmlinuz") # any pathlib-next scheme
 ```
 
 TFTP moves whole files, so `open()` (read or write), `read_*`/`write_*`,
-`stat()`, `exists()` and `copy()`/`move()` work against any server.
+`stat()`, `exists()` and `copy()` work against any server, `copy(dest, overwrite=True)`
+included, and `move()` works to a TFTP path (a TFTP source cannot be deleted, so
+`move()` from one raises `NotImplementedError` after copying). A `with` block over
+`open("wb")` that raises abandons the upload: the server keeps the file it had.
 
 Against a pytftp server with listing allowed (`pytftp serve --listing`, or
 `TFTPServerOptions(allowed=STANDARD_OPTIONS | LISTING_OPTIONS)`), directories

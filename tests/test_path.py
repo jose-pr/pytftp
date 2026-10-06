@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 
 import pytest
@@ -247,3 +248,210 @@ def test_a_recursive_copy_creates_only_the_entries_a_directory_can_contain(make_
     )
     assert created == [os.path.join("a", "b", "dest", "ok.txt")]
     assert (target / "ok.txt").read_bytes() == b"ok"
+
+
+# -- a failed write leaves the server as it was -----------------------------------------------
+
+
+def _settled(root, expected, seconds=5.0):
+    """The names in ``root`` once they equal ``expected`` (polled: the server acts after the client returns)."""
+    import time
+
+    deadline = time.monotonic() + seconds
+    while True:
+        names = sorted(os.listdir(root))
+        if names == expected or time.monotonic() > deadline:
+            return names
+        time.sleep(0.02)
+
+
+def _path_threads():
+    import threading
+
+    return [t for t in threading.enumerate() if t.name == "tftp-path"]
+
+
+def _targets(server):
+    client = client_for(server)
+    base = "tftp://127.0.0.1:%d/" % server.server_address[1]
+    return {
+        "path": lambda name: client.path(name),
+        "uri": lambda name: UriPath(base + name),
+    }
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+@pytest.mark.parametrize("flush", [False, True])
+def test_a_with_block_that_raises_leaves_the_servers_file_as_it_was(root, server, kind, flush):
+    (root / "keep.bin").write_bytes(b"the complete previous file")
+    before = sorted(os.listdir(root))
+    threads = len(_path_threads())
+    target = _targets(server)[kind]
+    for name in ("keep.bin", "fresh.bin"):
+        with pytest.raises(RuntimeError):
+            with target(name).open("wb") as handle:
+                handle.write(b"first half of the file;" * (200 if flush else 1))
+                if flush:
+                    handle.flush()
+                raise RuntimeError("the producer failed")
+    assert _settled(root, before) == before  # no fresh.bin, and no temporary file
+    assert (root / "keep.bin").read_bytes() == b"the complete previous file"
+    assert len(_path_threads()) == threads  # the upload's thread was joined
+
+
+def test_a_block_that_completes_still_commits(root, server):
+    client = client_for(server)
+    with client.path("done.bin").open("wb") as handle:
+        handle.write(b"all of it")
+    assert (root / "done.bin").read_bytes() == b"all of it"
+    assert _path_threads() == []
+
+
+class _FailsHalfWay(io.RawIOBase):
+    """A binary source that raises once ``limit`` octets have been read."""
+
+    def __init__(self, inner, limit=70_000):
+        self.inner, self.limit, self.given = inner, limit, 0
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        if self.given >= self.limit:
+            raise OSError(5, "the source failed half-way")
+        n = self.inner.readinto(buffer)
+        self.given += n or 0
+        return n
+
+
+class _FlakyLocal(LocalPath):
+    def open(self, mode="r", *args, **kwargs):
+        handle = super().open(mode, *args, **kwargs)
+        if "r" in mode and "b" in mode:
+            return io.BufferedReader(_FailsHalfWay(handle))
+        return handle
+
+
+def test_a_copy_whose_source_fails_leaves_the_target_as_it_was(root, server, tmp_path_factory):
+    source = tmp_path_factory.mktemp("flaky") / "src.bin"
+    source.write_bytes(b"A" * 200_000)
+    (root / "keep.bin").write_bytes(b"the complete previous file")
+    before = sorted(os.listdir(root))
+    client = client_for(server)
+    for name in ("keep.bin", "fresh.bin"):
+        with pytest.raises(OSError):
+            _FlakyLocal(source).copy(client.path(name), overwrite=True)
+    assert _settled(root, before) == before
+    assert (root / "keep.bin").read_bytes() == b"the complete previous file"
+    assert _path_threads() == []
+
+
+# -- copy(overwrite=True), unlink and move -------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+def test_copy_with_overwrite_replaces_the_servers_file(root, server, tmp_path_factory, kind):
+    local = tmp_path_factory.mktemp("over") / "new.bin"
+    local.write_bytes(b"new content, longer than the old")
+    (root / "existing.bin").write_bytes(b"old")
+    target = _targets(server)[kind]("existing.bin")
+    with pytest.raises(FileExistsError):
+        LocalPath(local).copy(target)
+    assert (root / "existing.bin").read_bytes() == b"old"
+    LocalPath(local).copy(target, overwrite=True)
+    assert (root / "existing.bin").read_bytes() == b"new content, longer than the old"
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+def test_unlink_deletes_nothing_and_says_so(root, server, kind):
+    target = _targets(server)[kind]("one.bin")
+    with pytest.raises(NotImplementedError):
+        target.unlink()
+    target.unlink(missing_ok=True)  # the write that follows replaces the file
+    assert (root / "one.bin").read_bytes() == b"x"
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+def test_move_from_tftp_is_not_supported_and_keeps_the_source(root, server, tmp_path_factory, kind):
+    destination = tmp_path_factory.mktemp("moved") / "out.bin"
+    source = _targets(server)[kind]("one.bin")
+    with pytest.raises(NotImplementedError):
+        source.move(LocalPath(destination))
+    assert (root / "one.bin").read_bytes() == b"x"
+
+
+# -- names, hooks and modes ---------------------------------------------------------------
+
+
+def test_as_uri_keeps_the_leading_slash(server):
+    client = client_for(server)
+    port = server.server_address[1]
+    assert client.path("boot/x").as_uri() == "tftp://127.0.0.1:%d/boot/x" % port
+    assert client.path("/boot/x").as_uri() == "tftp://127.0.0.1:%d//boot/x" % port
+    assert tftp.TFTPURL.parse(client.path("/boot/x").as_uri()).filename == "/boot/x"
+    assert tftp.TFTPURL.parse(client.path("boot/x").as_uri()).filename == "boot/x"
+
+
+def test_a_clients_own_hook_fires_for_path_reads_and_writes(root, server):
+    seen = []
+    client = client_for(server, on_negotiated=lambda negotiated, peer: seen.append(peer))
+    client.get("one.bin")
+    assert len(seen) == 1
+    assert client.path("one.bin").read_bytes() == b"x"
+    assert len(seen) == 2
+    client.path("hooked.bin").write_bytes(b"w")
+    assert len(seen) == 3 and (root / "hooked.bin").read_bytes() == b"w"
+
+
+def test_a_clients_own_hook_that_refuses_fails_the_open(root, server):
+    def refuse(negotiated, peer):
+        raise tftp.TFTPError(tftp.TFTPErrorCode.ACCESS_VIOLATION, "no")
+
+    client = client_for(server, on_negotiated=refuse)
+    with pytest.raises(OSError):
+        client.path("one.bin").open("rb")
+    assert _path_threads() == []
+
+
+def test_a_path_validates_its_mode_at_construction(server):
+    client = client_for(server)
+    for bad in ("bogus", "mail"):
+        with pytest.raises(ValueError):
+            TFTPPath("x", client=client, mode=bad)
+        with pytest.raises(ValueError):
+            client.path("x").with_mode(bad)
+    with pytest.raises(TypeError):
+        TFTPPath("x", client=client, mode=None)
+    assert TFTPPath("x", client=client, mode="NetAscii").transfer_mode == "netascii"
+
+
+def test_a_uri_path_refuses_text_the_url_parser_refuses(root, spy_server):
+    spy, base = spy_server()
+    for text in ("x;mode=mail", "x;bogus", "x;mode=octet;mode=netascii"):
+        with pytest.raises(tftp.TFTPValueError):
+            UriPath(base + text).filename
+        with pytest.raises(ValueError):
+            tftp.TFTPURL.parse(base + text)
+    assert spy.requests == []
+
+
+def test_the_uri_path_without_uritools_names_the_extra():
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "class Hide:\n"
+        "    def find_spec(self, name, path=None, target=None):\n"
+        "        if name.split('.')[0] == 'uritools':\n"
+        "            raise ModuleNotFoundError(\"No module named 'uritools'\", name='uritools')\n"
+        "sys.meta_path.insert(0, Hide())\n"
+        "import tftp.path\n"
+        "tftp.path.TFTPPath\n"
+        "try:\n"
+        "    tftp.path.TFTPURIPath\n"
+        "except ImportError as exc:\n"
+        "    print(exc)\n"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert "'path' extra" in out.stdout and "tftp[path]" in out.stdout, (out.stdout, out.stderr)

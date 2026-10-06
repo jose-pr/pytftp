@@ -15,6 +15,7 @@ import threading
 from typing import Any, Callable, Optional
 
 from ..backends.pipe import Pipe
+from ..packet import TFTPErrorCode
 from ..exceptions import (
     AccessViolation,
     DiskFull,
@@ -171,6 +172,16 @@ class _Writer(io.RawIOBase):
             raise
         return len(data)
 
+    def abandon(self) -> None:
+        """Fail the upload: the transfer's next read raises, so the client sends ERROR and
+        the server discards what it received. The transfer thread is joined."""
+        if self.closed:
+            return
+        if self._thread is not None:
+            self._pipe.abort(TFTPError(TFTPErrorCode.NOT_DEFINED, "upload abandoned"))
+            self._thread.join(STALL_TIMEOUT)
+        super().close()
+
     def close(self) -> None:
         """End the upload and wait for the server's final ACK; re-raise its failure."""
         if self.closed:
@@ -190,6 +201,19 @@ def open_reader(client_factory: Callable[..., Any], filename: str, mode: str, pa
     return io.BufferedReader(_Reader(client_factory, filename, mode, path))
 
 
+class _BufferedUpload(io.BufferedWriter):
+    """The upload's buffered writer: leaving a ``with`` block by an exception abandons it."""
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        if exc_type is not None and not self.closed:
+            self.raw.abandon()  # type: ignore[attr-defined]
+        super().__exit__(exc_type, exc, traceback)
+
+
 def open_writer(client_factory: Callable[..., Any], filename: str, mode: str, path: Any) -> io.BufferedWriter:
-    """A buffered binary writer streaming an upload of ``filename``; closing completes it."""
-    return io.BufferedWriter(_Writer(client_factory, filename, mode, path))
+    """A buffered binary writer streaming an upload of ``filename``.
+
+    Closing completes the upload; leaving a ``with`` block by an exception
+    abandons it, and the server keeps what it had.
+    """
+    return _BufferedUpload(_Writer(client_factory, filename, mode, path))

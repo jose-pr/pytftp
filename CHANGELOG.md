@@ -514,6 +514,27 @@ Old names are not kept as aliases.
   with a longer `timeout` waited the whole `timeout`), and the limit has one
   start across the retry without options in both clients, where
   `AsyncTFTPClient` gave the second attempt a limit of its own.
+- **A `with` block that raises abandons the upload through a path.** Leaving a
+  block over `path.open("wb")` by an exception used to complete the upload and
+  commit what had been written: a truncated file, over a complete one if the
+  name existed (a failed `copy()` left the same). The client now sends ERROR in
+  place of the next block, the server discards the upload and keeps what it
+  had, and the transfer thread is joined. A block that ends normally commits as
+  before.
+- **`copy(overwrite=True)` onto a name the server has works.** `unlink()` on a
+  `TFTPPath` or `TFTPURIPath` still raises `NotImplementedError`, except for
+  `unlink(missing_ok=True)` and the call `pathlib_next`'s `copy()` makes on its
+  target: they do nothing, and the write that follows replaces the file.
+  `move()` from a TFTP path is not supported: it copies and then raises
+  `NotImplementedError` because the source cannot be deleted.
+- `TFTPPath.as_uri()` keeps a leading slash (`/boot/x` is `tftp://h//boot/x`, as
+  `str(TFTPURL)` writes it), so `/boot/x` and `boot/x` stay distinct. A client's
+  own `on_negotiated` hook fires for reads and writes through a path (the path
+  replaced it on its copy of the client), and `TFTPPath(mode=)` and
+  `with_mode()` raise `ValueError` for a mode other than `octet` and
+  `netascii` (`TypeError` for a value that is not text), where the path failed
+  when first used. `tftp.path.TFTPURIPath` without `uritools` raises
+  `ImportError` naming the `path` extra.
 
 ## [0.0.0] - 2026-10-03
 

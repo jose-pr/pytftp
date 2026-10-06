@@ -6,9 +6,10 @@
   ``UriPath("tftp://192.0.2.1/boot/x").copy("s3://bucket/x")``.
 
 TFTP moves whole files and nothing else, so reading, writing, ``stat()``
-(a size probe that transfers nothing), ``exists()`` and ``copy()``/``move()``
-work, and listing, deleting, renaming and directories raise
-``NotImplementedError``. Reads and writes stream through a bounded buffer.
+(a size probe that transfers nothing), ``exists()`` and ``copy()`` work, and
+listing, deleting, renaming, ``move()`` from TFTP and directories raise
+``NotImplementedError``. Reads and writes stream through a bounded buffer; a
+``with`` block over a write that raises abandons the upload.
 """
 
 from __future__ import annotations
@@ -28,7 +29,13 @@ def __getattr__(name: str):
     # TFTPURIPath needs pathlib_next.uri, which needs uritools (pathlib-next's
     # own "uri" extra, included in ours); import it only when asked.
     if name == "TFTPURIPath":
-        from . import uri
-
+        try:
+            from . import uri
+        except ImportError as exc:
+            if exc.name != "uritools":
+                raise
+            raise ImportError(
+                "tftp.path.TFTPURIPath needs the 'path' extra: pip install 'tftp[path]'"
+            ) from exc
         return getattr(uri, name)
     raise AttributeError(name)
