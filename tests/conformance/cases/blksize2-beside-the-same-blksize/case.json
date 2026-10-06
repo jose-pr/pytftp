@@ -1,0 +1,22 @@
+{
+ "description": "blksize 1024 beside blksize2 1024: whether both are answered",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "blksize",
+    "1024"
+   ],
+   [
+    "blksize2",
+    "1024"
+   ]
+  ]
+ },
+ "follow": 2
+}

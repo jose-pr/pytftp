@@ -1,0 +1,28 @@
+{
+ "reference": {
+  "tftpd": "tftp-hpa 5.3, with remap, without tcpwrappers",
+  "environment": "Linux aarch64"
+ },
+ "exchange": [
+  {
+   "sender": "client",
+   "payload": "0001656d7074792e62696e006f63746574007473697a65003000"
+  },
+  {
+   "sender": "server",
+   "payload": "00067473697a65003000"
+  },
+  {
+   "sender": "client",
+   "payload": "00040000"
+  },
+  {
+   "sender": "server",
+   "payload": "00030001"
+  },
+  {
+   "sender": "client",
+   "payload": "00040001"
+  }
+ ]
+}

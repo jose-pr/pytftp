@@ -1,0 +1,22 @@
+{
+ "description": "timeout 2 beside utimeout 500000: utimeout is answered, timeout is not",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "timeout",
+    "2"
+   ],
+   [
+    "utimeout",
+    "500000"
+   ]
+  ]
+ },
+ "follow": 2
+}

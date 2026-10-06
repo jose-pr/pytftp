@@ -1,0 +1,29 @@
+{
+ "description": "a read of 65,538 blocks of 8 octets with rollover 1: the block after 65535 is 1 (the datagrams numbered 65,534 to 65,538 are kept)",
+ "files": {
+  "long.bin": 524299
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "long.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "blksize",
+    "8"
+   ],
+   [
+    "rollover",
+    "1"
+   ]
+  ]
+ },
+ "follow": 70000,
+ "keep": {
+  "data": [
+   65534,
+   65538
+  ]
+ },
+ "slow": true
+}

@@ -1,0 +1,18 @@
+{
+ "description": "utimeout in microseconds is answered as asked",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "utimeout",
+    "500000"
+   ]
+  ]
+ },
+ "follow": 2
+}

@@ -1,0 +1,18 @@
+{
+ "description": "a cookie of 300 octets: whether it is answered",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "cookie",
+    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   ]
+  ]
+ },
+ "follow": 2
+}

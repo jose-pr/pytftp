@@ -1,0 +1,18 @@
+{
+ "description": "a cookie is answered unchanged",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "cookie",
+    "abc123"
+   ]
+  ]
+ },
+ "follow": 2
+}

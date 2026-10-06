@@ -18,7 +18,10 @@
 RFC 2090 (multicast) and PXE MTFTP are not implemented.
 
 Tested against: iPXE (booting in QEMU), tftp-hpa 5.3 (server and client),
-BusyBox 1.37 (server and client), dnsmasq 2.92, curl.
+BusyBox 1.37 (server and client), dnsmasq 2.92, curl. What tftp-hpa 5.3's server
+answered to 22 requests is recorded, and every test run replays it with no peer
+installed; the [differences from tftp-hpa](https://github.com/jose-pr/pytftp#differences-from-tftp-hpa)
+are listed in the README, one recorded case each.
 
 ## Negotiation
 

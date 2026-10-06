@@ -1,0 +1,17 @@
+{
+ "description": "a write request with blksize2: the OACK carries it",
+ "files": {
+  "up.bin": 0
+ },
+ "request": {
+  "op": "WRQ",
+  "file": "up.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "blksize2",
+    "2048"
+   ]
+  ]
+ }
+}

@@ -1,0 +1,18 @@
+{
+ "description": "rollover 0 is answered as asked",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "rollover",
+    "0"
+   ]
+  ]
+ },
+ "follow": 2
+}

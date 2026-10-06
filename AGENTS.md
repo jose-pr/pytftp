@@ -42,7 +42,8 @@ src/tftp/
 ├── _streams.py        # the Protocols for the streams a transfer reads and writes
 └── _text.py           # escaping what a peer wrote before it is printed
 tests/                 # pytest; the top level: engine, codec, contract and guard tests, none needing a peer;
-                       # integration/ real sockets and processes on loopback; typing/ the consumer-side type check
+                       # integration/ real sockets and processes on loopback; conformance/ what tftp-hpa answered
+                       # (cases, a recorder, a replay); typing/ the consumer-side type check
 benchmarks/            # run.py, compare_tftpy.py + committed results/*.json
 examples/              # runnable scripts
 docs/                  # mkdocs site (hand-written index + mkdocstrings API pages)
@@ -94,6 +95,9 @@ py -3.14 -m venv .venv/3.14-nt-arm64
 - `-m "not slow"` skips the 70,000-block rollover tests. `interop` tests run wherever the binary is
   found (curl with TFTP, tftp-hpa, BusyBox, dnsmasq) and each skip names the binary that is missing; the
   peer servers also need root or passwordless `sudo`. Run `pytest -rs` to see why a test skipped.
+- `tests/conformance/record.py` re-records the goldens from a real tftp-hpa (`--check` reports drift): it
+  needs `in.tftpd` and root or passwordless `sudo` on Linux. A golden is never edited; a case is hand-written
+  (`case.json`) and a difference from tftp-hpa is a line of `deviations.json` that the README table repeats.
 - Warnings are errors (`filterwarnings = ["error"]` in `pyproject.toml`, no exception): a leaked socket or
   file, an unawaited coroutine or a thread's exception fails the test that left it.
 - A test that needs a block of ports asks `conftest.free_ports`, which picks a random block below the

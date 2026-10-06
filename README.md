@@ -222,6 +222,37 @@ above that owns it. The complete reference, with every signature and gotcha and
 the module each name lives in, is [`src/tftp/AGENTS.md`](https://github.com/jose-pr/pytftp/blob/main/src/tftp/AGENTS.md),
 which ships inside the package.
 
+## Differences from tftp-hpa
+
+The reference for the options only an implementation defines (`blksize2`,
+`utimeout`, `rollover`, `cookie`) is **tftp-hpa 5.3**'s server. The suite
+replays what it answered to 22 requests, recorded on Linux by
+`tests/conformance/record.py` and stored under `tests/conformance/cases/`, so a
+run on any system, with no peer installed, checks them. Fidelity is to results:
+which options a server answers and with what values, the error codes, the block
+numbers and the octets of each block; message texts and the ports a reply comes
+from are not compared. The library is tested against tftp-hpa 5.3 (server and
+client), BusyBox 1.37, dnsmasq 2.92, curl and iPXE where those can run.
+
+It differs on purpose in these cases, each asserted by the suite as this library
+behaves:
+
+| Case | Difference |
+| --- | --- |
+| `blksize2-below-the-minimum` | `blksize2` below 8 octets: tftp-hpa answers ERROR 8; this library leaves the option out and runs at 512, which RFC 2347 allows for a value a server cannot use. |
+| `blksize2-beside-a-smaller-blksize` | `blksize` and `blksize2` together: tftp-hpa answers both, even with different sizes, and sends blocks of the `blksize2` one; this library answers `blksize` alone, one block size to a transfer. |
+| `blksize2-beside-an-odd-blksize` | `blksize` and `blksize2` of 1000: tftp-hpa answers `blksize` 1000 and `blksize2` 512 and sends blocks of 512; this library answers `blksize` 1000 alone and sends blocks of 1000. |
+| `blksize2-beside-the-same-blksize` | `blksize` and `blksize2` of 1024: tftp-hpa answers both; this library answers `blksize` alone. |
+| `cookie-is-echoed` | `cookie` on a read: tftp-hpa 5.3 does not know the option and leaves it out; this library, with it allowed, answers it unchanged, as tftp-hpa's development source does. |
+| `cookie-on-a-write` | `cookie` on a write: tftp-hpa 5.3 answers ACK 0; this library, with the option allowed, answers an OACK that carries it unchanged. |
+| `cookie-of-300-octets` | A `cookie` of 300 octets: tftp-hpa 5.3 leaves it out; this library refuses the request with ERROR 4, an option value being limited to 255 characters (`max_option_length`). |
+| `rollover-not-zero-or-one` | `rollover` of 2: tftp-hpa 5.3 answers it as asked; this library leaves out a value that is not 0 or 1. |
+| `tsize-of-an-empty-file` | `tsize` asked of an empty file: tftp-hpa answers `tsize` 0; this library leaves it out, since curl rejects `tsize` 0 in an OACK. |
+| `utimeout-above-the-maximum` | `utimeout` over 255 seconds: tftp-hpa answers ERROR 8; this library leaves the option out and uses the default time. |
+| `utimeout-below-the-minimum` | `utimeout` of 1 microsecond: tftp-hpa answers ERROR 8; this library leaves the option out and uses the default time. |
+| `utimeout-beside-a-different-timeout` | `timeout` beside a `utimeout` of another time: tftp-hpa 5.3 answers both; this library answers `utimeout` alone, as tftp-hpa's development source does. |
+| `mstfwindow-a-fixed-window` | `mstfwindow` of 31416, the offer of Windows' boot manager: no recording exists, as that boot manager is the reference and no host here can run it; this library answers 27182 and keeps the window at 4, the one fact Serva documents. |
+
 ## Development
 
 ```bash

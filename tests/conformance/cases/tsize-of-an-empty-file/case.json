@@ -1,0 +1,18 @@
+{
+ "description": "tsize 0 asked of an empty file",
+ "files": {
+  "empty.bin": 0
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "empty.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "tsize",
+    "0"
+   ]
+  ]
+ },
+ "follow": 1
+}

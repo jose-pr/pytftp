@@ -1,0 +1,18 @@
+{
+ "description": "blksize2 asks for a size that is not a power of two: the answer is the power of two below it",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "blksize2",
+    "1000"
+   ]
+  ]
+ },
+ "follow": 2
+}

@@ -1,0 +1,23 @@
+{
+ "description": "mstfwindow 31416, the offer of Windows' boot manager: answered 27182, with a window of 4",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "mstfwindow",
+    "31416"
+   ]
+  ]
+ },
+ "follow": 1,
+ "reference": null,
+ "reason": "the reference is Windows' boot manager, which no host here can run: its behaviour is the one Serva documents",
+ "allow": [
+  "mstfwindow"
+ ]
+}

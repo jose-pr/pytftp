@@ -1,0 +1,18 @@
+{
+ "description": "blksize2 below 8 octets: the option is left out and the transfer runs at 512",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "blksize2",
+    "4"
+   ]
+  ]
+ },
+ "follow": 2
+}

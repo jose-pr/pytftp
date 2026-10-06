@@ -1,0 +1,22 @@
+{
+ "description": "blksize 1000 beside blksize2 1000: blksize is answered, blksize2 not, as 1000 is not a power of two",
+ "files": {
+  "data.bin": 5000
+ },
+ "request": {
+  "op": "RRQ",
+  "file": "data.bin",
+  "mode": "octet",
+  "options": [
+   [
+    "blksize",
+    "1000"
+   ],
+   [
+    "blksize2",
+    "1000"
+   ]
+  ]
+ },
+ "follow": 2
+}

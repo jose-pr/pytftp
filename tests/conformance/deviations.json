@@ -1,0 +1,67 @@
+[
+ {
+  "case": "blksize2-below-the-minimum",
+  "difference": "`blksize2` below 8 octets: tftp-hpa answers ERROR 8; this library leaves the option out and runs at 512, which RFC 2347 allows for a value a server cannot use.",
+  "ours": ["DATA 1 512", "DATA 2 512"]
+ },
+ {
+  "case": "blksize2-beside-a-smaller-blksize",
+  "difference": "`blksize` and `blksize2` together: tftp-hpa answers both, even with different sizes, and sends blocks of the `blksize2` one; this library answers `blksize` alone, one block size to a transfer.",
+  "ours": ["OACK blksize=512", "DATA 1 512", "DATA 2 512"]
+ },
+ {
+  "case": "blksize2-beside-an-odd-blksize",
+  "difference": "`blksize` and `blksize2` of 1000: tftp-hpa answers `blksize` 1000 and `blksize2` 512 and sends blocks of 512; this library answers `blksize` 1000 alone and sends blocks of 1000.",
+  "ours": ["OACK blksize=1000", "DATA 1 1000", "DATA 2 1000"]
+ },
+ {
+  "case": "blksize2-beside-the-same-blksize",
+  "difference": "`blksize` and `blksize2` of 1024: tftp-hpa answers both; this library answers `blksize` alone.",
+  "ours": ["OACK blksize=1024", "DATA 1 1024", "DATA 2 1024"]
+ },
+ {
+  "case": "cookie-is-echoed",
+  "difference": "`cookie` on a read: tftp-hpa 5.3 does not know the option and leaves it out; this library, with it allowed, answers it unchanged, as tftp-hpa's development source does.",
+  "ours": ["OACK cookie=abc123", "DATA 1 512", "DATA 2 512"]
+ },
+ {
+  "case": "cookie-on-a-write",
+  "difference": "`cookie` on a write: tftp-hpa 5.3 answers ACK 0; this library, with the option allowed, answers an OACK that carries it unchanged.",
+  "ours": ["OACK cookie=abc123"]
+ },
+ {
+  "case": "cookie-of-300-octets",
+  "difference": "A `cookie` of 300 octets: tftp-hpa 5.3 leaves it out; this library refuses the request with ERROR 4, an option value being limited to 255 characters (`max_option_length`).",
+  "ours": ["ERROR 4"]
+ },
+ {
+  "case": "rollover-not-zero-or-one",
+  "difference": "`rollover` of 2: tftp-hpa 5.3 answers it as asked; this library leaves out a value that is not 0 or 1.",
+  "ours": ["DATA 1 512", "DATA 2 512"]
+ },
+ {
+  "case": "tsize-of-an-empty-file",
+  "difference": "`tsize` asked of an empty file: tftp-hpa answers `tsize` 0; this library leaves it out, since curl rejects `tsize` 0 in an OACK.",
+  "ours": ["DATA 1 0"]
+ },
+ {
+  "case": "utimeout-above-the-maximum",
+  "difference": "`utimeout` over 255 seconds: tftp-hpa answers ERROR 8; this library leaves the option out and uses the default time.",
+  "ours": ["DATA 1 512", "DATA 2 512"]
+ },
+ {
+  "case": "utimeout-below-the-minimum",
+  "difference": "`utimeout` of 1 microsecond: tftp-hpa answers ERROR 8; this library leaves the option out and uses the default time.",
+  "ours": ["DATA 1 512", "DATA 2 512"]
+ },
+ {
+  "case": "utimeout-beside-a-different-timeout",
+  "difference": "`timeout` beside a `utimeout` of another time: tftp-hpa 5.3 answers both; this library answers `utimeout` alone, as tftp-hpa's development source does.",
+  "ours": ["OACK utimeout=500000", "DATA 1 512", "DATA 2 512"]
+ },
+ {
+  "case": "mstfwindow-a-fixed-window",
+  "difference": "`mstfwindow` of 31416, the offer of Windows' boot manager: no recording exists, as that boot manager is the reference and no host here can run it; this library answers 27182 and keeps the window at 4, the one fact Serva documents.",
+  "ours": ["OACK mstfwindow=27182", "DATA 1 512"]
+ }
+]

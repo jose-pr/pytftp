@@ -1,0 +1,60 @@
+{
+ "reference": {
+  "tftpd": "tftp-hpa 5.3, with remap, without tcpwrappers",
+  "environment": "Linux aarch64"
+ },
+ "exchange": [
+  {
+   "sender": "client",
+   "payload": "00016c6f6e672e62696e006f6374657400626c6b73697a65003800726f6c6c6f766572003000"
+  },
+  {
+   "sender": "server",
+   "payload": "0006626c6b73697a65003800726f6c6c6f766572003000"
+  },
+  {
+   "sender": "client",
+   "payload": "00040000"
+  },
+  {
+   "sender": "server",
+   "payload": "0003fffe80878e959ca3aab1"
+  },
+  {
+   "sender": "client",
+   "payload": "0004fffe"
+  },
+  {
+   "sender": "server",
+   "payload": "0003ffffb8bfc6cdd4dbe2e9"
+  },
+  {
+   "sender": "client",
+   "payload": "0004ffff"
+  },
+  {
+   "sender": "server",
+   "payload": "00030000f0f7fe050c131a21"
+  },
+  {
+   "sender": "client",
+   "payload": "00040000"
+  },
+  {
+   "sender": "server",
+   "payload": "00030001282f363d444b5259"
+  },
+  {
+   "sender": "client",
+   "payload": "00040001"
+  },
+  {
+   "sender": "server",
+   "payload": "0003000260676e"
+  },
+  {
+   "sender": "client",
+   "payload": "00040002"
+  }
+ ]
+}
