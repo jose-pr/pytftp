@@ -55,7 +55,7 @@ takes every field by keyword.
 | RFC 2347 | option extension, OACK, ERROR 8 | unknown options are ignored, as the RFC requires |
 | RFC 2348 | `blksize` 8..65464 | server clamps to its `max_blksize` |
 | RFC 2349 | `timeout` (1..255 s), `tsize` | `tsize` 0 is never sent in an OACK (curl rejects it) |
-| RFC 7440 | `windowsize` 1..65535 | server clamps to its `max_windowsize` (default 64) |
+| RFC 7440 | `windowsize` 1..65535 | server clamps to its `max_windowsize` (default 64); the engine runs a window of at most 32767 whatever was negotiated, so an old ACK is never mistaken for a new one |
 | tftp-hpa | `blksize2`, `utimeout`, `rollover`, `cookie` | **off unless a server allows them** (`TFTPServerOptions(allowed=...)`, a profile) |
 | Microsoft | `mstfwindow` (bootmgr/WDS variable window) | off unless allowed; runs a fixed window of 4 (the in-transfer resize is unpublished) |
 | pytftp | `x-list` (directory listing), `x-mtime` (modification time) | off unless allowed (`LISTING_OPTIONS`); other servers ignore them |
@@ -110,7 +110,9 @@ Not implemented: RFC 2090 multicast, PXE MTFTP.
 - `tsize` — ask for the size (RRQ) or announce it (WRQ, when the source size
   can be determined).
 - `rollover` — request rollover to 0 or 1; `None` asks for nothing, wraps to 0,
-  and follows a server that wraps to 1.
+  and follows a server that wraps to 1. With a window above 1 it follows
+  after the server's window has been sent again from block 1, one round trip
+  later: a block 1 alone may be block 65537 behind a lost block 65536.
 - `family` — `socket.AF_INET`/`AF_INET6` to force one; `0` is whatever the host
   resolves to first.
 - `src` — `(address, port)` to send from; the address in any form
@@ -902,11 +904,16 @@ calls `on_timeout(now)` once `deadline` passes (here `deadline` is an
 attribute: the instant, in the caller's clock, the engine next wants to be
 called; the client's `deadline` argument is a number of seconds), and
 `resume(now)` when a stalled source/sink (`WouldBlock`) is ready again;
+a datagram of fewer than 4 octets is dropped by both;
 `abort(message)` cancels. State: `is_done`, `error`, `is_stalled`, `bytes`,
 `blocks`, `retransmits`, `deadline`. A repeated OACK is tolerated: a
 receiver re-sends its ACK 0, a sender ignores it (its own timeout resends
 DATA 1). Build `read`
-and `write` with `tftp.transfer.as_readinto(fileobj)` / `as_write(fileobj)`.
+and `write` with `tftp.transfer.as_readinto(fileobj)` / `as_write(fileobj)`:
+`as_readinto` fills each block (a source that returns `None` from `readinto` or
+`read` has nothing ready: `WouldBlock`), and `as_write` writes until a block is
+taken (a sink that takes part of one is written again for the rest; one that
+takes nothing raises `OSError`; a raw sink's `None` is `WouldBlock`).
 This is what the client and server drive; use it to run TFTP over another
 transport or event loop.
 

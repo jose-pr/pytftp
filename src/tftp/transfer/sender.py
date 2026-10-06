@@ -132,10 +132,10 @@ class Sender(Transfer):
 
     def handle(self, packet: memoryview, n: int, now: float) -> None:
         self._heard = now
-        if self.is_done or n < 2 or packet[0]:
-            return
+        if self.is_done or n < 4 or packet[0]:
+            return  # every packet this side acts on holds an opcode and a number
         op = packet[1]
-        if op == _ACK and n >= 4:
+        if op == _ACK:
             wire = (packet[2] << 8) | packet[3]
             if self._control is not None:
                 if wire == 0:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import struct
 from typing import Callable, Optional
@@ -26,6 +27,7 @@ _ERROR = 5
 _OACK = 6
 _ACK_HDR = struct.Struct("!HH")
 _pack_header = struct.Struct("!HH").pack_into
+_MAX_WINDOW = 32767
 
 SendFn = Callable[[object], object]
 
@@ -35,7 +37,8 @@ def as_readinto(source) -> Callable[[memoryview], int]:
 
     Short reads are retried until the view is full or the source is
     exhausted, so a short return means end of data. ``source`` needs
-    ``readinto`` or ``read``.
+    ``readinto`` or ``read``; either returning ``None`` is "nothing ready"
+    and raises :class:`WouldBlock`.
     """
     readinto = getattr(source, "readinto", None)
     if readinto is None:
@@ -43,6 +46,8 @@ def as_readinto(source) -> Callable[[memoryview], int]:
 
         def readinto(view):  # type: ignore[misc]
             chunk = read(len(view))
+            if chunk is None:
+                return None
             n = len(chunk)
             view[:n] = chunk
             return n
@@ -58,10 +63,12 @@ def as_readinto(source) -> Callable[[memoryview], int]:
             view[:total] = carry
             del carry[:]
         try:
-            n = readinto(view[total:]) or 0 if total < want else 0
-            total += n
-            while n and total < want:
-                n = readinto(view[total:]) or 0
+            while total < want:
+                n = readinto(view[total:])
+                if n is None:  # io.RawIOBase: a non-blocking stream with nothing to read
+                    raise WouldBlock
+                if not n:
+                    break
                 total += n
         except WouldBlock:
             carry[:] = view[:total]
@@ -74,17 +81,48 @@ def as_readinto(source) -> Callable[[memoryview], int]:
 _COPYING_WRITERS = (io.IOBase, NetasciiWriter)
 
 
+def _write_rest(write: Callable[[memoryview], Optional[int]], data, done: int) -> None:
+    """Hand ``data`` to ``write`` again from octet ``done`` until all of it is taken."""
+    rest = memoryview(data)
+    while True:
+        rest = rest[done:]
+        if not rest:
+            return
+        done = write(rest)  # type: ignore[assignment]
+        if not done:
+            raise OSError(errno.EIO, "the sink took none of the %d octets left of a block" % len(rest))
+
+
 def as_write(sink) -> Callable[[memoryview], object]:
     """A ``write`` callable that is safe to hand a reused receive buffer.
 
     Standard file objects copy what they are given, so they get the buffer
     directly. Anything else gets ``bytes``, because an object that kept a
     reference to the buffer would see it overwritten by the next packet.
+
+    A buffered file takes the whole block. For any other sink a count below the
+    block's length is a short write (``io.RawIOBase.write``): the rest is
+    written until it is taken, and a sink that takes nothing raises
+    ``OSError``. A raw sink that returns ``None`` has nothing ready:
+    :class:`WouldBlock`. Any other sink's ``None`` is "all of it".
     """
     write = sink.write
-    if isinstance(sink, _COPYING_WRITERS) or getattr(sink, "copies_writes", False):
+    copies = isinstance(sink, _COPYING_WRITERS) or getattr(sink, "copies_writes", False)
+    if isinstance(sink, io.BufferedIOBase):
         return write
-    return lambda view: write(bytes(view))
+    raw = isinstance(sink, io.RawIOBase)
+
+    def write_all(view: memoryview) -> None:
+        data = view if copies else bytes(view)
+        done = write(data)
+        if done is None:
+            if raw:
+                raise WouldBlock
+            return
+        if done < len(data):
+            _write_rest(write, data, done)
+
+    return write_all
 
 
 class Transfer:
@@ -149,7 +187,9 @@ class Transfer:
         self._send = send
         self.negotiated = negotiated
         self.blksize = negotiated.blksize
-        self.windowsize = negotiated.windowsize
+        # A 16-bit block number tells an old ACK from a new one only when the
+        # window is at most half the number space.
+        self.windowsize = min(negotiated.windowsize, _MAX_WINDOW)
         self.timeout = negotiated.timeout
         self.rollover = negotiated.rollover
         self._period = 65536 - self.rollover

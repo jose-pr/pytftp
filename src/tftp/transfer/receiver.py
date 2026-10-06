@@ -46,6 +46,7 @@ class Receiver(Transfer):
         "_final",
         "_pending",
         "_dropped",
+        "_past_wire_one",
     )
 
     def __init__(
@@ -72,6 +73,8 @@ class Receiver(Transfer):
         self._pending: Optional[tuple] = None
         #: DATA arrived (and was dropped) while the sink was stalled.
         self._dropped = False
+        #: A wire number above 1 arrived while block 65536 was missing.
+        self._past_wire_one = False
         if reply is not None:
             send(reply)
             self._arm(now)
@@ -169,20 +172,22 @@ class Receiver(Transfer):
                     return
                 self._accept(packet[4:n], wire, size, now)
                 return
-            if (
-                self._expected_wire == 0
-                and wire == 1
-                and self.windowsize == 1
-                and self._expected == 65536
-                and "rollover" not in self.negotiated.options
-            ):
-                # Rollover was not negotiated and this sender wraps to 1, as
-                # some do: follow it rather than stall.
-                self.rollover = 1
-                self._period = 65535
-                self._expected_wire = 1
-                self.handle(packet, n, now)
-                return
+            if self._expected_wire == 0 and self._expected == 65536 and 0 < wire <= self.windowsize:
+                if wire > 1:
+                    self._past_wire_one = True
+                elif (
+                    self.windowsize == 1 or self._past_wire_one
+                ) and "rollover" not in self.negotiated.options:
+                    # Rollover was not negotiated and this sender wraps to 1, as
+                    # some do: follow it rather than stall. With a window, a
+                    # wire 1 alone may be block 65537 behind a lost wire 0, so
+                    # the first one is reported as a gap; the sender that wraps
+                    # to 1 answers with its window again from wire 1.
+                    self.rollover = 1
+                    self._period = 65535
+                    self._expected_wire = 1
+                    self.handle(packet, n, now)
+                    return
             # Out of order: a duplicate (our ACK was lost) or a gap (DATA
             # was lost). Either way re-acknowledge the last in-order block.
             # With a window that is once for a run of duplicates, and twice

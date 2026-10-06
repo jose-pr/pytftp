@@ -15,7 +15,7 @@ from typing import Callable, List, Optional
 
 import pytest
 
-from tftp import Receiver, Sender
+from tftp import Receiver, Sender, TFTPError
 from tftp.options import Negotiated
 from tftp.packet import encode_ack, encode_oack
 from tftp.transfer import as_readinto, as_write
@@ -292,6 +292,259 @@ def test_receiver_follows_a_sender_that_wraps_to_one():
     data = os.urandom(blksize * 66_000)
     got, sender, receiver, _ = run(data, neg(blksize=blksize, rollover=1), receiver_neg=neg(blksize=blksize))
     assert receiver.error is None and got == data
+
+
+# -- the stream adapters: a raw stream's short write and its "nothing ready" --------------------------
+
+
+class ShortWriter(io.RawIOBase):
+    """Accepts at most ``limit`` octets per call, as a pipe or a socket may."""
+
+    def __init__(self, limit: int = 100) -> None:
+        self.limit = limit
+        self.got = bytearray()
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, data) -> int:
+        take = bytes(data[: self.limit])
+        self.got += take
+        return len(take)
+
+
+def test_a_raw_sink_that_takes_part_of_a_block_is_written_until_it_has_all_of_it():
+    """io.RawIOBase.write: "The number of bytes written, which may be less than the length of b"."""
+    sink = ShortWriter(100)
+    block = os.urandom(512)
+    as_write(sink)(memoryview(bytearray(block)))
+    assert bytes(sink.got) == block
+
+
+def test_a_transfer_into_a_raw_sink_that_takes_100_octets_per_call_holds_every_octet():
+    data = os.urandom(512 * 20 + 7)
+    sink = ShortWriter(100)
+    out: List[bytes] = []
+    receiver = Receiver(out.append, as_write(sink), neg(), 5, 0.0)
+    sent: List[bytes] = []
+    sender = Sender(lambda packet: sent.append(bytes(packet)), as_readinto(io.BytesIO(data)), neg(), 5, 0.0)
+    while not receiver.is_done:
+        packet = sent.pop(0)
+        receiver.handle(memoryview(packet), len(packet), 0.0)
+        ack = bytes(out.pop(0))
+        sender.handle(memoryview(ack), len(ack), 0.0)
+    assert receiver.error is None and receiver.bytes == len(data)
+    assert bytes(sink.got) == data
+
+
+def test_a_sink_that_takes_nothing_fails_the_transfer_instead_of_dropping_the_block():
+    class Stuck(io.RawIOBase):
+        def writable(self):
+            return True
+
+        def write(self, data):
+            return 0
+
+    out: List[bytes] = []
+    receiver = Receiver(out.append, as_write(Stuck()), neg(), 5, 0.0, reply=encode_ack(0))
+    packet = struct.pack("!HH", DATA, 1) + b"x" * 512
+    receiver.handle(memoryview(packet), len(packet), 0.0)
+    assert receiver.is_done and isinstance(receiver.error, TFTPError)
+    assert receiver.bytes == 0
+
+
+def test_a_raw_sink_with_nothing_ready_holds_the_block_until_resume():
+    """io.RawIOBase.write returns None when a non-blocking stream cannot take any byte."""
+
+    class Pipe(io.RawIOBase):
+        ready = False
+
+        def __init__(self):
+            self.got = bytearray()
+
+        def writable(self):
+            return True
+
+        def write(self, data):
+            if not self.ready:
+                return None
+            self.got += data
+            return len(data)
+
+    sink = Pipe()
+    out: List[bytes] = []
+    receiver = Receiver(out.append, as_write(sink), neg(), 5, 0.0, reply=encode_ack(0))
+    packet = struct.pack("!HH", DATA, 1) + b"x" * 512
+    receiver.handle(memoryview(packet), len(packet), 0.0)
+    assert receiver.is_stalled and receiver.error is None and bytes(sink.got) == b""
+    sink.ready = True
+    receiver.resume(0.0)
+    assert bytes(sink.got) == b"x" * 512 and not receiver.is_stalled
+
+
+class NotReadyOnce(io.RawIOBase):
+    """A non-blocking raw source: its second readinto() has nothing ready and returns None."""
+
+    def __init__(self, data: bytes) -> None:
+        self.source = io.BytesIO(data)
+        self.calls = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer):
+        self.calls += 1
+        if self.calls == 2:
+            return None
+        return self.source.readinto(buffer)
+
+
+def test_a_raw_source_with_nothing_ready_pauses_the_sender_and_loses_no_octet():
+    """io.RawIOBase.readinto returns None when a non-blocking stream has nothing to read."""
+    data = os.urandom(512 * 20 + 7)
+    sink = io.BytesIO()
+    to_receiver: List[bytes] = []
+    to_sender: List[bytes] = []
+    receiver = Receiver(lambda p: to_sender.append(bytes(p)), as_write(sink), neg(), 5, 0.0)
+    sender = Sender(lambda p: to_receiver.append(bytes(p)), as_readinto(NotReadyOnce(data)), neg(), 5, 0.0)
+    stalled = False
+    for _ in range(100_000):
+        if to_receiver:
+            packet = to_receiver.pop(0)
+            receiver.handle(memoryview(packet), len(packet), 0.0)
+        elif to_sender:
+            ack = to_sender.pop(0)
+            sender.handle(memoryview(ack), len(ack), 0.0)
+        elif sender.is_stalled:
+            stalled = True
+            sender.resume(0.0)
+        else:
+            break
+    assert stalled and sender.error is None and receiver.error is None
+    assert sender.is_done and receiver.is_done
+    assert sink.getvalue() == data
+
+
+def test_a_read_only_source_that_returns_none_is_also_nothing_ready():
+    class Chunks:
+        def __init__(self):
+            self.items = [b"a" * 512, None, b"b" * 100, b""]
+
+        def read(self, n):
+            return self.items.pop(0)
+
+    out: List[bytes] = []
+    sender = Sender(out.append, as_readinto(Chunks()), neg(), 5, 0.0)
+    assert sender.error is None and len(out) == 1
+    sender.handle(memoryview(encode_ack(1)), 4, 0.0)
+    assert sender.is_stalled
+    sender.resume(0.0)
+    assert sender.error is None and out[-1] == struct.pack("!HH", DATA, 2) + b"b" * 100
+
+
+# -- the window and the block-number space ---------------------------------------------------------------
+
+
+def ack_bytes(block: int) -> bytes:
+    return struct.pack("!HH", ACK, block)
+
+
+def test_a_late_ack_is_not_taken_for_one_that_acknowledges_the_whole_window():
+    """A 16-bit sequence space tells old from new only when the window is at most half of it."""
+    out: List[bytes] = []
+    payload = os.urandom(8 * 70_000)
+    sender = Sender(out.append, as_readinto(io.BytesIO(payload)), neg(blksize=8, windowsize=65535), 5, 0.0)
+    assert sender.windowsize == 32767
+    for block in (10, 11):
+        sender.handle(memoryview(ack_bytes(block)), 4, 0.0)
+    sent = len(out)
+    sender.handle(memoryview(ack_bytes(10)), 4, 0.0)  # the first of them, delivered again
+    assert len(out) == sent and not sender.is_done and sender.error is None
+
+
+def test_a_window_above_half_the_block_space_still_delivers_the_file():
+    data = os.urandom(8 * 40_000)
+    got, sender, receiver, _ = run(data, neg(blksize=8, windowsize=40_000))
+    assert got == data and sender.error is None and receiver.error is None
+
+
+def test_a_datagram_shorter_than_its_opcode_needs_is_dropped_by_both_sides():
+    """RFC 1350: an ACK and a DATA hold opcode and block, an ERROR opcode and code: four octets."""
+    for opcode in (DATA, ACK, ERROR, OACK):
+        short = struct.pack("!HB", opcode, 0)
+        out: List[bytes] = []
+        sender = Sender(out.append, as_readinto(io.BytesIO(b"x" * 2000)), neg(), 5, 0.0)
+        receiver = Receiver(out.append, as_write(io.BytesIO()), neg(), 5, 0.0, reply=encode_ack(0))
+        before = len(out)
+        sender.handle(memoryview(short), len(short), 0.0)
+        receiver.handle(memoryview(short), len(short), 0.0)
+        assert len(out) == before, opcode
+        assert (sender.is_done, receiver.is_done) == (False, False), opcode
+        assert sender.error is None and receiver.error is None, opcode
+
+
+@pytest.mark.parametrize("windowsize", [1, 4])
+def test_a_receiver_follows_a_sender_that_wraps_to_block_one(windowsize):
+    """The sender's block 65536 is sent as block number 1; no rollover was negotiated."""
+    blksize = 8
+    blocks = [b.to_bytes(blksize, "big") for b in range(1, 65_541)]  # 65535 blocks, then 5 after the wrap
+    sink = io.BytesIO()
+    out: List[bytes] = []
+    receiver = Receiver(out.append, as_write(sink), neg(blksize=blksize, windowsize=windowsize), 5, 0.0)
+
+    def feed(wire: int, payload: bytes) -> None:
+        packet = struct.pack("!HH", DATA, wire) + payload
+        receiver.handle(memoryview(packet), len(packet), 0.0)
+
+    for number in range(1, 65_536):
+        feed(number, blocks[number - 1])
+    assert receiver.blocks == 65_535
+    # The sender's window from block 65536 is wire 1, 2, 3, 4 (windowsize 4) or wire 1 (lock-step).
+    for number in range(65_536, 65_536 + max(windowsize, 1)):
+        feed(number - 65_535, blocks[number - 1])
+    if windowsize > 1:
+        # A receiver told nothing cannot yet tell this from a lost wire 0: it reports its place, and
+        # the sender, which has no wire 0, sends its window again from wire 1.
+        assert receiver.blocks == 65_535 and out[-1] == ack_bytes(65_535)
+        for number in range(65_536, 65_536 + windowsize):
+            feed(number - 65_535, blocks[number - 1])
+    assert receiver.error is None and receiver.blocks == 65_535 + windowsize
+    assert out[-1] == ack_bytes(windowsize)
+    tail = sink.getvalue()[65_535 * blksize :]
+    assert tail == b"".join(blocks[65_535 : 65_535 + windowsize])
+
+
+def test_a_lost_wire_zero_block_is_not_taken_for_a_wrap_to_block_one():
+    """A sender that wraps to 0 and loses its block 65536 must still be received block for block."""
+    blksize, windowsize = 8, 4
+    sink = io.BytesIO()
+    out: List[bytes] = []
+    receiver = Receiver(out.append, as_write(sink), neg(blksize=blksize, windowsize=windowsize), 5, 0.0)
+    blocks = [b.to_bytes(blksize, "big") for b in range(1, 65_541)]
+
+    def feed(wire: int, payload: bytes) -> None:
+        packet = struct.pack("!HH", DATA, wire) + payload
+        receiver.handle(memoryview(packet), len(packet), 0.0)
+
+    for number in range(1, 65_536):
+        feed(number, blocks[number - 1])
+    for number in (65_537, 65_538, 65_539):  # wire 1, 2, 3: block 65536 (wire 0) was lost
+        feed(number - 65_536, blocks[number - 1])
+    assert receiver.blocks == 65_535
+    for number in range(65_536, 65_540):  # the sender's window again, from wire 0
+        feed(number - 65_536, blocks[number - 1])
+    assert receiver.error is None and receiver.blocks == 65_539
+    assert sink.getvalue()[65_535 * blksize :] == b"".join(blocks[65_535:65_539])
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("windowsize", [2, 3, 4, 16])
+def test_a_windowed_receiver_follows_a_sender_that_wraps_to_one_end_to_end(windowsize):
+    blksize = 8
+    data = os.urandom(blksize * 66_000)
+    sender_neg = neg(blksize=blksize, windowsize=windowsize, rollover=1)
+    got, sender, receiver, _ = run(data, sender_neg, receiver_neg=neg(blksize=blksize, windowsize=windowsize))
+    assert sender.error is None and receiver.error is None and got == data
 
 
 # -- traffic after one event, with delay and reordering --------------------------------------

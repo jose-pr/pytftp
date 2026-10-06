@@ -336,6 +336,21 @@ Old names are not kept as aliases.
   after ERROR 8.
 - `OptionRegistry.register` raises `ValueError` for a name that is not
   lower-case: such a handler was registered and never negotiated.
+- **A transfer through a raw stream no longer reports success with octets
+  missing.** `as_write` writes until a block is taken where a raw sink took
+  100 octets per call and a 10247-octet transfer ended with 2007 in the sink and
+  no error (a sink that takes nothing fails the transfer, and a raw sink with
+  nothing ready holds the block), and `as_readinto` takes `None` from
+  `readinto` or `read` as "nothing ready", where a non-blocking source ended
+  the transfer after 512 octets of 10247.
+- **A windowed receiver follows a sender that wraps to block 1** (rollover
+  not negotiated); at `windowsize=4` both ends timed out at block 65536. The
+  engine runs a window of at most 32767 blocks whatever was negotiated: with a
+  window above half the block numbers, a late ACK was taken for one that
+  acknowledged the whole window, and the sender counted 65535 blocks as
+  delivered. A datagram of fewer than 4 octets is dropped by `Sender` and
+  `Receiver` alike; a 3-octet ACK ended a sending transfer with "unexpected
+  opcode 4".
 
 - `start()` after `close()` raises `RuntimeError` on `TFTPServer`, `AsyncTFTPServer`
   and `TFTPRelay`. The threaded server waited five seconds and returned as if it
