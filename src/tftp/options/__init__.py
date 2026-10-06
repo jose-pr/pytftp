@@ -10,7 +10,7 @@ server allows them, for example through a :class:`Profile`.
 
 from __future__ import annotations
 
-from .base import (
+from ._handler import (
     DEFAULT_BLKSIZE,
     MAX_BLKSIZE,
     MAX_UTIMEOUT,
@@ -23,7 +23,7 @@ from .base import (
     ServerOptionContext,
     refuse,
 )
-from .builtin import (
+from ._builtin import (
     BUILTIN_OPTIONS,
     BlksizeOption,
     Blksize2Option,
@@ -37,10 +37,16 @@ from .builtin import (
     UtimeoutOption,
     WindowsizeOption,
 )
-from .negotiate import accept_oack, negotiate, request_options
-from .policy import EXTENSION_OPTIONS, LISTING_OPTIONS, STANDARD_OPTIONS, SUPPORTED_OPTIONS, TFTPServerOptions
-from .profiles import PROFILES, Profile
-from .registry import DEFAULT_REGISTRY, OptionRegistry, register_option
+from ._negotiate import accept_oack, negotiate, request_options
+from ._policy import (
+    EXTENSION_OPTIONS,
+    LISTING_OPTIONS,
+    STANDARD_OPTIONS,
+    SUPPORTED_OPTIONS,
+    TFTPServerOptions,
+)
+from ._profiles import PROFILES, Profile
+from ._registry import DEFAULT_REGISTRY, OptionRegistry, register_option
 
 __all__ = [
     "DEFAULT_BLKSIZE",

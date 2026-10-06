@@ -14,7 +14,7 @@ import struct
 from typing import Any, NamedTuple, Optional, Tuple
 
 from ..options import DEFAULT_BLKSIZE
-from ..options.base import read_decimal
+from ..options._handler import read_decimal
 from ..exceptions import TFTPDecodeError
 from ..packet import TFTPOpcode, RequestPacket, decode
 

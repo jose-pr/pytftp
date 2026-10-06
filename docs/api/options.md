@@ -1,13 +1,13 @@
 # `tftp.options`
 
-::: tftp.options.base
+::: tftp.options._handler
 
-::: tftp.options.builtin
+::: tftp.options._builtin
 
-::: tftp.options.registry
+::: tftp.options._registry
 
-::: tftp.options.policy
+::: tftp.options._policy
 
-::: tftp.options.negotiate
+::: tftp.options._negotiate
 
-::: tftp.options.profiles
+::: tftp.options._profiles

@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tupl
 
 from ..netascii import decode as netascii_decode
 from ..options import DEFAULT_BLKSIZE
-from ..options.base import read_decimal
+from ..options._handler import read_decimal
 from ..exceptions import TFTPDecodeError
 from ..packet import TFTPOpcode, decode
 from .events import PacketEvent, new_session_id

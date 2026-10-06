@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional
 
-from .base import (
+from ._handler import (
     MAX_BLKSIZE,
     MAX_UTIMEOUT,
     MAX_WINDOWSIZE,
@@ -15,8 +15,8 @@ from .base import (
     ServerOptionContext,
     refuse,
 )
-from .policy import TFTPServerOptions
-from .registry import DEFAULT_REGISTRY, OptionRegistry
+from ._policy import TFTPServerOptions
+from ._registry import DEFAULT_REGISTRY, OptionRegistry
 
 __all__ = ["negotiate", "accept_oack", "request_options"]
 

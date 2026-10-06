@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Iterator, Mapping, Optional
 from urllib.parse import quote, urlsplit
 
 from ..exceptions import TFTPError
-from ..options.base import read_decimal
+from ..options._handler import read_decimal
 from ..packet import TFTPErrorCode
 from .memory import normalize_name
 from .pipe import Pipe

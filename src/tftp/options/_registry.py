@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Dict, FrozenSet, Iterator, Optional
 
-from .base import OptionHandler
-from .builtin import BUILTIN_OPTIONS
+from ._handler import OptionHandler
+from ._builtin import BUILTIN_OPTIONS
 
 __all__ = ["OptionRegistry", "DEFAULT_REGISTRY", "register_option"]
 

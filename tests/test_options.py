@@ -155,7 +155,7 @@ def test_a_profiles_server_policy_cannot_be_changed_through_a_reference():
     "text,value", [("8", 8), ("0", 0), ("007", 7), ("65464", 65464), ("0" * 40 + "5", 5)]
 )
 def test_option_numbers_are_ascii_digits(text, value):
-    from tftp.options.base import read_decimal
+    from tftp.options._handler import read_decimal  # the shared digit reader; not exported
 
     assert read_decimal(text) == value
 
@@ -184,7 +184,7 @@ def test_option_numbers_are_ascii_digits(text, value):
     ],
 )
 def test_anything_else_is_not_an_option_number(text):
-    from tftp.options.base import read_decimal
+    from tftp.options._handler import read_decimal  # the shared digit reader; not exported
 
     assert read_decimal(text) is None
 

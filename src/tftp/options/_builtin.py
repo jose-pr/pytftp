@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from .base import (
+from ._handler import (
     MAX_UTIMEOUT,
     MAX_WINDOWSIZE,
     MIN_BLKSIZE,

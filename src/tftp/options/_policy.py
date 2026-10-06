@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import FrozenSet, Iterable, Optional
 
-from .base import MAX_BLKSIZE, MAX_WINDOWSIZE, MIN_BLKSIZE
-from .registry import DEFAULT_REGISTRY, OptionRegistry
+from ._handler import MAX_BLKSIZE, MAX_WINDOWSIZE, MIN_BLKSIZE
+from ._registry import DEFAULT_REGISTRY, OptionRegistry
 
 __all__ = [
     "TFTPServerOptions",

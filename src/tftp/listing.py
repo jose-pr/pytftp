@@ -24,7 +24,7 @@ import os
 import re
 from typing import Iterable, List, NamedTuple, Optional
 
-from .options.base import read_decimal
+from .options._handler import read_decimal
 
 __all__ = ["ListEntry", "dumps", "loads", "DirectoryListing", "LIST_OPTION", "MTIME_OPTION"]
 

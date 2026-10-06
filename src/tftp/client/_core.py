@@ -50,7 +50,7 @@ from ..options import (
     accept_oack,
     request_options,
 )
-from ..options.base import read_decimal
+from ..options._handler import read_decimal
 from ..packet import TFTPErrorCode, TFTPOpcode, decode, encode_ack, encode_request
 from ..packet._codec import _encode_error
 from ..server.handler import AtomicWriter

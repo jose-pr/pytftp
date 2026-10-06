@@ -25,7 +25,7 @@ from __future__ import annotations
 import copy
 from typing import Any, ClassVar, Dict, Mapping
 
-from .policy import STANDARD_OPTIONS, TFTPServerOptions
+from ._policy import STANDARD_OPTIONS, TFTPServerOptions
 
 __all__ = ["Profile", "PROFILES"]
 
