@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -777,7 +778,10 @@ def test_ipv4_and_ipv6_together_are_refused(spy_server, capsys):
 
 
 @pytest.mark.parametrize("flags", [["-b", "8192"], ["-w", "8"], ["--no-tsize"], ["--no-options"]])
-def test_option_flags_beside_a_compat_profile_are_refused_by_the_client(spy_server, capsys, flags):
+def test_option_flags_beside_a_compat_profile_are_refused_by_the_client(
+    spy_server, capsys, flags, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)  # the control download below writes to the working directory
     spy, base = spy_server()
     port = base.rsplit(":", 1)[1].rstrip("/")
     assert main(["get", "127.0.0.1", "one.bin", "-p", port, "--compat", "legacy", *flags]) == 2
@@ -925,3 +929,177 @@ def test_remap_applies_to_a_proxied_source_too(root, make_server):
         assert tftp.TFTPClient("127.0.0.1", port).get("alias") == b"x"
     finally:
         _stop(proc)
+
+
+# -- every serve flag on its own ---------------------------------------------------------------
+
+
+def _download(port, name="big.bin", **client):
+    """The result of a download from a serve on ``port``, judged from what the client negotiated."""
+    client.setdefault("timeout", 1.0)
+    return tftp.TFTPClient("127.0.0.1", port, **client).download(name, io.BytesIO())
+
+
+def _alone(root, *flags):
+    return _serve_subprocess(["serve", str(root), "-l", "127.0.0.1", "-p", "0", *flags])
+
+
+def test_port_range_alone_pins_the_transfer_ports(root):
+    proc, port = _alone(root, "--port-range", "45100:45120")
+    try:
+        events = []
+        assert tftp.TFTPClient("127.0.0.1", port, trace=events.append).get("513.bin")
+        assert {e.remote[1] for e in events if e.direction == "in"} <= set(range(45100, 45121))
+    finally:
+        _stop(proc)
+
+
+@pytest.mark.parametrize(
+    "flags, client, field, expected",
+    [
+        (["--max-blksize", "600"], {"blksize": 4000}, "blksize", 600),
+        (["--max-windowsize", "2"], {"windowsize": 16}, "windowsize", 2),
+        (["--refuse", "windowsize"], {"windowsize": 8}, "windowsize", 1),
+        (["--compat", "legacy"], {"windowsize": 8}, "windowsize", 1),
+        ([], {"windowsize": 8}, "windowsize", 8),
+    ],
+)
+def test_a_negotiation_flag_alone_changes_what_the_client_is_granted(root, flags, client, field, expected):
+    proc, port = _alone(root, *flags)
+    try:
+        assert getattr(_download(port, **client).negotiated, field) == expected
+    finally:
+        _stop(proc)
+
+
+def test_allow_acknowledges_an_extension_option_and_without_it_the_option_is_dropped(root):
+    for flags, echoed in ((["--allow", "cookie"], "abc"), ([], None)):
+        proc, port = _alone(root, *flags)
+        try:
+            extra = _download(port, "one.bin", extra_options={"cookie": "abc"}).negotiated.extra
+            assert extra.get("cookie") == echoed
+        finally:
+            _stop(proc)
+
+
+def test_fit_mtu_serves_a_file_whole(root):
+    proc, port = _alone(root, "--fit-mtu")
+    try:
+        assert tftp.TFTPClient("127.0.0.1", port).get("big.bin") == (root / "big.bin").read_bytes()
+    finally:
+        _stop(proc)
+
+
+def test_write_overwrite_and_no_create_each_decide_what_an_upload_may_do(root):
+    cases = [
+        ([], "new.bin", tftp.AccessViolation),  # read-only
+        (["--write"], "new.bin", None),
+        (["--write"], "one.bin", tftp.FileAlreadyExists),
+        (["--write", "--overwrite"], "one.bin", None),
+        (["--write", "--no-create", "--overwrite"], "new.bin", tftp.FileNotFound),
+        (["--write", "--no-create", "--overwrite"], "one.bin", None),
+    ]
+    for flags, name, refused in cases:
+        before = (root / name).read_bytes() if (root / name).exists() else None
+        proc, port = _alone(root, *flags)
+        try:
+            client = tftp.TFTPClient("127.0.0.1", port)
+            if refused is None:
+                client.put(name, b"uploaded")
+                assert (root / name).read_bytes() == b"uploaded"
+            else:
+                with pytest.raises(refused):
+                    client.put(name, b"uploaded")
+                after = (root / name).read_bytes() if (root / name).exists() else None
+                assert after == before
+        finally:
+            _stop(proc)
+        (root / "one.bin").write_bytes(b"x")  # the next case starts from the same directory
+        if (root / "new.bin").exists():
+            (root / "new.bin").unlink()
+
+
+def _hold_a_transfer(port, name="big.bin"):
+    """A request that is answered with DATA 1 and never acknowledged: a transfer that stays open."""
+    import socket
+
+    from tftp.packet import encode_request
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(5)
+    sock.sendto(encode_request(1, name, mode="octet"), ("127.0.0.1", port))
+    assert sock.recvfrom(2048)[0][:2] == b"\x00\x03"
+    return sock
+
+
+@pytest.mark.parametrize("flag", ["--max-sessions", "--max-per-client"])
+def test_a_session_bound_alone_refuses_the_request_over_it(root, flag):
+    proc, port = _alone(root, flag, "1", "-t", "30")
+    holder = _hold_a_transfer(port)
+    try:
+        with pytest.raises(tftp.RemoteError):
+            tftp.TFTPClient("127.0.0.1", port, timeout=2.0, retries=1).get("one.bin")
+    finally:
+        holder.close()
+        _stop(proc)
+
+
+def test_timeout_and_retries_decide_how_often_an_unanswered_block_is_sent(root):
+    import socket
+
+    from tftp.packet import encode_request
+
+    proc, port = _alone(root, "-t", "0.5", "-r", "2")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(3)
+            sock.sendto(encode_request(1, "big.bin", mode="octet"), ("127.0.0.1", port))
+            blocks = 0
+            try:
+                while True:  # until the server has been silent for three seconds
+                    if sock.recvfrom(2048)[0][:2] == b"\x00\x03":
+                        blocks += 1
+            except socket.timeout:
+                pass
+        assert blocks == 3  # the block, then two retransmissions
+    finally:
+        _stop(proc)
+
+
+def test_http_alone_serves_what_the_origin_holds(tmp_path):
+    import http.server
+
+    class Origin(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b"from the origin" if self.path == "/pxe/hello.txt" else b""
+            self.send_response(200 if body else 404)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    origin = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Origin)
+    thread = threading.Thread(target=origin.serve_forever, daemon=True)
+    thread.start()
+    proc, port = _serve_subprocess(
+        [
+            "serve",
+            "--http",
+            "http://127.0.0.1:%d/pxe/" % origin.server_address[1],
+            "-l",
+            "127.0.0.1",
+            "-p",
+            "0",
+        ]
+    )
+    try:
+        client = tftp.TFTPClient("127.0.0.1", port)
+        assert client.get("hello.txt") == b"from the origin"
+        with pytest.raises(tftp.FileNotFound):
+            client.get("absent.txt")
+    finally:
+        _stop(proc)
+        origin.shutdown()
+        origin.server_close()

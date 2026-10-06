@@ -100,3 +100,99 @@ def test_the_blocks_moved_real_data(served):
     exec(compile(substitute(block, server, root), "README.md client block", "exec"), {})
     assert pathlib.Path("vmlinuz").read_bytes() == (root / "vmlinuz").read_bytes()
     assert (root / "logs" / "boot.txt").read_bytes() == b"ok\n"
+
+
+# -- the command lines ------------------------------------------------------------------------
+
+BASH = re.findall(r"```bash\n(.*?)```", README.read_text(encoding="utf-8"), re.S)
+#: Every ``pytftp`` command of the README's shell blocks; a ``tcpdump ... |`` in front of one is the capture it reads.
+COMMANDS = [
+    line.strip()
+    for block in BASH
+    for line in block.splitlines()
+    if line.strip().startswith("pytftp") or "| pytftp" in line
+]
+
+
+def _arguments(line, root, port):
+    """The command's argument vector with the README's example addresses pointed at loopback."""
+    import shlex
+
+    text = line.split("| pytftp", 1)[1] if "| pytftp" in line else line.split("pytftp", 1)[1]
+    points = {"192.0.2.1": "127.0.0.1", "/srv/tftp": str(root), "6969": "0"}
+    arguments = [points.get(token, token) for token in shlex.split(text)]
+    command = arguments[0]
+    if command in ("get", "put", "ls"):
+        arguments += ["-p", str(port)]
+    elif command in ("serve", "relay") and "--port" not in arguments:
+        arguments += ["-p", "0"]
+    if command in ("serve", "relay"):
+        arguments += ["-l", "127.0.0.1"]
+    return arguments
+
+
+def test_the_readme_has_command_lines_to_run():
+    assert len(COMMANDS) >= 8 and {line.split()[1] for line in COMMANDS if line.startswith("pytftp")} >= {
+        "get",
+        "put",
+        "serve",
+        "relay",
+    }
+
+
+@pytest.mark.parametrize("line", COMMANDS)
+def test_a_readme_command_line_runs_as_written(line, served):
+    import subprocess
+    import sys
+    import threading
+    import time
+
+    pytest.importorskip("duho")
+    server, root, tmp_path = served
+    port = server.server_address[1]
+    arguments = _arguments(line, root, port)
+    command = arguments[0]
+    work = pathlib.Path.cwd()
+    (work / "firmware.bin").write_bytes(b"firmware")
+    argv = [sys.executable, "-m", "tftp", *arguments]
+    if command in ("get", "put", "ls", "capture"):
+        stdin = None
+        if command == "capture":
+            from tftp.capture import PcapWriter
+
+            capture = tmp_path / "wire.pcap"
+            with PcapWriter(capture) as writer:
+                other = tftp.TFTPServer(root, host="127.0.0.1", port=0, trace=writer).start()
+                try:
+                    tftp.TFTPClient("127.0.0.1", other.server_address[1], timeout=0.5).get("pxelinux.0")
+                finally:
+                    other.close()
+            stdin = capture.read_bytes()
+            argv += ["-p", str(other.server_address[1])]
+        feed = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
+        done = subprocess.run(argv, capture_output=True, timeout=60, **feed)
+        assert done.returncode == 0, done.stderr.decode()
+        assert b"Traceback" not in done.stderr
+        if command == "get":
+            assert (work / arguments[2]).read_bytes() == (root / arguments[2]).read_bytes()
+        if command == "put":
+            assert (root / arguments[2]).read_bytes() == b"firmware"
+        return
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    lines = []
+    reader = threading.Thread(target=lambda: lines.extend(iter(proc.stderr.readline, "")), daemon=True)
+    reader.start()
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and proc.poll() is None:
+            if any(("serving" in text or "relaying" in text) for text in lines):
+                break
+            time.sleep(0.05)
+        assert proc.poll() is None, "".join(lines)
+        assert any(("serving" in text or "relaying" in text) for text in lines), "".join(lines)
+    finally:
+        proc.terminate()
+        proc.wait(10)
+        reader.join(10)
+        proc.stdout.close()
+        proc.stderr.close()
