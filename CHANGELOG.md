@@ -63,8 +63,6 @@ differs and "Fixed" the defects corrected on the way.
   exceeded its time limit")`, where `AsyncTFTPClient.get` and `.download` said "no response from
   HOST:PORT" (which is still what both clients say when the retries run out first). The class of the
   exception is the same.
-- **A size probe whose first answer is an OACK that does not decode** (`size()`, `stat()`) sends the
-  server ERROR 4 "malformed answer" before it raises, as a transfer does; the probe sent nothing.
 - **Defaults that bound what a request can hold.** `TFTPServerLimits(max_idle=60.0)`
   is new: a transfer with no datagram from its peer for 60 seconds ends with
   `TransferTimeoutError`, and a `timeout` the client negotiated cannot extend it
