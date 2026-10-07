@@ -10,16 +10,16 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, List, Mapping, Optional, Tuple, Union
 
 from .. import listing
-from ..exceptions import RemoteError
 from ..listing import ListEntry
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options._handler import DEFAULT_BLKSIZE
 from ..packet._enums import TFTPErrorCode, TFTPOpcode
-from ..packet._codec import encode_ack, encode_request
+from ..packet._codec import encode_ack
 from ..packet._codec import _encode_error
 from .._result import TransferResult
 from .._sockets import fit_window
 from ..transfer._receiver import Receiver
+from ..transfer._requester import Requester
 from ..transfer._sender import Sender
 from ..transfer._engine import Transfer, as_readinto, as_write
 from ._core import (
@@ -35,7 +35,6 @@ from ._core import (
     _failure,
     _NotListing,
     _PathSink,
-    _repeats_without_options,
     _source_size,
 )
 
@@ -219,29 +218,17 @@ class TFTPClient(_ClientBase):
         options = self._options(opcode == TFTPOpcode.RRQ, size, address)
         with self._socket(family) as sock:
             started, timed = time.monotonic(), time.perf_counter()  # the deadline's clock, the duration's
-            try:
-                return self._exchange(
-                    sock,
-                    server,
-                    opcode,
-                    filename,
-                    mode,
-                    options,
-                    write,
-                    read,
-                    progress,
-                    started,
-                    timed,
-                    limit,
-                )
-            except RemoteError as exc:
-                # Only a refusal of the request itself: nothing has been
-                # read or written yet, so asking again is safe.
-                if options and self.fallback and _repeats_without_options(exc):
-                    return self._exchange(
-                        sock, server, opcode, filename, mode, {}, write, read, progress, started, timed, limit
-                    )
-                raise
+            expires = self._expires(started)
+            opened, emit = self._open(sock, server, opcode, filename, mode, options, expires)
+            if opened.retry_without_options:
+                # Only a refusal of the request itself: nothing has been read or
+                # written yet, so asking again is safe.
+                opened, emit = self._open(sock, server, opcode, filename, mode, {}, expires)
+            if opened.error is not None:
+                raise _failure(opened.error)
+            return self._exchange(
+                sock, opcode, filename, mode, opened, emit, write, read, progress, timed, expires, limit
+            )
 
     def size(self, filename: str, *, mode: str = "octet") -> Optional[int]:
         """The size of ``filename`` on the server, without transferring it.
@@ -287,7 +274,7 @@ class TFTPClient(_ClientBase):
             raise NotADirectoryError(errno.ENOTDIR, "not a directory", dirname) from None
         return listing.loads(sink.getvalue())
 
-    def _exchange(
+    def _open(
         self,
         sock: socket.socket,
         server: Tuple[Any, ...],
@@ -295,16 +282,32 @@ class TFTPClient(_ClientBase):
         filename: str,
         mode: str,
         options: Mapping[str, str],
+        expires: Optional[float],
+    ) -> Tuple[Requester, Optional[Callable[[Any, str, Tuple[Any, ...]], None]]]:
+        """Send the request until the server answers: the exchange, and the trace emitter of this attempt."""
+        fit_window(sock, int(options.get("blksize", DEFAULT_BLKSIZE)), int(options.get("windowsize", 1)))
+        emit = self._emitter(sock, server)
+        requester = self._requester(
+            self._sender(sock, emit), server, opcode, filename, mode, options, time.monotonic(), expires
+        )
+        return self._await(sock, requester, emit), emit
+
+    def _exchange(
+        self,
+        sock: socket.socket,
+        opcode: int,
+        filename: str,
+        mode: str,
+        opened: Requester,
+        emit: Optional[Callable[[Any, str, Tuple[Any, ...]], None]],
         write: Optional[Callable[[Union[bytes, memoryview]], object]],
         read: Optional[Callable[[memoryview], int]],
         progress: Optional[ProgressFunction],
-        started: float,
         timed: float,
+        expires: Optional[float],
         limit: Optional[int],
     ) -> TransferResult:
         is_read = opcode == TFTPOpcode.RRQ
-        request = encode_request(opcode, filename, mode=mode, options=options)
-        requested_blksize = int(options.get("blksize", DEFAULT_BLKSIZE))
         # Whatever a datagram's length: Windows reports one longer than the
         # buffer as an error before the sender can be looked at, and a longer
         # DATA than negotiated is the engine's to judge.
@@ -312,13 +315,9 @@ class TFTPClient(_ClientBase):
         view = memoryview(buf)
         recv_into = sock.recvfrom_into
         clock = time.monotonic
-
-        fit_window(sock, requested_blksize, int(options.get("windowsize", 1)))
-
-        expires = None if self.deadline is None else started + self.deadline
-
-        emit = self._emitter(sock, server)
-        n, peer = self._request(sock, server, request, buf, view, expires, emit)
+        peer = opened.peer
+        negotiated = opened.negotiated
+        assert peer is not None and negotiated is not None  # an answer that was accepted
 
         if emit is None:
 
@@ -341,7 +340,6 @@ class TFTPClient(_ClientBase):
                 return result
 
         session: Transfer
-        negotiated, first_data = self._first_response(view, n, options, is_read, send)
 
         # Before the engine exists: building a Sender already reads the first
         # block, and a caller may need to know the outcome before that.
@@ -353,6 +351,7 @@ class TFTPClient(_ClientBase):
             announced = negotiated.tsize if mode == "octet" else None
             if limit is not None or announced is not None:
                 write = _bounded(write, limit, announced)
+            first_data = opened.first_data
             reply = None if first_data else encode_ack(0)
             session = Receiver(
                 send,
@@ -366,7 +365,7 @@ class TFTPClient(_ClientBase):
                 expires=expires,
             )
             if first_data:
-                session.handle(view, n, now)
+                session.handle(memoryview(first_data), len(first_data), now)
         else:
             assert read is not None  # an upload is given its source
             session = Sender(

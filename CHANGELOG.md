@@ -58,6 +58,13 @@ differs and "Fixed" the defects corrected on the way.
 
 - **The `cli` extra needs `duho` 0.7**: `duho>=0.7.0,<0.8`, where it was `>=0.6.0,<0.7`. The
   `pytftp` command, its options and its output are the same.
+- **`AsyncTFTPClient` reports an expired `deadline` in the first wait as `TFTPClient` does.** A
+  `deadline` that passes before the server has answered raises `TransferTimeoutError("transfer
+  exceeded its time limit")`, where `AsyncTFTPClient.get` and `.download` said "no response from
+  HOST:PORT" (which is still what both clients say when the retries run out first). The class of the
+  exception is the same.
+- **A size probe whose first answer is an OACK that does not decode** (`size()`, `stat()`) sends the
+  server ERROR 4 "malformed answer" before it raises, as a transfer does; the probe sent nothing.
 - **Defaults that bound what a request can hold.** `TFTPServerLimits(max_idle=60.0)`
   is new: a transfer with no datagram from its peer for 60 seconds ends with
   `TransferTimeoutError`, and a `timeout` the client negotiated cannot extend it

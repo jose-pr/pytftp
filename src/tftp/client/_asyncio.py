@@ -13,18 +13,18 @@ from typing import Any, AsyncIterator, Callable, List, Mapping, Optional, Tuple,
 from ..capture._events import PacketEvent, new_session_id
 from .. import listing
 from ..listing import ListEntry
-from ..exceptions import RemoteError, TransferTimeoutError
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options._handler import DEFAULT_BLKSIZE
 from ..packet._enums import TFTPErrorCode, TFTPOpcode
-from ..packet._codec import encode_ack, encode_request
+from ..packet._codec import encode_ack
 from ..packet._codec import _encode_error
 from .._result import TransferResult
 from ..transfer._receiver import Receiver
+from ..transfer._requester import Requester
 from ..transfer._sender import Sender
 from ..transfer._engine import Transfer, as_readinto, as_write
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
-from .._sockets import fit_window, local_towards, same_host
+from .._sockets import fit_window, local_towards
 from .._streams import AsyncSink, AsyncSource
 from ._core import (
     LISTING_LIMIT,
@@ -36,7 +36,6 @@ from ._core import (
     _failure,
     _NotListing,
     _PathSink,
-    _repeats_without_options,
     _source_size,
 )
 
@@ -44,7 +43,7 @@ __all__ = ["AsyncTFTPClient"]
 
 
 class _Protocol(asyncio.DatagramProtocol):
-    """Feeds datagrams to the request phase, then to the transfer engine."""
+    """Feeds datagrams to the opening exchange, then to the transfer engine."""
 
     def __init__(self, driver: "_Transfer") -> None:
         self.driver = driver
@@ -67,9 +66,10 @@ class _Transfer:
         self.client = client
         self.loop = loop
         self.transport: Optional[asyncio.DatagramTransport] = None
-        self.server: Tuple[Any, ...] = ()
         self.peer: Optional[Tuple[Any, ...]] = None
-        self.first: "asyncio.Future[Tuple[bytes, Tuple[Any, ...]]]" = loop.create_future()
+        #: Resolved when the opening exchange has ended, or failed by the host refusing a send.
+        self.first: "asyncio.Future[None]" = loop.create_future()
+        self.requester: Optional[Requester] = None
         self.done: "asyncio.Future[None]" = loop.create_future()
         self.closed: "asyncio.Future[None]" = loop.create_future()
         self.engine: Optional[Transfer] = None
@@ -119,10 +119,10 @@ class _Transfer:
         if self.trace is not None:
             self.emit(data, "in", addr)
         if self.engine is None:
-            if self.peer is None and not self.first.done():
-                if len(data) >= 2 and (not self.client.strict_source or same_host(addr, self.server)):
-                    self.peer = addr
-                    self.first.set_result((data, addr))
+            requester = self.requester
+            if requester is not None and not requester.is_done:
+                requester.handle(memoryview(data), len(data), addr, self.loop.time())
+                self.opened()
             return
         peer = self.peer
         if addr[1] != peer[1] or addr[0] != peer[0]:  # type: ignore[index]  # an engine implies a peer
@@ -148,6 +148,20 @@ class _Transfer:
 
     # -- engine bookkeeping --------------------------------------------------------
 
+    def opened(self) -> None:
+        """The opening exchange took a datagram or a timeout: finish it, or wait on its timer."""
+        requester = self.requester
+        assert requester is not None
+        if not requester.is_done:
+            self.schedule()
+            return
+        if self.timer is not None:
+            self.timer.cancel()
+        self.timer = self.timer_at = None  # the transfer engine arms its own
+        self.peer = requester.peer
+        if not self.first.done():
+            self.first.set_result(None)
+
     def after(self) -> None:
         engine = self.engine
         assert engine is not None
@@ -163,12 +177,13 @@ class _Transfer:
         self.schedule()
 
     def schedule(self) -> None:
-        engine = self.engine
+        # One timer serves the opening exchange and then the transfer engine.
+        engine = self.engine if self.engine is not None else self.requester
         if engine is None or engine.is_done:
             return
         due = engine.deadline
         if due is None:
-            if engine.is_stalled:
+            if getattr(engine, "is_stalled", False):
                 return  # the bridge wakes the engine when its source or sink is ready
             # Nothing outstanding: wait for a datagram as long as the blocking
             # client does, counted from now.
@@ -186,7 +201,7 @@ class _Transfer:
     def fire(self) -> None:
         self.timer = None
         self.timer_at = None
-        engine = self.engine
+        engine = self.engine if self.engine is not None else self.requester
         if engine is None or engine.is_done:
             return
         now = self.loop.time()
@@ -194,7 +209,10 @@ class _Transfer:
             self.schedule()  # moved later since this was scheduled
             return
         engine.on_timeout(now)
-        self.after()
+        if self.engine is None:
+            self.opened()
+        else:
+            self.after()
 
     def resume(self) -> None:
         engine = self.engine
@@ -409,31 +427,27 @@ class AsyncTFTPClient(_ClientBase):
         local_host, local_port = self.src or (("::" if family == socket.AF_INET6 else "0.0.0.0"), 0)
         started, timed = time.monotonic(), time.perf_counter()  # the deadline's clock, the duration's
         attempts = [options, {}] if options and self.fallback else [options]
-        for attempt, attempt_options in enumerate(attempts):
+        for attempt_options in attempts:
             # Each attempt gets its own socket, which its transport closes.
             sock = bind(local_host, local_port, family=family)
-            try:
-                return await self._exchange_async(
-                    loop,
-                    sock,
-                    server,
-                    opcode,
-                    filename,
-                    mode,
-                    attempt_options,
-                    write,
-                    read,
-                    progress,
-                    started,
-                    timed,
-                    bridge,
-                    limit,
-                )
-            except RemoteError as exc:
-                # Retry without options only when the request itself was
-                # refused for them: nothing has been read or written yet.
-                if not (_repeats_without_options(exc) and attempt + 1 < len(attempts)):
-                    raise
+            result = await self._exchange_async(
+                loop,
+                sock,
+                server,
+                opcode,
+                filename,
+                mode,
+                attempt_options,
+                write,
+                read,
+                progress,
+                started,
+                timed,
+                bridge,
+                limit,
+            )
+            if result is not None:
+                return result
         raise AssertionError("unreachable")  # pragma: no cover
 
     async def _exchange_async(
@@ -452,14 +466,13 @@ class AsyncTFTPClient(_ClientBase):
         timed: float,
         bridge: Union[AsyncReaderBridge, AsyncWriterBridge, None],
         limit: Optional[int],
-    ) -> TransferResult:
+    ) -> Optional[TransferResult]:
+        """One attempt: the result, or ``None`` when the request may be made again without options."""
         is_read = opcode == TFTPOpcode.RRQ
         try:
-            request = encode_request(opcode, filename, mode=mode, options=options)
             sock.setblocking(False)
             fit_window(sock, int(options.get("blksize", DEFAULT_BLKSIZE)), int(options.get("windowsize", 1)))
             driver = _Transfer(self, loop)
-            driver.server = server
             driver.local = sock.getsockname()
             driver.observer = local_towards(sock, server) if driver.trace is not None else driver.local
             driver.progress = progress
@@ -472,25 +485,17 @@ class AsyncTFTPClient(_ClientBase):
         try:
             budget = self._expires(started)
             expires = None if budget is None else loop.time() + (budget - time.monotonic())
-            # Request phase, with the same backoff as retransmissions.
-            from netimps import Backoff
-
-            timer = Backoff(self.timeout, multiplier=self.backoff, max_delay=self.max_timeout)
-            while expires is None or loop.time() < expires:
-                driver.sendto(request, server)
-                wait = timer.delay if expires is None else min(timer.delay, expires - loop.time())
-                try:
-                    await asyncio.wait_for(asyncio.shield(driver.first), wait)
-                    break
-                except asyncio.TimeoutError:
-                    if timer.attempt >= self.retries:
-                        break
-                    timer.advance()
-            if not driver.first.done():
-                raise TransferTimeoutError("no response from %s:%s" % server[:2])
-            data, peer = driver.first.result()
-            view = memoryview(data)
-            negotiated, first_data = self._first_response(view, len(data), options, is_read, driver.send)
+            driver.requester = requester = self._requester(
+                driver.sendto, server, opcode, filename, mode, options, loop.time(), expires
+            )
+            driver.schedule()
+            await driver.first
+            if requester.error is not None:
+                if requester.retry_without_options:
+                    return None
+                raise _failure(requester.error)
+            peer, negotiated, first_data = requester.peer, requester.negotiated, requester.first_data
+            assert peer is not None and negotiated is not None  # an answer that was accepted
             self._negotiated(negotiated, peer, driver.send)
             driver.total = negotiated.tsize
             now = loop.time()
@@ -513,7 +518,7 @@ class AsyncTFTPClient(_ClientBase):
                     expires=expires,
                 )
                 if first_data:
-                    driver.engine.handle(view, len(data), now)
+                    driver.engine.handle(memoryview(first_data), len(first_data), now)
             else:
                 assert read is not None  # an upload is given its source
                 driver.engine = Sender(
