@@ -42,6 +42,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `test_shipped_headers.py` | the shipped `AGENTS.md` headers: every public name is in the header of its module, every header is listed by the one above it, none is over its line limit, every signature a header prints is the live one |
 | `test_import_structure.py` | import direction (no module takes a name from the root), the 500-line module limit, the logger names, the public module set |
 | `test_import_asyncio.py` | importing the package and using its blocking half does not import `asyncio` |
+| `test_relay_session.py` | one relayed transfer's state: when it ends and what it reports, with numbers for time and tuples for addresses |
 | `test_hints.py` | every public annotation resolves with `typing.get_type_hints`, except the ones naming a netimps or pktcap type |
 | `test_exceptions.py` | the exception hierarchy and the one place each class is defined |
 | `test_guards.py` | the name guard refuses a host name that would leave the machine; the structure-guard modules exist |
@@ -76,7 +77,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `integration/test_refused_sends.py` | a send the host refuses ends that transfer, with the reason, on every server and client |
 | `integration/test_backends.py` | the memory, HTTP and upstream backends and the pipe between threads |
 | `integration/test_wrappers.py` | `Remap`, `PerClient` and `CaseInsensitive` over real transfers |
-| `integration/test_relay.py` | the relay end to end |
+| `integration/test_relay.py` | the relay end to end, each test once per relay driver (`DRIVERS`), and the bounds on what a request can hold |
 | `integration/test_replay.py` | `replay_transfers` and `pytftp replay`, judged by what the server received |
 | `integration/test_addresses.py` | hosts, networks and interfaces given as objects, not only strings |
 | `integration/test_host_inputs.py` | what the library does with host, port and timeout arguments it is given |

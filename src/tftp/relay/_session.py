@@ -9,7 +9,6 @@ through), no traffic for ``idle_timeout``, or ``max_duration``.
 
 from __future__ import annotations
 
-import socket
 import struct
 from typing import Any, Dict, NamedTuple, Optional, Tuple
 
@@ -56,8 +55,7 @@ class RelaySession:
         "id",
         "client",
         "key",
-        "down",
-        "up",
+        "driver",
         "upstream",
         "upstream_tid",
         "request",
@@ -80,8 +78,6 @@ class RelaySession:
         session_id: str,
         client: Tuple[Any, ...],
         key: Tuple[str, int],
-        down: socket.socket,
-        up: socket.socket,
         upstream: Tuple[Any, ...],
         request: RequestPacket,
         context: TFTPRequestContext,
@@ -90,8 +86,7 @@ class RelaySession:
         self.id = session_id
         self.client = client
         self.key = key
-        self.down = down
-        self.up = up
+        self.driver: Any = None  # the driver's own record of the sockets it watches
         self.upstream = upstream  # (address, request port)
         self.upstream_tid: Optional[Tuple[Any, ...]] = None
         self.request = request

@@ -227,17 +227,27 @@ class AsyncTFTPHandler(Protocol):
     async def open_write(self, context: TFTPRequestContext, size: Optional[int]) -> AsyncTFTPWriter: ...
 
 
-def has_coroutine_hooks(handler: Any) -> bool:
-    """Whether ``handler.open_read`` is an ``async def``, looking through a bound method or partial.
-
-    Asked once, when a server is built, to refuse a handler of the other kind.
-    """
-    function = getattr(handler, "open_read", None)
+def _is_async_def(function: Any) -> bool:
+    """Whether ``function`` is an ``async def``, looking through a bound method or partial."""
     function = getattr(function, "__func__", function)
     while isinstance(function, functools.partial):
         function = function.func
     code = getattr(function, "__code__", None)
     return code is not None and bool(code.co_flags & inspect.CO_COROUTINE)
+
+
+def has_coroutine_hooks(handler: Any) -> bool:
+    """Whether ``handler.open_read`` is an ``async def``, looking through a bound method or partial.
+
+    Asked once, when a server is built, to refuse a handler of the other kind.
+    """
+    return _is_async_def(getattr(handler, "open_read", None))
+
+
+def is_coroutine_callable(function: Any) -> bool:
+    """Whether calling ``function`` gives a coroutine: an ``async def``, a bound method or partial of
+    one, or an object whose ``__call__`` is one. Asked once, when a relay is built, for its route."""
+    return _is_async_def(function) or _is_async_def(getattr(type(function), "__call__", None))
 
 
 class ThreadedHandler:

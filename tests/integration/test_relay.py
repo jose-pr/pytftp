@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import io
 import os
 import socket
+import sys
 import threading
 import time
 
@@ -372,3 +374,69 @@ def test_a_relay_summary_is_a_dictionary_of_json_types(root, make_server, make_r
     assert isinstance(record["upstream"][1], int) and record["upstream"][1] != relay.server_address[1]
     assert (record["operation"], record["reason"], record["bytes_to_client"]) == ("read", "complete", 513)
     assert set(record) == set(ends[0]._fields)
+
+
+# -- what a peer that sends requests can make the relay hold -------------------------------------
+
+
+def test_a_relay_at_its_session_bound_answers_busy_and_counts_the_refusal(root, make_server, make_relay):
+    server = make_server(root, timeout=5)
+    relay = make_relay(upstream_of(server), max_sessions=1)
+    with (
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as first,
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as second,
+    ):
+        for s in (first, second):
+            s.settimeout(3)
+        request = tftp.packet.encode_request(TFTPOpcode.RRQ, "big.bin")
+        first.sendto(request, relay.server_address)
+        assert decode(first.recvfrom(2048)[0]).block == 1  # the first transfer is running, and stays so
+        second.sendto(request, relay.server_address)
+        refusal = decode(second.recvfrom(2048)[0])
+        assert (refusal.code, refusal.message) == (TFTPErrorCode.NOT_DEFINED, "relay busy")
+        assert wait_for(lambda: relay.stats["refused"] == 1)
+        assert relay.active_sessions == 1
+
+
+def test_an_upstream_that_never_answers_holds_a_transfer_only_for_the_idle_timeout(make_relay):
+    ends = []
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as silent:
+        silent.bind(("127.0.0.1", 0))
+        relay = make_relay(silent.getsockname(), idle_timeout=1.0, on_session_end=ends.append)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
+            client.bind(("127.0.0.1", 0))
+            request = tftp.packet.encode_request(TFTPOpcode.RRQ, "f")
+            began = time.perf_counter()
+            while not ends and time.perf_counter() - began < 10:
+                client.sendto(request, relay.server_address)  # a retry is passed on and is no traffic
+                time.sleep(0.2)
+            assert ends and ends[0].reason == "idle"
+            assert time.perf_counter() - began < 5
+    assert relay.active_sessions == 0
+
+
+def test_the_session_bound_defaults_to_250_everywhere():
+    assert TFTPRelay("127.0.0.1").max_sessions == 250
+    assert TFTPRelay("127.0.0.1", max_sessions=7).max_sessions == 7
+    unbounded = TFTPRelay("127.0.0.1", max_sessions=None).max_sessions
+    assert unbounded == (250 if sys.platform == "win32" else None)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="select() limits the transfers a Windows loop watches")
+def test_more_than_255_sessions_is_refused_on_windows():
+    with pytest.raises(ValueError, match="255"):
+        TFTPRelay("127.0.0.1", max_sessions=256)
+
+
+def test_a_coroutine_route_is_a_type_error_when_the_relay_is_built():
+    async def route(request, context):
+        return "127.0.0.1"
+
+    class Awaiting:
+        async def __call__(self, request, context):
+            return "127.0.0.1"
+
+    for made in (route, Awaiting(), Awaiting().__call__, functools.partial(route)):
+        with pytest.raises(TypeError, match="plain"):
+            TFTPRelay(made)
+    TFTPRelay(lambda request, context: "127.0.0.1")  # a plain callable is the contract

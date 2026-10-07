@@ -29,7 +29,7 @@ route = RouteTable(
 TFTPRelay(route, on_session_end=print).serve_forever()
 ```
 
-A route is any callable `route(request, context)` returning an upstream
+A route is any plain callable `route(request, context)` returning an upstream
 (`"host"`, `"host:port"`, `(host, port)`) or `None` to refuse (ERROR 2).
 `context` has the client's address, and the address and interface the request
 arrived on.

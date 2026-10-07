@@ -72,6 +72,13 @@ differs and "Fixed" the defects corrected on the way.
   where it was unlimited outside Windows (`None` still means unlimited, and on
   Windows 510, the most `select()` can watch). `pytftp serve --max-sessions`
   defaults to 500; 0 is unlimited.
+- **A relay holds at most 250 transfers by default.** `TFTPRelay(max_sessions=...)` defaulted to
+  unlimited outside Windows (two sockets per transfer, nothing bounding what requests could open);
+  it is now 250 on every platform, and a request beyond it gets ERROR 0 "relay busy" as before.
+  `None` still means unlimited off Windows, and 250 on it. `pytftp relay --max-sessions` is unchanged.
+- **`TFTPRelay` refuses a coroutine route when it is built.** A route that is an `async def`
+  raises `TypeError` from the constructor, where each request used to log a traceback and be
+  answered ERROR 0 "relay error" with the coroutine never awaited.
 - `TFTPError(code, message)` raises `TypeError` for a `code` that is not an
   `int` (so `TFTPError("no such file")` is refused instead of taking the text
   as its code) or a `message` that is not text, and `ValueError` for a code

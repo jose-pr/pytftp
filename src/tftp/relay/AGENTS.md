@@ -12,7 +12,7 @@ ships inside the package and is self-contained; the top header is
 ```python
 TFTPRelay(
     route, *, host=None, port=69, idle_timeout=30.0, max_duration=3600.0, linger=2.0,
-    upstream_src=None, limits=None, max_sessions=None, ignore_broadcast=True,
+    upstream_src=None, limits=None, max_sessions=250, ignore_broadcast=True,
     reply_from_request_address=True, trace=None, on_session_end=None, port_range=None,
     interface=None
 )
@@ -36,7 +36,8 @@ use `UpstreamBackend` (a terminating proxy) instead.
   object or `netimps.Host`, `(host, port)`, `Upstream`) or `route(request, context) -> upstream | None`;
   `None` refuses with ERROR 2 `"no route"`. `RouteFunction` is the type of that
   callable (`tftp.relay.RouteFunction`). Hostnames are resolved per
-  request (cached 60 s). Routes run on the relay's loop: keep them fast.
+  request (cached 60 s). A route is a plain function and runs on the relay's loop: keep it
+  fast. A coroutine function is a `TypeError` when the relay is built.
 - A transfer ends on: an ERROR either way (after ≤1 s), the final DATA/ACK
   exchange (the block size followed from an OACK's `blksize`/`blksize2`, then
   `linger`), `idle_timeout` without traffic, or `max_duration`. Keep
@@ -44,8 +45,10 @@ use `UpstreamBackend` (a terminating proxy) instead.
 - A repeated request from the same client address/port is forwarded again
   only while the upstream has not answered. Strays on either leg get ERROR 5.
 - Shutdown sends ERROR 0 `"relay shutting down"` to both sides of each
-  transfer. Windows caps `max_sessions` at 250 by default (two sockets each);
-  an explicit value above 255 there is a `ValueError`.
+  transfer. `max_sessions` is 250 by default on every platform (two sockets
+  each): a request beyond it gets ERROR 0 `"relay busy"`. `None` is unlimited,
+  except on Windows, where it is 250 and an explicit value above 255 is a
+  `ValueError`.
 - `on_session_end(RelaySummary)` — `session`, `client`, `upstream` (the
   learned TID), `filename`, `operation`, `mode`, `bytes_to_client`,
   `bytes_from_client`, `packets`, `duration`, `reason` (`"complete"`,

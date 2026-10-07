@@ -9,7 +9,7 @@ from __future__ import annotations
 import json as _json
 import typing as _ty
 
-from ..relay._core import TFTPRelay
+from ..relay._sync import TFTPRelay
 from ..relay._routing import RouteTable, by_prefix, by_subnet
 from ..relay._session import RelaySummary
 from ..server._session import PortRange
