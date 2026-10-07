@@ -1,11 +1,12 @@
 """The transfer engine: one side of a DATA/ACK exchange, without any I/O.
 
 :class:`Sender` produces DATA and consumes ACKs; :class:`Receiver` consumes
-DATA and produces ACKs. Neither touches a socket or a clock: packets go out
-through a ``send`` callable, packets come in through :meth:`Transfer.handle`,
-and the driver calls :meth:`Transfer.on_timeout` once ``deadline`` passes.
-The client and the server drive the same two classes, and the tests drive
-them over a simulated lossy link.
+DATA and produces ACKs. :class:`Requester` is the client's opening: it sends
+the request, repeats it and judges the first answer. None touches a socket or
+a clock: packets go out through a ``send`` callable, packets come in through
+:meth:`Transfer.handle` (:meth:`Requester.handle`), and the driver calls
+``on_timeout`` once ``deadline`` passes. The client and the server drive the
+same classes, and the tests drive them over a simulated lossy link.
 
 Behaviour worth knowing:
 
@@ -27,10 +28,12 @@ from __future__ import annotations
 from .._streams import SupportsRead, SupportsReadinto, SupportsWrite
 from ._engine import SendFunction, Transfer, as_readinto, as_write
 from ._receiver import Receiver
+from ._requester import Requester
 from ._sender import Sender
 
 __all__ = [
     "Receiver",
+    "Requester",
     "SendFunction",
     "Sender",
     "SupportsRead",

@@ -39,6 +39,38 @@ part of one is written again for the rest; one that takes nothing raises `OSErro
 sink's `None` is `WouldBlock`). This is what the client and server drive; use it to run TFTP
 over another transport or event loop.
 
+## The client's opening (`tftp.transfer`)
+
+```python
+Requester(
+    send, server, opcode, filename, retries, now, *, mode="octet", options=None, timeout=1.0,
+    backoff=2.0, max_timeout=None, expires=None, registry=None, accepts=None, fallback=True,
+    probe=False
+)
+Requester.handle(packet, n, address, now)
+Requester.on_timeout(now)
+```
+
+The exchange before a transfer **without any I/O**: the constructor sends the request through
+`send(packet, address)` (`server` for the request, the answer's address for a refusal) and arms
+`deadline`; `handle(packet, n, address, now)` takes every datagram that arrives and
+`on_timeout(now)` repeats the request, `retries` times with `backoff`, until `expires` (an instant
+in the caller's clock) or the retries are spent. A datagram under 2 octets, or one `accepts(address)`
+refuses, is dropped without a reply; the first other is the answer and its address is `peer`.
+`accepts=None` takes the first from anywhere. An `OSError` from `send` propagates, the outcome
+already recorded.
+
+When `is_done` is set, `error` says what failed: the `RemoteError` of the server's code,
+`TFTPProtocolError` for an answer no server may send (after ERROR 4) or an OACK that is not what
+was asked (after ERROR 8), `TransferTimeoutError` ("transfer exceeded its time limit", or "no
+response from HOST:PORT"). Otherwise `negotiated` is the answer's settlement (an OACK checked
+against `options`, or the defaults for DATA 1 of a read or ACK 0 of a write), `oack` the server's
+options as sent, and `first_data` the DATA 1 datagram, to be handed to the `Receiver` built next.
+`retry_without_options` is true when the request carried options, `fallback` is on and the answer
+was ERROR 8, 4 or 0: build a second `Requester` with `options={}` and the same `expires`. With
+`probe=True` the answer is declined and `negotiated` stays `None`: ERROR 8 to an OACK (its options
+in `oack`), ACK 1 to a DATA 1 under 512 octets, ERROR 0 to a full one; `first_data` holds the DATA.
+
 `Transfer` is their shared base: the state both directions carry (`is_done`,
 `error`, `deadline`, `is_stalled`, `bytes`, `retransmits`) and `max_idle`, the
 seconds without a datagram from the peer after which the transfer fails.

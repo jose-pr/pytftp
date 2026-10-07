@@ -53,6 +53,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `test_options.py` | negotiation: each option handler, the policy, the client side |
 | `test_option_registry.py` | the registry, tftp-hpa extensions, profiles, MTU fitting, window bounds |
 | `test_engine.py` | the transfer engine over a simulated lossy link with a virtual clock: no sockets, no real time |
+| `test_requester.py` | the client's opening exchange over a simulated link: the request and its repeats, which datagram is the answer, the option fallback, the size probe |
 | `test_netascii.py` | the netascii reader and writer, the line-ending cases at every block boundary |
 | `test_listing.py` | the `x-list` / `x-mtime` extension: format, server, client, paths |
 | `test_filesystem_backend.py` | `FilesystemBackend` and `AtomicWriter`: containment, space, how an upload lands |

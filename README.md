@@ -218,7 +218,7 @@ pytftp replay boot.pcapng 192.0.2.1 --speed 10
 | `tftp.capture` | trace events, `trace_to`, `FlowTracker`, `analyze`, filters, `replay_transfers`, and TFTP as a pktcap layer (`TFTPLayer`, `register_tftp_dissector`); reading and writing a capture are pktcap's |
 | `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
-| `tftp.transfer` | I/O-free `Sender`/`Receiver` engine |
+| `tftp.transfer` | I/O-free `Sender`/`Receiver`/`Requester` engine |
 | `tftp.listing` | the `x-list` directory listing format: `loads`, `dumps`, `DirectoryListing` |
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` (`path` extra) |
 | `tftp.netascii` | streaming netascii translation |

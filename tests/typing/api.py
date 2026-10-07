@@ -56,6 +56,8 @@ from tftp.capture import (
 )
 from tftp.client import ProgressFunction, RemoteStat, SinkLike, SourceLike
 from tftp.listing import ListEntry
+from tftp.options import Negotiated
+from tftp.transfer import Requester
 from tftp.relay import TFTPRelay, Upstream, UpstreamLike, by_prefix, by_subnet
 from tftp.server import (
     AsyncTFTPHandler,
@@ -275,6 +277,25 @@ def a_replay_asks_the_server_the_caller_names(path: str) -> None:
     assert_type(done, ReplayedTransfers)
     assert_type(done.results, Tuple[TransferResult, ...])
     assert_type(done.skipped, int)
+
+
+def the_opening_exchange_is_driven_by_datagrams_and_a_clock(
+    send: Callable[[bytes, Tuple[Any, ...]], object],
+) -> None:
+    requester = Requester(
+        send, ("192.0.2.1", 69), tftp.TFTPOpcode.RRQ, "f", 3, 0.0, options={"blksize": "512"}, probe=False
+    )
+    requester.handle(memoryview(b"\x00\x03\x00\x01"), 4, ("192.0.2.1", 4000), 0.5)
+    requester.on_timeout(1.0)
+    assert_type(requester.is_done, bool)
+    assert_type(requester.error, Optional[TFTPError])
+    assert_type(requester.deadline, Optional[float])
+    assert_type(requester.peer, Optional[Tuple[Any, ...]])
+    assert_type(requester.negotiated, Optional[Negotiated])
+    assert_type(requester.first_data, Optional[bytes])
+    assert_type(requester.oack, Optional[Dict[str, str]])
+    assert_type(requester.options, Dict[str, str])
+    assert_type(requester.retry_without_options, bool)
 
 
 # -- where a name lives -------------------------------------------------------------------------

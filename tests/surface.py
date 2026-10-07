@@ -210,6 +210,7 @@ EXPECTED = {
     "tftp.cli": ["main"],
     "tftp.transfer": [
         "Receiver",
+        "Requester",
         "SendFunction",
         "Sender",
         "SupportsRead",

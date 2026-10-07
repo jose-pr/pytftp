@@ -46,7 +46,7 @@ that implements it; those headers ship in the package, at the paths below
 | `tftp/relay/AGENTS.md` | `TFTPRelay` and its routing helpers |
 | `tftp/capture/AGENTS.md` | packet events and trace hooks, `FlowTracker`, `analyze`, `replay_transfers`, TFTP as a pktcap layer, the event filters |
 | `tftp/packet/AGENTS.md` | the packet types, the codec and the enums |
-| `tftp/transfer/AGENTS.md` | the I/O-free engine: `Sender`, `Receiver`, `Transfer`, `as_readinto` and `as_write` |
+| `tftp/transfer/AGENTS.md` | the I/O-free engine: `Sender`, `Receiver`, `Requester`, `Transfer`, `as_readinto` and `as_write` |
 | `tftp/path/AGENTS.md` | `TFTPPath` and `TFTPURIPath` (the `path` extra) |
 | `tftp/cli/AGENTS.md` | the `pytftp` command: its subcommands, exit statuses, output and environment variables |
 
@@ -65,7 +65,7 @@ that implements it; those headers ship in the package, at the paths below
 | `tftp.path` | `TFTPPath`, `TFTPURIPath` |
 | `tftp.exceptions` | `AccessViolation`, `DiskFull`, `FileAlreadyExists`, `FileNotFound`, `IllegalOperation`, `NoSuchUser`, `OptionNegotiationError`, `RemoteError`, `TFTPDecodeError`, `TFTPError`, `TFTPProtocolError`, `TFTPValueError`, `TransferAbortedError`, `TransferTimeoutError`, `TransferTooLargeError`, `UnknownTransferID`, `WouldBlock` |
 | `tftp.cli` | `main` |
-| `tftp.transfer` | `Receiver`, `SendFunction`, `Sender`, `SupportsRead`, `SupportsReadinto`, `SupportsWrite`, `Transfer`, `as_readinto`, `as_write` |
+| `tftp.transfer` | `Receiver`, `Requester`, `SendFunction`, `Sender`, `SupportsRead`, `SupportsReadinto`, `SupportsWrite`, `Transfer`, `as_readinto`, `as_write` |
 | `tftp.listing` | `DirectoryListing`, `LIST_OPTION`, `ListEntry`, `MTIME_OPTION`, `dumps`, `loads` |
 | `tftp.netascii` | `NetasciiReader`, `NetasciiWriter`, `decode`, `encode`, `encoded_size` |
 

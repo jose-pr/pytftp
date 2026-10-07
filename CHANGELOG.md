@@ -43,6 +43,11 @@ differs and "Fixed" the defects corrected on the way.
   `--per-client-only` (a client with no directory of its own is refused, where
   `--per-client` serves it the whole root, other clients' directories included; the
   help of `--per-client` says it is not isolation).
+- `tftp.transfer.Requester(send, server, opcode, filename, retries, now, *, ...)`: the client's
+  opening exchange as an engine class that does no I/O, beside `Sender` and `Receiver`. It sends the
+  request, repeats it with back-off, decides which datagram is the first answer, classifies it
+  (OACK, DATA 1, ACK 0 or an ERROR) and says whether the request may be made again without options.
+  `TFTPClient` and `AsyncTFTPClient` drive it, and so can a client on another transport.
 - Documentation: a command-line guide in the docs site (checked against each command's `--help`), an API
   page for `tftp.listing`, and the shipped API header split into a top header, `tftp/AGENTS.md`, and one
   header per package (`tftp/client/AGENTS.md`, `server`, `options`, `backends`, `relay`, `capture`,
