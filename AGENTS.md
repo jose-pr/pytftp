@@ -29,7 +29,7 @@ Under `src/tftp/`, one line per package:
 - `__init__.py`, `__main__.py` — the root exports and `python -m tftp`.
 - `client/` — `TFTPClient` and `AsyncTFTPClient` over a private shared base.
 - `server/` — the two servers, the listening socket, one transfer's session, the handler contract.
-- `relay/` — the transparent relay and its routing.
+- `relay/` — the transparent relay (blocking and asyncio over one core) and its routing.
 - `options/` — negotiation: the handlers, the registry, the policy, the profiles.
 - `backends/` — the handlers a server serves from, and the wrappers over them.
 - `packet/` — the wire format: enums and the codec.

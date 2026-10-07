@@ -30,6 +30,7 @@ from tftp import (
     AsyncTFTPServer,
     FileNotFound,
     RemoteError,
+    RequestPacket,
     TFTPClient,
     TFTPError,
     TFTPErrorCode,
@@ -58,7 +59,16 @@ from tftp.client import ProgressFunction, RemoteStat, SinkLike, SourceLike
 from tftp.listing import ListEntry
 from tftp.options import Negotiated
 from tftp.transfer import Requester
-from tftp.relay import TFTPRelay, Upstream, UpstreamLike, by_prefix, by_subnet
+from tftp.relay import (
+    AsyncRouteFunction,
+    AsyncTFTPRelay,
+    RouteFunction,
+    TFTPRelay,
+    Upstream,
+    UpstreamLike,
+    by_prefix,
+    by_subnet,
+)
 from tftp.server import (
     AsyncTFTPHandler,
     AsyncTFTPReader,
@@ -231,6 +241,30 @@ def relay() -> None:
     TFTPRelay(by_prefix(["windows/=wds.lan", ("", "default.lan")]))
     TFTPRelay("upstream.lan")
     TFTPRelay(3)  # type: ignore[arg-type]
+    plain: RouteFunction = by_prefix({"": "wds.lan"})
+    TFTPRelay(plain, max_sessions=None, on_session_end=lambda summary: None)
+    TFTPRelay(route_for_a_coroutine)  # type: ignore[arg-type]  # a coroutine route is AsyncTFTPRelay's
+
+
+async def route_for_a_coroutine(
+    request: RequestPacket, context: TFTPRequestContext
+) -> Optional[UpstreamLike]:
+    return by_prefix({"": "wds.lan"})(request, context)
+
+
+async def async_relay() -> None:
+    chosen: AsyncRouteFunction = route_for_a_coroutine
+    async with AsyncTFTPRelay(chosen, host="::", port=0, idle_timeout=5.0) as relay:
+        assert_type(relay.server_address, Optional[Tuple[Any, ...]])
+        assert_type(relay.stats_snapshot(), Dict[str, int])
+        assert_type(await relay.start(), AsyncTFTPRelay)
+        await relay.serve_forever()
+        relay.shutdown()
+        assert_type(await relay.wait_closed(), bool)
+        await relay.aclose()
+    AsyncTFTPRelay("upstream.lan")
+    AsyncTFTPRelay(3)  # type: ignore[arg-type]
+    AsyncTFTPRelay(by_prefix({"": "wds.lan"}))  # type: ignore[arg-type]  # a plain route is TFTPRelay's
 
 
 # -- handlers that compose, a policy copied, a result as a dictionary ---------------------------

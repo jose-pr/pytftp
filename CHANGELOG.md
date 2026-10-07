@@ -14,6 +14,12 @@ differs and "Fixed" the defects corrected on the way.
 
 ### Added
 
+- `tftp.relay.AsyncTFTPRelay` and `AsyncRouteFunction`: `TFTPRelay` on an asyncio event loop. A
+  sibling over the same rules, with the same arguments, ERROR texts, counters and bounds, run on
+  Windows' default Proactor loop as well; its route is an `async def` (a plain function is a
+  `TypeError` when the relay is built), and a route or a name lookup that outlasts `idle_timeout`
+  answers the client ERROR 0 "relay error". Stopping ends every transfer in flight with ERROR 0
+  "relay shutting down" to both ends. Importing `tftp.relay` still imports no asyncio.
 - `TransferResult.to_dict()` and `RelaySummary.to_dict()`: the JSON-ready objects the
   command line prints for `--json`, one per transfer.
 - `TFTPServerOptions.replace(**changes)`: a copy with the named fields changed, built

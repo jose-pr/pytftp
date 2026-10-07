@@ -31,6 +31,7 @@ LAZILY_IMPORTED = {
     "tftp.AsyncTFTPServer": "HostLike",
     "tftp.backends.UpstreamBackend": "HostLike",
     "tftp.relay.TFTPRelay": "HostLike",
+    "tftp.relay.AsyncTFTPRelay": "HostLike",
     "tftp.relay.Upstream": "HostLike",
     "tftp.relay.Upstream.parse": "HostLike",
     "tftp.relay.RouteTable": "HostLike",

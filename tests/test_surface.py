@@ -79,6 +79,7 @@ POSITIONAL = {
     "tftp.TFTPServer": 1,
     "tftp.AsyncTFTPServer": 1,
     "tftp.relay.TFTPRelay": 1,
+    "tftp.relay.AsyncTFTPRelay": 1,
     "tftp.TFTPClient": 2,
     "tftp.AsyncTFTPClient": 2,
     "tftp.server.PortRange": 2,

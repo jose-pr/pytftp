@@ -34,6 +34,36 @@ A route is any plain callable `route(request, context)` returning an upstream
 `context` has the client's address, and the address and interface the request
 arrived on.
 
+## On an event loop
+
+`AsyncTFTPRelay` is the same relay on asyncio: the same arguments, texts, counters and
+bounds, and a route that is a coroutine, so it can ask a database or an inventory service.
+A plain function is a `TypeError` when the relay is built, and a coroutine is one for
+`TFTPRelay`. The helpers above are plain functions: call one inside the coroutine.
+
+<!-- not run: it serves until cancelled, on port 69 -->
+```python
+import asyncio
+from tftp.relay import AsyncTFTPRelay, by_prefix
+
+windows = by_prefix({"windows/": "wds.lan"})
+
+async def route(request, context):
+    return windows(request, context) or "10.0.0.20"
+
+async def main():
+    async with AsyncTFTPRelay(route, on_session_end=print) as relay:
+        await relay.serve_forever()
+
+asyncio.run(main())
+```
+
+The route and the lookup of an upstream's name run in a task of the relay's, bounded
+together by `idle_timeout`, and count against `max_sessions` while they wait: a request
+that outlasts the bound is answered ERROR 0 and a request that finds the relay full is
+refused at once. Stopping the relay ends every transfer in flight, both ends getting
+ERROR 0 "relay shutting down".
+
 ## When does a relayed transfer end?
 
 A transparent relay cannot understand every extension, so it uses several

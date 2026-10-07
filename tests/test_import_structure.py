@@ -149,6 +149,9 @@ _LOCAL_IMPORTS = {
     ("server/__init__.py", "tftp.server._asyncio"): (
         "the asyncio twin is bound on first use, so importing the package does not import asyncio"
     ),
+    ("relay/__init__.py", "tftp.relay._asyncio"): (
+        "the asyncio twin is bound on first use, so importing the package does not import asyncio"
+    ),
     ("client/_sync.py", "tftp.path._local"): (
         "TFTPPath needs the optional path extra, so it is loaded only when a path is asked for"
     ),

@@ -84,6 +84,8 @@ class AsyncioService:
 
     _service = "server"
     _log = log
+    #: Datagrams taken from the listener per wakeup.
+    _drain = 64
     _listener: Any
 
     def _init_service(self) -> None:
@@ -245,7 +247,7 @@ class AsyncioService:
         async for datagram in endpoint.datagrams(_RECV_SIZE, on_error=_skippable):
             self._arrived(self._listener.arrival(datagram))
             # Whatever else is already queued, without another wait.
-            for _ in range(63):
+            for _ in range(self._drain - 1):
                 arrival = self._listener.recv()
                 if arrival is None:
                     break

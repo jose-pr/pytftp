@@ -61,6 +61,16 @@ def test_a_blocking_download_leaves_asyncio_alone(tmp_path):
     assert out == "5000 False"
 
 
+def test_a_blocking_relay_leaves_asyncio_alone():
+    out = run("""
+        import sys, tftp.relay
+        with tftp.relay.TFTPRelay("127.0.0.1", host="127.0.0.1", port=0) as relay:
+            relay.start()
+        print('asyncio' in sys.modules)
+        """)
+    assert out == "False"
+
+
 def test_a_blocking_server_leaves_asyncio_alone(tmp_path):
     out = run(
         """
@@ -82,6 +92,8 @@ def test_a_blocking_server_leaves_asyncio_alone(tmp_path):
         "from tftp import AsyncTFTPClient",
         "from tftp.client import AsyncTFTPClient",
         "from tftp.server import AsyncTFTPServer",
+        "from tftp.relay import AsyncTFTPRelay",
+        "import tftp.relay; tftp.relay.AsyncTFTPRelay",
     ],
 )
 def test_touching_an_asyncio_twin_imports_asyncio(statement):
@@ -90,12 +102,15 @@ def test_touching_an_asyncio_twin_imports_asyncio(statement):
 
 def test_a_twin_is_the_one_object_everywhere_and_is_bound_once():
     out = run("""
-        import sys, tftp, tftp.client, tftp.server
+        import sys, tftp, tftp.client, tftp.server, tftp.relay
         from tftp.client._asyncio import AsyncTFTPClient as defined
         from tftp.server._asyncio import AsyncTFTPServer as served
+        from tftp.relay._asyncio import AsyncTFTPRelay as relayed
         assert tftp.AsyncTFTPClient is defined is tftp.client.AsyncTFTPClient
         assert tftp.AsyncTFTPServer is served is tftp.server.AsyncTFTPServer
         assert "AsyncTFTPClient" in vars(tftp) and "AsyncTFTPServer" in vars(tftp.server)
+        assert tftp.relay.AsyncTFTPRelay is relayed and "AsyncTFTPRelay" in vars(tftp.relay)
+        assert "AsyncTFTPRelay" in tftp.relay.__all__ and "AsyncTFTPRelay" in dir(tftp.relay)
         assert "AsyncTFTPClient" in tftp.__all__ and "AsyncTFTPClient" in dir(tftp)
         assert "AsyncTFTPServer" in dir(tftp.server) and "AsyncTFTPClient" in dir(tftp.client)
         print("ok")
@@ -104,7 +119,7 @@ def test_a_twin_is_the_one_object_everywhere_and_is_bound_once():
 
 
 def test_an_unknown_name_is_still_an_attribute_error():
-    for module in ("tftp", "tftp.client", "tftp.server"):
+    for module in ("tftp", "tftp.client", "tftp.server", "tftp.relay"):
         out = run(
             "import %s as m\ntry:\n    m.NoSuchThing\nexcept AttributeError as exc:\n    print(exc)" % module
         )

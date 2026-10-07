@@ -41,7 +41,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `test_surface.py` | exactly what each public module exports, the positional arguments of each callable, and the three texts that say where a name lives |
 | `test_shipped_headers.py` | the shipped `AGENTS.md` headers: every public name is in the header of its module, every header is listed by the one above it, none is over its line limit, every signature a header prints is the live one |
 | `test_import_structure.py` | import direction (no module takes a name from the root), the 500-line module limit, the logger names, the public module set |
-| `test_import_asyncio.py` | importing the package and using its blocking half does not import `asyncio` |
+| `test_import_asyncio.py` | importing the package and using its blocking half (relay included) does not import `asyncio`; each asyncio twin is bound on first access |
 | `test_relay_session.py` | one relayed transfer's state: when it ends and what it reports, with numbers for time and tuples for addresses |
 | `test_hints.py` | every public annotation resolves with `typing.get_type_hints`, except the ones naming a netimps or pktcap type |
 | `test_exceptions.py` | the exception hierarchy and the one place each class is defined |
@@ -71,7 +71,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `integration/test_aio.py` | the asyncio client and server on a real loop |
 | `integration/test_protocol.py` | protocol behaviour on the wire with hand-driven raw sockets |
 | `integration/test_robustness.py` | duplicate OACKs, backoff, limits, stalls, broadcast, fuzzing |
-| `integration/test_lifecycle.py` | bind, serve, shutdown, wait_closed, close on each server; no thread or socket left behind |
+| `integration/test_lifecycle.py` | bind, serve, shutdown, wait_closed, close on each server and relay of both kinds; no thread or socket left behind; the asyncio relay's cancellation, shutdown with a route or a lookup pending, and threads |
 | `integration/test_handler_contracts.py` | the one hook contract of each server, every shape that moves data |
 | `integration/test_lossy_path.py` | both clients and the server through a path that loses, repeats, delays and reorders datagrams by a fixed seed |
 | `integration/test_refused_sends.py` | a send the host refuses ends that transfer, with the reason, on every server and client |

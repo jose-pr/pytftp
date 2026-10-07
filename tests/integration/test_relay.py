@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import io
 import os
@@ -16,16 +17,96 @@ import tftp
 from conftest import client_for, needs_ipv6
 from tftp import TFTPErrorCode, TFTPOpcode, decode
 from tftp.packet import encode_ack, encode_data, encode_error
-from tftp.relay import TFTPRelay, RouteTable, by_prefix, by_subnet
+from tftp.relay import AsyncTFTPRelay, TFTPRelay, RouteTable, by_prefix, by_subnet
 
-#: The relay drivers every end-to-end test below runs against.
-DRIVERS = ["blocking"]
+#: The relay drivers every end-to-end test below runs against: the blocking relay, and the asyncio
+#: relay on each kind of event loop the platform has.
+DRIVERS = ["blocking"] + (
+    ["asyncio-selector", "asyncio-proactor"] if sys.platform == "win32" else ["asyncio"]
+)
+
+
+def loop_of(driver):
+    """The event loop class an asyncio driver id names (``None``: the platform's default)."""
+    if sys.platform != "win32":
+        return None
+    return {"asyncio-selector": asyncio.SelectorEventLoop, "asyncio-proactor": asyncio.ProactorEventLoop}[
+        driver
+    ]
+
+
+class AsyncRelayThread:
+    """An ``AsyncTFTPRelay`` on its own loop in a thread, so a blocking test can drive it.
+
+    It reads like a started ``TFTPRelay``: ``server_address``, ``active_sessions``, ``stats``,
+    ``stats_snapshot()`` and ``close()``. A plain route is wrapped in an ``async def``.
+    """
+
+    def __init__(self, loop_factory, route, host, kwargs):
+        if callable(route):
+            plain = route
+
+            async def route(request, context):
+                return plain(request, context)
+
+        self.args = (route, host, kwargs)
+        self.loop_factory = loop_factory
+        self.ready = threading.Event()
+        self.error = None
+        self.thread = threading.Thread(target=self._run, name="async-relay", daemon=True)
+        self.thread.start()
+        assert self.ready.wait(10) and self.error is None, self.error
+
+    def _run(self):
+        loop = (self.loop_factory or asyncio.new_event_loop)()
+        try:
+            loop.run_until_complete(self._main())
+        except BaseException as exc:  # reported to the test through ``error``
+            self.error = exc
+            self.ready.set()
+        finally:
+            loop.run_until_complete(loop.shutdown_default_executor())
+            loop.close()
+
+    async def _main(self):
+        from tftp.relay import AsyncTFTPRelay
+
+        route, host, kwargs = self.args
+        self.loop = asyncio.get_running_loop()
+        self.stop = asyncio.Event()
+        async with AsyncTFTPRelay(route, host=host, port=0, **kwargs) as relay:
+            await relay.start()
+            self.relay = relay
+            self.ready.set()
+            await self.stop.wait()
+
+    @property
+    def server_address(self):
+        return self.relay.server_address
+
+    @property
+    def active_sessions(self):
+        return self.relay.active_sessions
+
+    @property
+    def stats(self):
+        return self.relay.stats
+
+    def stats_snapshot(self):
+        return self.relay.stats_snapshot()
+
+    def close(self):
+        self.loop.call_soon_threadsafe(self.stop.set)
+        self.thread.join(10)
+        assert not self.thread.is_alive() and self.error is None, self.error
 
 
 def _build(driver, route, host, kwargs):
     """A started relay of one driver: what the tests read is ``server_address``,
     ``active_sessions``, ``stats`` and ``stats_snapshot()``, and ``close()`` ends it."""
-    return TFTPRelay(route, host=host, port=0, **kwargs).start()
+    if driver == "blocking":
+        return TFTPRelay(route, host=host, port=0, **kwargs).start()
+    return AsyncRelayThread(loop_of(driver), route, host, kwargs)
 
 
 @pytest.fixture(params=DRIVERS)
@@ -412,31 +493,64 @@ def test_an_upstream_that_never_answers_holds_a_transfer_only_for_the_idle_timeo
                 time.sleep(0.2)
             assert ends and ends[0].reason == "idle"
             assert time.perf_counter() - began < 5
-    assert relay.active_sessions == 0
+    # A retry sent as the transfer ended starts another, which the same bound ends.
+    assert wait_for(lambda: relay.active_sessions == 0, timeout=5)
 
 
-def test_the_session_bound_defaults_to_250_everywhere():
-    assert TFTPRelay("127.0.0.1").max_sessions == 250
-    assert TFTPRelay("127.0.0.1", max_sessions=7).max_sessions == 7
-    unbounded = TFTPRelay("127.0.0.1", max_sessions=None).max_sessions
-    assert unbounded == (250 if sys.platform == "win32" else None)
+RELAYS = [TFTPRelay, AsyncTFTPRelay]
+
+
+@pytest.mark.parametrize("relay", RELAYS)
+def test_the_session_bound_defaults_to_250_everywhere(relay):
+    route = (lambda request, context: None) if relay is TFTPRelay else _async_none
+    assert relay("127.0.0.1").max_sessions == 250
+    assert relay(route, max_sessions=7).max_sessions == 7
+    assert relay(route, max_sessions=None).max_sessions == (250 if sys.platform == "win32" else None)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="select() limits the transfers a Windows loop watches")
-def test_more_than_255_sessions_is_refused_on_windows():
+@pytest.mark.parametrize("relay", RELAYS)
+def test_more_than_255_sessions_is_refused_on_windows(relay):
     with pytest.raises(ValueError, match="255"):
-        TFTPRelay("127.0.0.1", max_sessions=256)
+        relay("127.0.0.1", max_sessions=256)
 
 
-def test_a_coroutine_route_is_a_type_error_when_the_relay_is_built():
+async def _async_none(request, context):
+    return None
+
+
+class _Awaiting:
+    async def __call__(self, request, context):
+        return "127.0.0.1"
+
+
+def _kinds():
     async def route(request, context):
         return "127.0.0.1"
 
-    class Awaiting:
-        async def __call__(self, request, context):
-            return "127.0.0.1"
+    plain = [lambda request, context: "127.0.0.1", RouteTable([]), by_prefix({"": "127.0.0.1"})]
+    coroutine = [route, _Awaiting(), _Awaiting().__call__, functools.partial(route)]
+    return plain, coroutine
 
-    for made in (route, Awaiting(), Awaiting().__call__, functools.partial(route)):
+
+def test_a_coroutine_route_is_a_type_error_when_the_blocking_relay_is_built():
+    plain, coroutine = _kinds()
+    for made in coroutine:
         with pytest.raises(TypeError, match="plain"):
             TFTPRelay(made)
-    TFTPRelay(lambda request, context: "127.0.0.1")  # a plain callable is the contract
+    for made in plain:
+        TFTPRelay(made)
+
+
+def test_a_plain_route_is_a_type_error_when_the_asyncio_relay_is_built():
+    plain, coroutine = _kinds()
+    for made in plain:
+        with pytest.raises(TypeError, match="coroutine"):
+            AsyncTFTPRelay(made)
+    for made in coroutine:
+        AsyncTFTPRelay(made)
+    AsyncTFTPRelay("127.0.0.1")  # an upstream value is either relay's
+
+
+def test_the_two_relays_are_siblings():
+    assert not issubclass(AsyncTFTPRelay, TFTPRelay) and not issubclass(TFTPRelay, AsyncTFTPRelay)

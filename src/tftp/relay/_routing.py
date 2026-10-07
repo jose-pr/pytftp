@@ -1,14 +1,16 @@
 """Choosing an upstream server for a request.
 
-A route is any callable ``route(request, context) -> Upstream | None``.
-``None`` refuses the request (the client gets ERROR 2). These helpers build
-the common ones; :class:`RouteTable` combines them, first match wins.
+A route is any callable ``route(request, context) -> Upstream | None``, plain
+for :class:`TFTPRelay` and an ``async def`` for :class:`AsyncTFTPRelay`. ``None``
+refuses the request (the client gets ERROR 2). These helpers build the common
+(plain) ones, which a coroutine route calls in one line; :class:`RouteTable`
+combines them, first match wins.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterable, Optional, Sequence, Tuple, Union
 
 if TYPE_CHECKING:
     from netimps import HostLike, Interface, IPNetworkLike
@@ -17,7 +19,15 @@ from ..exceptions import TFTPValueError
 from ..packet._codec import RequestPacket
 from ..server._handler import TFTPRequestContext
 
-__all__ = ["Upstream", "RouteTable", "by_subnet", "by_prefix", "by_interface", "RouteFunction"]
+__all__ = [
+    "Upstream",
+    "RouteTable",
+    "by_subnet",
+    "by_prefix",
+    "by_interface",
+    "RouteFunction",
+    "AsyncRouteFunction",
+]
 
 
 def _items(table: Any) -> Iterable[Tuple[Any, Any]]:
@@ -78,6 +88,7 @@ class Upstream:
 
 UpstreamLike = Union[Upstream, "HostLike", Tuple["HostLike", int]]
 RouteFunction = Callable[[RequestPacket, TFTPRequestContext], Optional[UpstreamLike]]
+AsyncRouteFunction = Callable[[RequestPacket, TFTPRequestContext], Awaitable[Optional[UpstreamLike]]]
 
 
 def by_subnet(

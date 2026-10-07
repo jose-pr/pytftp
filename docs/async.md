@@ -1,6 +1,7 @@
 # asyncio
 
-`AsyncTFTPClient` and `AsyncTFTPServer` run the same engine on an event loop.
+`AsyncTFTPClient` and `AsyncTFTPServer` run the same engine on an event loop, and
+`AsyncTFTPRelay` relays between them (see [Relaying](relay.md)).
 
 <!-- not run: the example streams into a sink the reader supplies -->
 ```python

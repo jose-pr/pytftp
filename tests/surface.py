@@ -86,6 +86,8 @@ EXPECTED = {
         "ThreadedHandler",
     ],
     "tftp.relay": [
+        "AsyncRouteFunction",
+        "AsyncTFTPRelay",
         "RelaySummary",
         "RouteFunction",
         "RouteTable",

@@ -52,7 +52,8 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
   gateway, and a terminating proxy to another TFTP server. Slow backends apply
   backpressure instead of blocking other transfers.
 - **Transparent relay** — forwards requests byte for byte to upstream servers
-  (routed by subnet, filename or interface), so unknown extensions still work.
+  (routed by subnet, filename or interface), so unknown extensions still work; blocking
+  or on asyncio, with coroutine routes.
 - **Capture and debugging** — trace every datagram from the client, server or
   relay; write Wireshark-readable pcap or pcapng; read pcap/pcapng files or a
   live `tcpdump` pipe (both through [pktcap](https://github.com/jose-pr/pktcap)),
@@ -214,7 +215,7 @@ pytftp replay boot.pcapng 192.0.2.1 --speed 10
 | `tftp.client` | `TFTPClient`, `AsyncTFTPClient`, `download`, `upload` |
 | `tftp.server` | `TFTPServer`, `AsyncTFTPServer`, `TFTPServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
 | `tftp.backends` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` (proxy), `Pipe` |
-| `tftp.relay` | `TFTPRelay` and routing helpers |
+| `tftp.relay` | `TFTPRelay`, `AsyncTFTPRelay` and routing helpers |
 | `tftp.capture` | trace events, `trace_to`, `FlowTracker`, `analyze`, filters, `replay_transfers`, and TFTP as a pktcap layer (`TFTPLayer`, `register_tftp_dissector`); reading and writing a capture are pktcap's |
 | `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |

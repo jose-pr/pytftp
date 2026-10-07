@@ -1,7 +1,7 @@
 # `tftp.relay` — public API header
 
-Header-file-style reference for the `tftp.relay` package: the transparent relay
-and its routing helpers. Every public export with its signature, arguments,
+Header-file-style reference for the `tftp.relay` package: the transparent relay,
+its asyncio twin and its routing helpers. Every public export with its signature, arguments,
 contract and gotchas, so the package can be used without reading its source. It
 ships inside the package and is self-contained; the top header is
 `tftp/AGENTS.md`. Development documentation lives with the source at
@@ -59,6 +59,46 @@ use `UpstreamBackend` (a terminating proxy) instead.
   `server_address` (`None` before `bind()`), `has_pktinfo`, `active_sessions`.
 
 
+## Asyncio relay (`tftp.relay`)
+
+```python
+AsyncTFTPRelay(
+    route, *, host=None, port=69, idle_timeout=30.0, max_duration=3600.0, linger=2.0,
+    upstream_src=None, limits=None, max_sessions=250, ignore_broadcast=True,
+    reply_from_request_address=True, trace=None, on_session_end=None, port_range=None,
+    interface=None
+)
+```
+
+`AsyncTFTPRelay` — `TFTPRelay` on an asyncio event loop, a sibling over the same rules
+(never a subclass of it): the same arguments and defaults, the same forwarding, ERROR
+texts, counters, `RelaySummary` and bounds. It is bound on first access
+(`tftp.relay.AsyncTFTPRelay`), so importing `tftp.relay` imports no asyncio. What differs:
+
+- `route` is an upstream value (either relay takes one) or an **`async def`**
+  `route(request, context) -> upstream | None` (`AsyncRouteFunction`); a plain function is
+  a `TypeError` when the relay is built, as a coroutine function is for `TFTPRelay`. The
+  helpers below are plain: call one inside a coroutine route (`by_prefix(table)(request,
+  context)`).
+- The route, then the lookup of an upstream *name* (in the loop's executor; an address
+  needs none), are bounded together by `idle_timeout` and count against `max_sessions`
+  while they wait: one that outlasts it answers the client ERROR 0 `"relay error"` (counted
+  `refused`, logged at INFO); a request that finds the relay full gets `"relay busy"` at
+  once.
+- Lifecycle as for `AsyncTFTPServer`: `bind()` and `shutdown()` are plain (`shutdown` is
+  safe from any thread), `await start()` returns the relay once listening, `await
+  serve_forever()`, `await wait_closed(timeout=None) -> bool`, `await aclose()` (final,
+  repeatable), `async with` (binds on entry, closes on exit); `start()` or `serve_forever()`
+  while serving or after `aclose()` is a `RuntimeError`. Stopping, by `shutdown()`,
+  `aclose()` or cancelling `serve_forever()`, aborts what is in flight: both ends of each
+  transfer get ERROR 0 `"relay shutting down"` (reason `"shutdown"`), a client still
+  waiting for its route is answered the same, and every task and socket is gone when it
+  returns. `server_address`, `has_pktinfo`, `active_sessions`, `stats` and
+  `stats_snapshot()` are `TFTPRelay`'s.
+- Sockets are read through transports that only receive and written on the socket itself,
+  so it runs on Windows' default Proactor loop too. No thread is started on a selector
+  loop; the Proactor loop runs netimps' read-notify thread for the listener until `aclose()`.
+
 ## Routing (`tftp.relay`)
 
 ```python
@@ -91,5 +131,6 @@ match wins).
 | Name | Meaning |
 | --- | --- |
 | `UpstreamLike` | what a route may return: an `Upstream`, a host, or `(host, port)` |
-| `RouteFunction` | the type of a `route(request, context)` callable |
+| `RouteFunction` | the type of a plain `route(request, context)` callable |
+| `AsyncRouteFunction` | the type of an `async def` `route(request, context)`: what `AsyncTFTPRelay` takes |
 | `RelaySummary` | what `on_session_end` receives, one per relayed transfer (fields above); `to_dict()` is the command's `--json` object |

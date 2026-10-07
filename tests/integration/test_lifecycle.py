@@ -24,7 +24,7 @@ import pytest
 import tftp
 from tftp import AsyncTFTPClient, AsyncTFTPServer, TFTPServer
 from tftp.backends import MemoryBackend
-from tftp.relay import TFTPRelay
+from tftp.relay import AsyncTFTPRelay, TFTPRelay
 from tftp.server import ThreadedHandler
 
 WAIT = 5.0  # a second of margin over what any step here takes on a loaded runner
@@ -397,13 +397,29 @@ async def waits(awaitable, what, seconds=WAIT):
         pytest.fail("%s did not finish within %s s" % (what, seconds))
 
 
-def _async_server(**kwargs):
+def _async_server(port=0, **kwargs):
     kwargs.setdefault("timeout", 0.5)
-    return AsyncTFTPServer(ThreadedHandler(MemoryBackend({"f": b"data"})), host="127.0.0.1", port=0, **kwargs)
+    return AsyncTFTPServer(
+        ThreadedHandler(MemoryBackend({"f": b"data"})), host="127.0.0.1", port=port, **kwargs
+    )
 
 
-def test_the_async_lifecycle_names():
-    server = _async_server()
+async def _no_route(request, context):
+    return ("127.0.0.1", 9)
+
+
+def _async_relay(port=0, **kwargs):
+    return AsyncTFTPRelay(_no_route, host="127.0.0.1", port=port, **kwargs)
+
+
+@pytest.fixture(params=[_async_server, _async_relay], ids=["server", "relay"])
+def make_async(request):
+    """Builds an asyncio server or an asyncio relay; each test closes what it builds."""
+    return request.param
+
+
+def test_the_async_lifecycle_names(make_async):
+    server = make_async()
     assert not inspect.iscoroutinefunction(server.bind)
     assert not inspect.iscoroutinefunction(server.shutdown)
     for coroutine in ("start", "serve_forever", "wait_closed", "aclose"):
@@ -412,8 +428,8 @@ def test_the_async_lifecycle_names():
         assert not hasattr(server, gone), gone
 
 
-def test_the_async_constructor_binds_nothing():
-    server = _async_server()
+def test_the_async_constructor_binds_nothing(make_async):
+    server = make_async()
     assert server.server_address is None and server.has_pktinfo is None
     server.bind()
     address = server.server_address
@@ -451,9 +467,9 @@ def test_async_start_serves_and_aclose_releases_the_port(loop_factory, caplog):
 
 @loops
 @pytest.mark.parametrize("served_first", [False, True], ids=["never_served", "served"])
-def test_async_start_after_aclose_raises(loop_factory, served_first):
+def test_async_start_after_aclose_raises(loop_factory, served_first, make_async):
     async def main():
-        server = _async_server()
+        server = make_async()
         if served_first:
             await waits(server.start(), "start")
         await waits(server.aclose(), "aclose")
@@ -467,9 +483,9 @@ def test_async_start_after_aclose_raises(loop_factory, served_first):
 
 
 @loops
-def test_a_second_async_start_raises_and_aclose_returns(loop_factory):
+def test_a_second_async_start_raises_and_aclose_returns(loop_factory, make_async):
     async def main():
-        server = _async_server()
+        server = make_async()
         await waits(server.start(), "start")
         for call in (server.start, server.serve_forever):
             with pytest.raises(RuntimeError, match="already serving"):
@@ -480,9 +496,9 @@ def test_a_second_async_start_raises_and_aclose_returns(loop_factory):
 
 
 @loops
-def test_aclose_from_another_task_ends_serve_forever_without_an_error(loop_factory):
+def test_aclose_from_another_task_ends_serve_forever_without_an_error(loop_factory, make_async):
     async def main():
-        server = _async_server()
+        server = make_async()
         server.bind()
 
         async def closer():
@@ -498,9 +514,9 @@ def test_aclose_from_another_task_ends_serve_forever_without_an_error(loop_facto
 
 
 @loops
-def test_shutdown_ends_serve_forever_and_the_context_exits(loop_factory):
+def test_shutdown_ends_serve_forever_and_the_context_exits(loop_factory, make_async):
     async def main():
-        async with _async_server() as server:
+        async with make_async() as server:
             asyncio.get_running_loop().call_later(0.2, server.shutdown)
             await waits(server.serve_forever(), "serve_forever")
             assert await waits(server.wait_closed(), "wait_closed") is True
@@ -509,9 +525,9 @@ def test_shutdown_ends_serve_forever_and_the_context_exits(loop_factory):
 
 
 @loops
-def test_shutdown_from_another_thread_ends_serve_forever(loop_factory):
+def test_shutdown_from_another_thread_ends_serve_forever(loop_factory, make_async):
     async def main():
-        async with _async_server() as server:
+        async with make_async() as server:
             timer = threading.Timer(0.2, server.shutdown)
             timer.name = "tftp-test-timer"
             timer.start()
@@ -524,9 +540,9 @@ def test_shutdown_from_another_thread_ends_serve_forever(loop_factory):
 
 
 @loops
-def test_wait_closed_times_out_while_serving_and_aclose_is_repeatable(loop_factory):
+def test_wait_closed_times_out_while_serving_and_aclose_is_repeatable(loop_factory, make_async):
     async def main():
-        server = _async_server()
+        server = make_async()
         await waits(server.start(), "start")
         assert await waits(server.wait_closed(0.05), "wait_closed") is False
         await asyncio.gather(waits(server.aclose(), "first aclose"), waits(server.aclose(), "second aclose"))
@@ -536,13 +552,11 @@ def test_wait_closed_times_out_while_serving_and_aclose_is_repeatable(loop_facto
 
 
 @loops
-def test_async_start_raises_what_bind_raised_and_leaves_nothing(loop_factory):
+def test_async_start_raises_what_bind_raised_and_leaves_nothing(loop_factory, make_async):
     async def main():
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as held:
             held.bind(("127.0.0.1", 0))
-            server = AsyncTFTPServer(
-                ThreadedHandler(MemoryBackend({})), host="127.0.0.1", port=held.getsockname()[1], timeout=0.5
-            )
+            server = make_async(port=held.getsockname()[1])
             with pytest.raises(OSError):
                 await waits(server.start(), "start")
             assert server.server_address is None
@@ -554,9 +568,9 @@ def test_async_start_raises_what_bind_raised_and_leaves_nothing(loop_factory):
 
 
 @loops
-def test_a_stopped_async_server_serves_again_until_it_is_closed(loop_factory):
+def test_a_stopped_async_server_serves_again_until_it_is_closed(loop_factory, make_async):
     async def main():
-        server = _async_server()
+        server = make_async()
         for _ in range(2):
             await waits(server.start(), "start")
             server.shutdown()
@@ -564,3 +578,278 @@ def test_a_stopped_async_server_serves_again_until_it_is_closed(loop_factory):
         await waits(server.aclose(), "aclose")
 
     run(main, loop_factory)
+
+
+# -- the asyncio relay: what its own loop adds ----------------------------------------------------------
+
+
+class _Peer(asyncio.DatagramProtocol):
+    """A raw UDP socket read on the loop under test: datagrams queue, and ``send`` goes out on the socket."""
+
+    @classmethod
+    async def open(cls):
+        peer = cls()
+        peer.queue = asyncio.Queue()
+        peer.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        peer.sock.bind(("127.0.0.1", 0))
+        peer.sock.setblocking(False)
+        peer.address = peer.sock.getsockname()
+        peer.transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+            lambda: peer, sock=peer.sock
+        )
+        return peer
+
+    def datagram_received(self, data, addr):
+        self.queue.put_nowait((data, addr))
+
+    def error_received(self, exc):
+        pass
+
+    def send(self, data, to):
+        self.sock.sendto(data, to)
+
+    async def recv(self, what="a datagram"):
+        return await waits(self.queue.get(), what)
+
+    def close(self):
+        self.transport.abort()
+
+
+def _request(name="f"):
+    return tftp.packet.encode_request(tftp.TFTPOpcode.RRQ, name)
+
+
+def _error(datagram):
+    packet = tftp.decode(datagram)
+    return packet.code, packet.message
+
+
+async def _in_flight(relay, upstream, client):
+    """Start one transfer through ``relay`` and return its two relay-side addresses, with DATA 1 delivered."""
+    client.send(_request(), relay.server_address)
+    _, up_tid = await upstream.recv("the relayed request")
+    upstream.send(tftp.packet.encode_data(1, b"x" * 512), up_tid)
+    data, down_tid = await client.recv("DATA 1")
+    assert tftp.decode(data).block == 1
+    return down_tid, up_tid
+
+
+def _only_the_current_task():
+    """No task but this one is left: ``run`` wraps ``main`` in a task of its own where ``wait_for`` does."""
+    others = asyncio.all_tasks() - {asyncio.current_task()}
+    return all(task.get_coro().__name__ == "bounded" for task in others)
+
+
+@loops
+def test_cancelling_serve_forever_ends_each_transfer_in_flight(loop_factory):
+    async def main():
+        ends = []
+        upstream, client = await _Peer.open(), await _Peer.open()
+        relay = AsyncTFTPRelay(upstream.address, host="127.0.0.1", port=0, on_session_end=ends.append)
+        relay.bind()
+        serving = asyncio.ensure_future(relay.serve_forever())
+        try:
+            await _in_flight(relay, upstream, client)
+            assert relay.active_sessions == 1
+            serving.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await serving
+            assert _error((await client.recv("the client's ERROR"))[0]) == (0, "relay shutting down")
+            assert _error((await upstream.recv("the upstream's ERROR"))[0]) == (0, "relay shutting down")
+            assert [e.reason for e in ends] == ["shutdown"] and relay.active_sessions == 0
+        finally:
+            await waits(relay.aclose(), "aclose")
+            client.close()
+            upstream.close()
+        await asyncio.sleep(0)
+        assert _only_the_current_task()
+
+    run(main, loop_factory)
+
+
+@loops
+def test_aclose_with_a_transfer_in_flight_ends_it_and_frees_the_port(loop_factory):
+    async def main():
+        ends = []
+        upstream, client = await _Peer.open(), await _Peer.open()
+        relay = AsyncTFTPRelay(upstream.address, host="127.0.0.1", port=0, on_session_end=ends.append)
+        await waits(relay.start(), "start")
+        port = relay.server_address[1]
+        await _in_flight(relay, upstream, client)
+        await waits(relay.aclose(), "aclose")
+        assert _error((await client.recv("the client's ERROR"))[0]) == (0, "relay shutting down")
+        assert _error((await upstream.recv("the upstream's ERROR"))[0]) == (0, "relay shutting down")
+        assert [e.reason for e in ends] == ["shutdown"] and relay.active_sessions == 0
+        client.close()
+        upstream.close()
+        await asyncio.sleep(0)
+        assert _only_the_current_task()
+        return port
+
+    _the_port_is_free(run(main, loop_factory))
+
+
+@loops
+def test_a_relayed_transfer_starts_no_thread_but_the_proactor_loops_notifier(loop_factory):
+    seen = {}
+
+    async def main():
+        upstream, client = await _Peer.open(), await _Peer.open()
+        before = {t.name for t in threading.enumerate()}
+        relay = AsyncTFTPRelay(upstream.address, host="127.0.0.1", port=0, linger=0.1)
+        await waits(relay.start(), "start")
+        await _in_flight(relay, upstream, client)
+        seen["during"] = sorted({t.name for t in threading.enumerate()} - before)
+        await waits(relay.aclose(), "aclose")
+        seen["after"] = sorted({t.name for t in threading.enumerate()} - before)
+        client.close()
+        upstream.close()
+
+    run(main, loop_factory)
+    proactor = loop_factory is not None and loop_factory.__name__ == "ProactorEventLoop"
+    assert seen["during"] == (["netimps-readnotify"] if proactor else [])
+    assert seen["after"] == []
+
+
+async def _started_relay(route, **kwargs):
+    relay = AsyncTFTPRelay(route, host="127.0.0.1", port=0, **kwargs)
+    await waits(relay.start(), "start")
+    return relay
+
+
+def _refusing(request, context):
+    raise tftp.TFTPError(tftp.TFTPErrorCode.ACCESS_VIOLATION, "no")
+
+
+@loops
+def test_an_async_route_that_awaits_relays_and_a_refusing_one_is_answered(loop_factory):
+    async def main():
+        upstream, client = await _Peer.open(), await _Peer.open()
+
+        async def awaiting(request, context):
+            await asyncio.sleep(0.05)
+            return upstream.address
+
+        relay = await _started_relay(awaiting)
+        await _in_flight(relay, upstream, client)
+        await waits(relay.aclose(), "aclose")
+
+        for plain, expected in ((lambda request, context: None, (2, "no route")), (_refusing, (2, "no"))):
+
+            async def route(request, context, plain=plain):
+                return plain(request, context)
+
+            relay = await _started_relay(route)
+            asker = await _Peer.open()
+            asker.send(_request(), relay.server_address)
+            assert _error((await asker.recv("the refusal"))[0]) == expected
+            await waits(relay.aclose(), "aclose")
+            asker.close()
+        client.close()
+        upstream.close()
+
+    run(main, loop_factory)
+
+
+@loops
+def test_a_route_that_never_returns_is_bounded_by_the_idle_timeout_and_counted(loop_factory, caplog):
+    async def main():
+        upstream, first, second, third = [await _Peer.open() for _ in range(4)]
+        calls = []
+
+        async def route(request, context):
+            calls.append(context.peer)
+            if len(calls) == 1:
+                await asyncio.Event().wait()  # never
+            return upstream.address
+
+        relay = await _started_relay(route, idle_timeout=1.5, max_sessions=1)
+        began = time.perf_counter()
+        first.send(_request(), relay.server_address)
+        while not calls:
+            await asyncio.sleep(0.01)
+        second.send(_request(), relay.server_address)  # the waiting route holds the one place
+        assert _error((await second.recv("the busy answer"))[0]) == (0, "relay busy")
+        assert time.perf_counter() - began < 1.0  # at once, not after the bound
+        assert _error((await first.recv("the route's timeout"))[0]) == (0, "relay error")
+        assert time.perf_counter() - began < 5.0
+        assert relay.stats["refused"] == 2 and relay.active_sessions == 0
+        third.send(_request(), relay.server_address)
+        await upstream.recv("the third request, relayed")  # admitted: the place is free again
+        await waits(relay.aclose(), "aclose")
+        for peer in (upstream, first, second, third):
+            peer.close()
+        await asyncio.sleep(0)
+        assert _only_the_current_task()
+
+    with caplog.at_level("INFO", logger="tftp.relay"):
+        run(main, loop_factory)
+    assert [
+        r
+        for r in caplog.records
+        if r.name == "tftp.relay" and r.levelno == logging.INFO and "no upstream" in r.getMessage()
+    ]
+
+
+@loops
+def test_aclose_while_a_route_is_pending_answers_the_client_and_leaves_no_task(loop_factory):
+    async def main():
+        client = await _Peer.open()
+        started = asyncio.Event()
+        cancelled = []
+
+        async def route(request, context):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.append(True)
+                raise
+
+        relay = await _started_relay(route)
+        client.send(_request(), relay.server_address)
+        await waits(started.wait(), "the route to start")
+        await waits(relay.aclose(), "aclose")
+        assert _error((await client.recv("the shutdown answer"))[0]) == (0, "relay shutting down")
+        assert cancelled == [True] and relay.active_sessions == 0
+        client.close()
+        await asyncio.sleep(0)
+        assert _only_the_current_task()
+
+    run(main, loop_factory)
+
+
+@loops
+def test_aclose_while_a_name_is_being_looked_up_leaves_no_task_and_no_socket(loop_factory, monkeypatch):
+    import netimps
+
+    release = threading.Event()
+    asked = threading.Event()
+
+    real = netimps.Host.ip
+
+    def slow_lookup(self):
+        if self.is_address:
+            return real(self)
+        asked.set()
+        release.wait(WAIT)
+        return None
+
+    monkeypatch.setattr(netimps.Host, "ip", slow_lookup)
+
+    async def main():
+        client = await _Peer.open()
+        relay = await _started_relay("no-such-host.example")
+        client.send(_request(), relay.server_address)
+        await waits(asyncio.get_running_loop().run_in_executor(None, asked.wait, WAIT), "the lookup to start")
+        await waits(relay.aclose(), "aclose")
+        release.set()
+        assert _error((await client.recv("the shutdown answer"))[0]) == (0, "relay shutting down")
+        client.close()
+        await asyncio.sleep(0)
+        assert _only_the_current_task()
+
+    try:
+        run(main, loop_factory)
+    finally:
+        release.set()
