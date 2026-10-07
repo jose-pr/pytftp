@@ -58,7 +58,7 @@ that implements it; those headers ship in the package, at the paths below
 | `tftp.client` | `AsyncSink`, `AsyncSource`, `AsyncTFTPClient`, `MODES`, `ProgressFunction`, `RemoteStat`, `SinkLike`, `SourceLike`, `TFTPClient`, `download`, `upload` |
 | `tftp.server` | `AsyncTFTPHandler`, `AsyncTFTPReader`, `AsyncTFTPServer`, `AsyncTFTPWriter`, `AtomicWriter`, `PortRange`, `PortRangeLike`, `TFTPChunkReader`, `TFTPHandler`, `TFTPReader`, `TFTPRequestContext`, `TFTPServer`, `TFTPServerLimits`, `TFTPStats`, `TFTPWriter`, `ThreadedHandler` |
 | `tftp.relay` | `AsyncRouteFunction`, `AsyncTFTPRelay`, `RelaySummary`, `RouteFunction`, `RouteTable`, `TFTPRelay`, `Upstream`, `UpstreamLike`, `by_interface`, `by_prefix`, `by_subnet` |
-| `tftp.capture` | `Analysis`, `CapturedTransfer`, `DatagramLike`, `DatagramWriter`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `ReplayedTransfers`, `TFTPLayer`, `analyze`, `combine_hooks`, `compile_filter`, `dissect_tftp`, `new_session_id`, `register_tftp_dissector`, `replay_transfers`, `summarize`, `trace_to` |
+| `tftp.capture` | `Analysis`, `CapturedTransfer`, `DatagramLike`, `DatagramWriter`, `Endpoint`, `EventPredicate`, `FILTER_KEYS`, `FlowTracker`, `PacketEvent`, `ReplayedTransfers`, `TFTPLayer`, `analyze`, `combine_hooks`, `compile_filter`, `dissect_tftp`, `new_session_id`, `pktcap_plugin`, `register_tftp_dissector`, `replay_transfers`, `summarize`, `trace_to` |
 | `tftp.options` | `BUILTIN_OPTIONS`, `Blksize2Option`, `BlksizeOption`, `ClientOptionContext`, `CookieOption`, `DEFAULT_BLKSIZE`, `DEFAULT_REGISTRY`, `EXTENSION_OPTIONS`, `LISTING_OPTIONS`, `MAX_BLKSIZE`, `MAX_UTIMEOUT`, `MAX_WINDOWSIZE`, `MIN_BLKSIZE`, `MIN_UTIMEOUT`, `MstfwindowOption`, `Negotiated`, `OptionHandler`, `OptionRegistry`, `PROFILES`, `Profile`, `RolloverOption`, `STANDARD_OPTIONS`, `SUPPORTED_OPTIONS`, `ServerOptionContext`, `TFTPServerOptions`, `TimeoutOption`, `TsizeOption`, `UtimeoutOption`, `WindowsizeOption`, `XListOption`, `XMtimeOption`, `accept_oack`, `negotiate`, `refuse`, `register_option`, `request_options` |
 | `tftp.packet` | `AckPacket`, `DataPacket`, `ErrorPacket`, `FILENAME_ENCODING`, `OptionAckPacket`, `RequestPacket`, `TFTPErrorCode`, `TFTPOpcode`, `TFTPPacket`, `decode`, `encode_ack`, `encode_data`, `encode_error`, `encode_oack`, `encode_request` |
 | `tftp.backends` | `CaseInsensitive`, `FilesystemBackend`, `HTTPBackend`, `MemoryBackend`, `PerClient`, `Pipe`, `Remap`, `UpstreamBackend`, `normalize_name` |
@@ -304,8 +304,8 @@ the others in `tftp/cli/AGENTS.md`, through its argument parser.
   command and by `tftp.path` only.
 - **A signature that names a netimps type** (`HostLike`, `IPNetworkLike`,
   `Interface`) cannot be resolved by `typing.get_type_hints` at run time, because
-  `netimps` is imported lazily; so are the signatures of `dissect_tftp` and
-  `register_tftp_dissector`, which name the `pktcap` module. Every other public
+  `netimps` is imported lazily; so are the signatures of `dissect_tftp`,
+  `register_tftp_dissector` and `pktcap_plugin`, which name the `pktcap` module. Every other public
   annotation resolves on every supported Python. `host=` of the servers and the
   relay is a netimps `HostLike`: text, an `ipaddress` address or interface, a
   `netimps.Host` or `FQDN`; an `int` or `bytes` address is a `TypeError`.

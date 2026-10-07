@@ -10,7 +10,8 @@ Three sources of :class:`PacketEvent`:
 - live capture on Linux (``pktcap.sniff``).
 
 :func:`dissect_tftp` is TFTP as a pktcap layer (:class:`TFTPLayer`), registered by
-:func:`register_tftp_dissector` and by nothing else.
+:func:`register_tftp_dissector` and by nothing else; :func:`pktcap_plugin` is the hook that
+lets pktcap load it by name, with the filter keys ``op``, ``file``, ``block`` and ``code``.
 
 :func:`replay_transfers` asks a server the caller names for each transfer a capture holds again.
 
@@ -27,6 +28,7 @@ from ._events import PacketEvent, new_session_id, summarize
 from ._filters import FILTER_KEYS, EventPredicate, compile_filter
 from ._flows import CapturedTransfer, DatagramLike, Endpoint, FlowTracker
 from ._hook import DatagramWriter, combine_hooks, trace_to
+from ._plugin import pktcap_plugin
 from ._replay import ReplayedTransfers, replay_transfers
 
 __all__ = [
@@ -46,6 +48,7 @@ __all__ = [
     "TFTPLayer",
     "dissect_tftp",
     "register_tftp_dissector",
+    "pktcap_plugin",
     "ReplayedTransfers",
     "replay_transfers",
     "Analysis",

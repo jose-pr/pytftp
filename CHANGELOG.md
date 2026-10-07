@@ -35,6 +35,12 @@ differs and "Fixed" the defects corrected on the way.
   gives a `TFTPLayer` on the datagrams to the request port, `pktcap.frame_record` writes
   it and the filter `proto=tftp` selects it. Nothing registers on import; the call registers
   in the registry given, or in pktcap's default one.
+- `tftp.capture.pktcap_plugin(registry)`: the hook pktcap loads by name, so `PKTCAP_PLUGINS=tftp.capture
+  pktcap convert -i boot.pcap -f "op=RRQ and file=*.efi"` filters TFTP with the keys `op`, `file`, `block`
+  and `code` (`op` refuses a name that is none of the six opcodes when the filter is compiled). It
+  registers the layer and `register_tftp_dissector(registry)` and, when that raises, nothing. Importing
+  `tftp.capture` still imports neither pktcap nor asyncio and registers nothing. `pytftp capture
+  --filter` is unchanged.
 - `tftp.capture.replay_transfers(source, host, port=69, *, ports, writes, speed, max_delay, limit,
   timeout, retries)` and `pytftp replay FILE HOST`: ask a server you name for each transfer a
   capture holds again, paced by the capture's own times (`speed`, `max_delay` and `limit` as
@@ -62,6 +68,9 @@ differs and "Fixed" the defects corrected on the way.
 
 ### Changed
 
+- **`compile_filter` refuses a `block` or `code` outside 0 to 65535** (both are two octets on the wire)
+  with `pktcap.CaptureFilterError`, where it took any integer and matched nothing; the same check
+  serves the `pktcap_plugin` keys, so the two filters cannot disagree.
 - **The `cli` extra needs `duho` 0.7**: `duho>=0.7.0,<0.8`, where it was `>=0.6.0,<0.7`. The
   `pytftp` command, its options and its output are the same.
 - **`AsyncTFTPClient` reports an expired `deadline` in the first wait as `TFTPClient` does.** A

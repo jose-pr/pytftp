@@ -40,6 +40,7 @@ LAZILY_IMPORTED = {
     "tftp.relay.by_interface": "Interface",
     "tftp.capture.dissect_tftp": "pktcap",
     "tftp.capture.register_tftp_dissector": "pktcap",
+    "tftp.capture.pktcap_plugin": "pktcap",
 }
 
 

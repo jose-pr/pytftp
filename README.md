@@ -208,6 +208,14 @@ tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
 pytftp replay boot.pcapng 192.0.2.1 --speed 10
 ```
 
+pktcap's own commands read TFTP too once they are told to load it: `tftp.capture` is a pktcap plugin
+that adds the filter keys `op`, `file`, `block` and `code`. Only the datagrams to or from the request
+port carry the layer, so a transfer is followed with `pytftp capture`.
+
+```bash
+PKTCAP_PLUGINS=tftp.capture pktcap convert -i boot.pcapng -f "op=RRQ and file=*.efi"
+```
+
 ## API overview
 
 | Module | Purpose |
@@ -216,7 +224,7 @@ pytftp replay boot.pcapng 192.0.2.1 --speed 10
 | `tftp.server` | `TFTPServer`, `AsyncTFTPServer`, `TFTPServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
 | `tftp.backends` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` (proxy), `Pipe` |
 | `tftp.relay` | `TFTPRelay`, `AsyncTFTPRelay` and routing helpers |
-| `tftp.capture` | trace events, `trace_to`, `FlowTracker`, `analyze`, filters, `replay_transfers`, and TFTP as a pktcap layer (`TFTPLayer`, `register_tftp_dissector`); reading and writing a capture are pktcap's |
+| `tftp.capture` | trace events, `trace_to`, `FlowTracker`, `analyze`, filters, `replay_transfers`, and TFTP as a pktcap layer (`TFTPLayer`, `register_tftp_dissector`, `pktcap_plugin`); reading and writing a capture are pktcap's |
 | `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver`/`Requester` engine |

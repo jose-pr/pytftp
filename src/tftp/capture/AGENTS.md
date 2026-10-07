@@ -186,6 +186,41 @@ register_tftp_dissector(registry=None, *, ports=(69,))
   request port that is not TFTP is therefore a frame with that `error` and no
   `TFTPLayer`). It passes `pktcap.check_dissector`.
 
+## TFTP in pktcap's commands (`tftp.capture`)
+
+```python
+pktcap_plugin(registry)
+```
+
+**`pktcap_plugin(registry) -> None`** — the hook pktcap loads by name: `PKTCAP_PLUGINS=tftp.capture
+pktcap convert -i boot.pcap -f "op=RRQ and file=*.efi"` (or `--plugins tftp.capture`, or a
+`plugins` key in pktcap's configuration file). It declares `TFTPLayer` in `registry` (a
+`pktcap.DissectorRegistry`) with the filter keys below, then calls `register_tftp_dissector(registry)`;
+when that raises, the layer is taken out again and the error goes on, so a failed call registers
+nothing (`ValueError` for a layer name or a port that is taken). Importing `tftp.capture` imports
+neither pktcap nor asyncio and registers nothing.
+
+| Key | Matches | Refused when the filter is compiled |
+| --- | --- | --- |
+| `op` | the opcode name: `RRQ`, `WRQ`, `DATA`, `ACK`, `ERROR`, `OACK`, in any case | a name that is none of the six (`compile_filter`'s own `op` takes any text) |
+| `file` | a request's file name, a shell-style pattern, case-sensitive | nothing |
+| `block` | a DATA's or ACK's block number | text that is not a number, or one outside 0 to 65535 |
+| `code` | an ERROR's code | the same |
+
+A comma means "any of" and `!=` negates, as in pktcap's grammar; the values are the ones `compile_filter`
+reads, converted by the same functions, so the two filters select the same packets. Every field of
+`TFTPLayer` is also `tftp.FIELD` (`tftp.mode=octet`), pktcap's rule. With another loaded layer that has an `op`
+key, a bare `op=` is refused naming both: write `tftp.op=RRQ`. `host`, `src`, `dst` and `port` are
+pktcap's own (`src=ADDR and sport=N`); `session`, `leg` and `direction` belong to this library's trace
+events, which a frame does not have.
+
+**Only datagrams to or from the request port carry the layer** (UDP 69, the one selector
+`register_tftp_dissector` registers; pktcap tries the destination port, then the source's). A
+transfer's DATA and ACK run between ports chosen for it and have none, so `block=` and `op=DATA`
+select only what was sent to or from the request port, such as a stray ACK or an ERROR sent from it. A
+frame without the layer fails every clause, so `!=` holds for it. Follow a whole transfer with
+`pytftp capture`. `pytftp capture --filter` keeps its own filter over its own events.
+
 ## Replay (`tftp.capture`)
 
 ```python

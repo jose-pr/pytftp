@@ -115,6 +115,7 @@ EXPECTED = {
         "compile_filter",
         "dissect_tftp",
         "new_session_id",
+        "pktcap_plugin",
         "register_tftp_dissector",
         "replay_transfers",
         "summarize",

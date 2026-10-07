@@ -51,6 +51,7 @@ from tftp.capture import (
     TFTPLayer,
     combine_hooks,
     dissect_tftp,
+    pktcap_plugin,
     register_tftp_dissector,
     replay_transfers,
     trace_to,
@@ -301,6 +302,7 @@ def the_dissector_is_pktcaps_and_its_layer_a_value(data: bytes, registry: Dissec
     assert_type(dissect_tftp(data), Dissected)
     register_tftp_dissector()
     register_tftp_dissector(registry, ports=(69, 6969))
+    pktcap_plugin(registry)
     layer = TFTPLayer("RRQ", filename="f", mode="octet", options=(("blksize", "512"),))
     assert_type(layer.block, Optional[int])
     assert_type(layer.options, Optional[Tuple[Tuple[str, str], ...]])

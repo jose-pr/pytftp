@@ -29,7 +29,7 @@ Keys:
 from __future__ import annotations
 
 import fnmatch
-from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Set, Tuple
 
 from ._events import PacketEvent
 
@@ -83,9 +83,31 @@ def _address_matcher(text: str) -> Callable[[Tuple[Any, ...]], bool]:
     return match
 
 
+def _opcode_names(values: Sequence[str]) -> Set[str]:
+    """The opcode names a clause asks for, upper-cased; the text is not checked."""
+    return {v.upper() for v in values}
+
+
+def _numbers(key: str, values: Sequence[str]) -> Set[int]:
+    """The block or error numbers a clause asks for: ``int`` text, each 0 to 65535 (two octets)."""
+    try:
+        numbers = {int(v) for v in values}
+    except ValueError as exc:
+        raise ValueError("%s must be a number" % key) from exc
+    for number in numbers:
+        if not 0 <= number <= 65535:
+            raise ValueError("%s is 0 to 65535, not %d" % (key, number))
+    return numbers
+
+
+def _name_matches(name: str, patterns: Sequence[str]) -> bool:
+    """Whether the file name ``name`` fits any shell-style pattern, case-sensitively."""
+    return any(fnmatch.fnmatchcase(name, v) for v in patterns)
+
+
 def _clause(key: str, values: Sequence[str]) -> EventPredicate:
     if key == "op":
-        names = {v.upper() for v in values}
+        names = _opcode_names(values)
         return lambda e: e.opcode_name in names
     if key in ("host", "src", "dst"):
         matchers = [_address_matcher(v) for v in values]
@@ -111,14 +133,11 @@ def _clause(key: str, values: Sequence[str]) -> EventPredicate:
                 name = e.decode().filename
             except ValueError:
                 return False
-            return any(fnmatch.fnmatchcase(name, v) for v in values)
+            return _name_matches(name, values)
 
         return file_match
     if key in ("block", "code"):
-        try:
-            numbers = {int(v) for v in values}
-        except ValueError as exc:
-            raise ValueError("%s must be a number" % key) from exc
+        numbers = _numbers(key, values)
         if key == "block":
             return lambda e: e.block in numbers
         return lambda e: e.opcode == 5 and len(e.data) >= 4 and ((e.data[2] << 8) | e.data[3]) in numbers
