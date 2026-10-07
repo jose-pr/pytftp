@@ -16,13 +16,22 @@ from tftp import TFTPErrorCode, TFTPOpcode, decode
 from tftp.packet import encode_ack, encode_data, encode_error
 from tftp.relay import TFTPRelay, RouteTable, by_prefix, by_subnet
 
+#: The relay drivers every end-to-end test below runs against.
+DRIVERS = ["blocking"]
 
-@pytest.fixture
-def make_relay():
+
+def _build(driver, route, host, kwargs):
+    """A started relay of one driver: what the tests read is ``server_address``,
+    ``active_sessions``, ``stats`` and ``stats_snapshot()``, and ``close()`` ends it."""
+    return TFTPRelay(route, host=host, port=0, **kwargs).start()
+
+
+@pytest.fixture(params=DRIVERS)
+def make_relay(request):
     relays = []
 
     def make(route, host="127.0.0.1", **kwargs):
-        relay = TFTPRelay(route, host=host, port=0, **kwargs).start()
+        relay = _build(request.param, route, host, kwargs)
         relays.append(relay)
         return relay
 
