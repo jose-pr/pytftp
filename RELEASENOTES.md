@@ -17,7 +17,7 @@ kept as an alias and there is no deprecation period, so an upgrade is a search a
 of this list.
 
 - **Dependencies.** `netimps>=0.4.0,<0.5` (0.3 is no longer supported) and `pktcap>=0.1.0,<0.2` are
-  required; the `cli` extra is `duho>=0.6.0,<0.7` and the `path` extra `pathlib-next[uri]>=0.9.0,<0.10`.
+  required; the `cli` extra is `duho>=0.7.0,<0.8` and the `path` extra `pathlib-next[uri]>=0.9.0,<0.10`.
 - **Names.** Acronyms are upper case and every role is named for what it is: `TFTPClient`,
   `TFTPServer`, `TFTPRelay`, `TFTPHandler`, `FilesystemBackend`, `TFTPError`, `TFTPURL`,
   `RequestPacket`, `TransferTimeoutError`. Every exception lives in `tftp.exceptions`.

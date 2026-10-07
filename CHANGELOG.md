@@ -51,6 +51,8 @@ differs and "Fixed" the defects corrected on the way.
 
 ### Changed
 
+- **The `cli` extra needs `duho` 0.7**: `duho>=0.7.0,<0.8`, where it was `>=0.6.0,<0.7`. The
+  `pytftp` command, its options and its output are the same.
 - **Defaults that bound what a request can hold.** `TFTPServerLimits(max_idle=60.0)`
   is new: a transfer with no datagram from its peer for 60 seconds ends with
   `TransferTimeoutError`, and a `timeout` the client negotiated cannot extend it

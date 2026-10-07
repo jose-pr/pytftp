@@ -42,7 +42,7 @@ dependencies = ["netimps>=0.4.0,<0.5", "pktcap>=0.1.0,<0.2"]
 
 [project.optional-dependencies]
 # The CLI is optional: importing tftp never requires duho.
-cli = ["duho>=0.6.0,<0.7"]
+cli = ["duho>=0.7.0,<0.8"]
 # pathlib-style paths: TFTPPath, and the tftp:// scheme for pathlib_next's
 # UriPath (its "uri" extra). Importing tftp never requires it.
 path = ["pathlib-next[uri]>=0.9.0,<0.10"]
