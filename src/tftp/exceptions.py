@@ -142,8 +142,6 @@ class RemoteError(TFTPError):
     """
 
     _CODE: int = TFTPErrorCode.NOT_DEFINED
-    #: Set by the client on an ERROR that answered the request itself, which may be about its options.
-    _in_request: bool = False
 
     def __init__(self, code: Optional[int] = None, message: str = "") -> None:
         super().__init__(self._CODE if code is None else code, message)

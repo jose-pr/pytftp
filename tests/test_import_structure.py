@@ -84,8 +84,8 @@ _LONG_MODULES = {
         "its methods mirror the blocking client's one for one"
     ),
     "client/_core.py": (
-        "the one base both clients share: option building, first-response handling, "
-        "stat and probe read as one contract"
+        "the one base both clients share: option building, how a request becomes an engine and "
+        "runs on a blocking socket, stat and probe read as one contract"
     ),
     "server/_sync.py": (
         "the selector lifecycle the relay shares and the blocking server: the loop, "

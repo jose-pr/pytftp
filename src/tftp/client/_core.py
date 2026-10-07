@@ -1,4 +1,4 @@
-"""What both clients share: configuration, request options, the first answer.
+"""What both clients share: configuration, request options, the opening exchange.
 
 :class:`tftp.TFTPClient` and :class:`tftp.AsyncTFTPClient` are siblings over
 the base here. It holds no transfer method: a transfer waits on a socket in
@@ -96,12 +96,7 @@ def _digits(text: Optional[str]) -> Optional[int]:
 
 
 def _answer(probed: Requester) -> Tuple[Optional[Dict[str, str]], Optional[int]]:
-    """What a finished probe learnt: ``(oack, size)``; the error that ended it is raised.
-
-    ``(oack, None)`` when the server answered with an OACK; ``(None, size)`` when
-    it sent DATA 1, ``size`` being that block's length when the whole file fits
-    in it, else ``None``.
-    """
+    """``(oack, None)`` or ``(None, size)``: the length of a DATA 1 that holds the whole file."""
     if probed.error is not None:
         raise _failure(probed.error)
     if probed.oack is not None:

@@ -16,8 +16,7 @@ from ..listing import ListEntry
 from ..netascii import NetasciiReader, NetasciiWriter, encoded_size
 from ..options._handler import DEFAULT_BLKSIZE
 from ..packet._enums import TFTPErrorCode, TFTPOpcode
-from ..packet._codec import encode_ack
-from ..packet._codec import _encode_error
+from ..packet._codec import _encode_error, encode_ack
 from .._result import TransferResult
 from ..transfer._receiver import Receiver
 from ..transfer._requester import Requester
@@ -60,15 +59,14 @@ class _Protocol(asyncio.DatagramProtocol):
 
 
 class _Transfer:
-    """One client transfer on the event loop."""
+    """One client transfer on the event loop: one timer serves its opening exchange, then its engine."""
 
     def __init__(self, client: "AsyncTFTPClient", loop: asyncio.AbstractEventLoop) -> None:
         self.client = client
         self.loop = loop
         self.transport: Optional[asyncio.DatagramTransport] = None
         self.peer: Optional[Tuple[Any, ...]] = None
-        #: Resolved when the opening exchange has ended, or failed by the host refusing a send.
-        self.first: "asyncio.Future[None]" = loop.create_future()
+        self.first: "asyncio.Future[None]" = loop.create_future()  # the opening exchange has ended
         self.requester: Optional[Requester] = None
         self.done: "asyncio.Future[None]" = loop.create_future()
         self.closed: "asyncio.Future[None]" = loop.create_future()
@@ -151,8 +149,7 @@ class _Transfer:
     def opened(self) -> None:
         """The opening exchange took a datagram or a timeout: finish it, or wait on its timer."""
         requester = self.requester
-        assert requester is not None
-        if not requester.is_done:
+        if requester is None or not requester.is_done:
             self.schedule()
             return
         if self.timer is not None:
@@ -177,7 +174,6 @@ class _Transfer:
         self.schedule()
 
     def schedule(self) -> None:
-        # One timer serves the opening exchange and then the transfer engine.
         engine = self.engine if self.engine is not None else self.requester
         if engine is None or engine.is_done:
             return
@@ -467,7 +463,6 @@ class AsyncTFTPClient(_ClientBase):
         bridge: Union[AsyncReaderBridge, AsyncWriterBridge, None],
         limit: Optional[int],
     ) -> Optional[TransferResult]:
-        """One attempt: the result, or ``None`` when the request may be made again without options."""
         is_read = opcode == TFTPOpcode.RRQ
         try:
             sock.setblocking(False)
@@ -492,7 +487,7 @@ class AsyncTFTPClient(_ClientBase):
             await driver.first
             if requester.error is not None:
                 if requester.retry_without_options:
-                    return None
+                    return None  # the request may be made again without options
                 raise _failure(requester.error)
             peer, negotiated, first_data = requester.peer, requester.negotiated, requester.first_data
             assert peer is not None and negotiated is not None  # an answer that was accepted
