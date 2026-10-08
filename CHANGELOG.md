@@ -114,9 +114,10 @@ differs and "Fixed" the defects corrected on the way.
   `pytftp replay` and `--pcap` on `get`, `put`, `serve` and `relay` print that line on standard error
   and end with status 1 before a socket is bound or a file created; `pytftp --help` still lists
   `capture` and `replay`. `dev` installs `tftp[cli,path,pktcap]`.
-- **The `path` extra needs pathlib-next 0.9.12**: `pathlib-next[uri]>=0.9.12,<0.10`, where it
-  was `>=0.9.0,<0.10`. From that release `copy(overwrite=True)` asks its target to
-  `unlink(missing_ok=True)`, which a TFTP path answers by doing nothing.
+- **The `path` extra needs pathlib-next 0.9.13**: `pathlib-next[uri]>=0.9.13,<0.10`, where it
+  was `>=0.9.0,<0.10`. From 0.9.12 `copy(overwrite=True)` asks its target to
+  `unlink(missing_ok=True)`, which a TFTP path answers by doing nothing, and 0.9.13 types the
+  classes a path is built from so that they are checked without an exemption.
 - **The `cli` extra needs `duho` 0.7**: `duho>=0.7.0,<0.8`, where it was `>=0.6.0,<0.7`. The
   `pytftp` command, its options and its output are the same.
 - **`AsyncTFTPClient` reports an expired `deadline` in the first wait as `TFTPClient` does.** A

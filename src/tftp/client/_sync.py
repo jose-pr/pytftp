@@ -144,7 +144,7 @@ class TFTPClient(_ClientBase):
         """A :class:`tftp.path.TFTPPath` on this server (needs the ``path`` extra)."""
         from ..path._local import TFTPPath
 
-        return TFTPPath(*segments, client=self, mode=mode)  # type: ignore[abstract]  # pathlib_next's empty bodies
+        return TFTPPath(*segments, client=self, mode=mode)
 
     def get(self, filename: str, *, mode: str = "octet", max_size: Optional[int] = None) -> bytes:
         """Fetch ``filename`` and return its contents."""

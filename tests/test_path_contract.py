@@ -74,6 +74,7 @@ GAPS = {
     "test_rm_recursive_accepts_the_follow_policies": _NO_DIRECTORY,
     "test_rm_rejects_a_policy_that_is_not_one": _NO_DIRECTORY,
     "test_rm_non_recursive_directory_requires_empty": _NO_DELETE,
+    "test_names_with_url_characters_are_stored_and_listed_as_written": _NO_DELETE,
     "test_move": _NO_MOVE,
     "test_move_existing_target_raises_without_overwrite": _NO_MOVE,
     "test_move_directory": _NO_MOVE,

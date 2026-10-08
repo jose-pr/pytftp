@@ -67,9 +67,7 @@ def tftp_stat(client: TFTPClient, filename: str, mode: str, path: Any) -> FileSt
         info = client.stat(filename, mode=mode)
     except TFTPError as exc:
         raise os_error(exc, path) from None
-    return FileStat(  # type: ignore[abstract]  # pathlib_next's protocol fields are set in __init__
-        st_size=info.size or 0, st_mtime=info.mtime or 0, is_dir=info.is_dir
-    )
+    return FileStat(st_size=info.size or 0, st_mtime=info.mtime or 0, is_dir=info.is_dir)
 
 
 def tftp_scandir(client: TFTPClient, dirname: str, path: Any) -> Iterator[Tuple[str, FileStat]]:
@@ -79,9 +77,7 @@ def tftp_scandir(client: TFTPClient, dirname: str, path: Any) -> Iterator[Tuple[
     except TFTPError as exc:
         raise os_error(exc, path) from None
     for entry in entries:
-        yield entry.name, FileStat(  # type: ignore[abstract]  # pathlib_next's protocol fields are set in __init__
-            st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir
-        )
+        yield entry.name, FileStat(st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir)
 
 
 def tftp_unlink(path: Any, missing_ok: bool) -> None:
