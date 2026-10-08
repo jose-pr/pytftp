@@ -23,6 +23,17 @@ if TYPE_CHECKING:
 __all__ = ["TFTPLayer", "dissect_tftp", "register_tftp_dissector"]
 
 
+def _quote(text: Optional[str]) -> str:
+    """``'text'``, or ``"text"`` when it holds a single quote and no double one; no escaping."""
+    quote = '"' if text is not None and "'" in text and '"' not in text else "'"
+    return "%s%s%s" % (quote, text, quote)
+
+
+def _options(options: Optional[Tuple[Tuple[str, str], ...]]) -> str:
+    """``" name=value"`` for each option, in order; empty for none."""
+    return "".join(" %s=%s" % pair for pair in options or ())
+
+
 class TFTPLayer(NamedTuple):
     """The TFTP packet a datagram carries, as plain values.
 
@@ -30,7 +41,9 @@ class TFTPLayer(NamedTuple):
     ``"OACK"``). Every other field is ``None`` where that kind of packet has none: ``block``
     (DATA, ACK), ``filename`` and ``mode`` (RRQ, WRQ, ``mode`` lower-cased), ``options`` (RRQ,
     WRQ, OACK: ``(name, value)`` pairs, names lower-cased, in the order sent), ``code`` and
-    ``message`` (ERROR). Equal to another ``TFTPLayer`` with the same fields and to nothing else.
+    ``message`` (ERROR). ``session`` is the id of the transfer the datagram belongs to, ``None``
+    for a layer read from the octets alone: :func:`follow_transfers` sets it. Equal to another
+    ``TFTPLayer`` with the same fields and to nothing else.
     """
 
     opcode: str
@@ -40,6 +53,26 @@ class TFTPLayer(NamedTuple):
     options: Optional[Tuple[Tuple[str, str], ...]] = None
     code: Optional[int] = None
     message: Optional[str] = None
+    session: Optional[str] = None
+
+    def summary(self) -> str:
+        """One line saying what the packet is, for pktcap's ``text`` output: ``[c1] RRQ 'boot.efi' octet``.
+
+        The transfer's id leads when it is known. The file name, the mode, the options and an ERROR's
+        message are the peer's text, shown as it came: pktcap escapes the line. A field a hand-built
+        layer lacks reads as ``None``; nothing here raises.
+        """
+        if self.opcode in ("RRQ", "WRQ"):
+            text = "%s %s %s%s" % (self.opcode, _quote(self.filename), self.mode, _options(self.options))
+        elif self.opcode in ("DATA", "ACK"):
+            text = "%s %s" % (self.opcode, self.block)
+        elif self.opcode == "ERROR":
+            text = "ERROR %s %s" % (self.code, _quote(self.message))
+        elif self.opcode == "OACK":
+            text = "OACK" + _options(self.options)
+        else:
+            text = str(self.opcode)
+        return "[%s] %s" % (self.session, text) if self.session else text
 
     # A plain tuple of the same fields is not equal: NotImplemented would let ``tuple`` answer.
     def __eq__(self, other: object) -> bool:

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import pathlib
 import pickle
+import random
 import subprocess
 import sys
 
@@ -190,3 +191,87 @@ def test_importing_the_package_leaves_pktcaps_default_registry_alone_until_asked
 
 def test_the_dissector_is_public_in_the_capture_module():
     assert {"TFTPLayer", "dissect_tftp", "register_tftp_dissector"} <= set(tftp.capture.__all__)
+
+
+# -- the transfer a datagram belongs to, and the line a layer reads as ---------------------------
+
+
+def test_a_tftp_layer_has_a_session_field_last_that_is_none_until_a_transfer_is_known():
+    assert TFTPLayer._fields[-1] == "session"
+    assert TFTPLayer("ACK", block=3).session is None
+    assert TFTPLayer("ACK", block=3, session="c3") != TFTPLayer("ACK", block=3)
+    assert SAMPLES["ACK"][1].session is None and dissect_tftp(SAMPLES["ACK"][0]).layer.session is None
+
+
+#: The lines the command printed for the datagrams of ``plain.pcap`` before the layer had a summary:
+#: what follows the two addresses, with a DATA's size taken out (the layer does not hold it).
+_LISTED = {
+    0: "RRQ 'boot/ipxe.efi' octet blksize=512 windowsize=2 tsize=0",
+    1: "OACK blksize=512 windowsize=2 tsize=1124",
+    2: "ACK 0",
+    3: "DATA 1",
+    9: "WRQ 'logs/Net Ascii.txt' netascii",
+    14: "ERROR 1 'file not found'",
+}
+
+
+@pytest.mark.parametrize("index", sorted(_LISTED))
+def test_the_summary_of_each_opcode_is_the_line_the_listing_printed(index):
+    payload = _plain_script()[index][3]
+    layer = dissect_tftp(payload).layer
+    assert layer.summary() == _LISTED[index]
+    assert layer._replace(session="c7").summary() == "[c7] " + _LISTED[index]
+
+
+def test_a_summary_holds_the_text_from_the_wire_as_it_is_for_pktcap_to_escape():
+    layer = TFTPLayer("RRQ", filename="a\x1b[31m'b", mode="octet", options=(("x\ny", "1"),))
+    assert layer.summary() == 'RRQ "a\x1b[31m\'b" octet x\ny=1'
+    frame = pktcap.FrameDissector().dissect(
+        pktcap.datagram_frame(pktcap.CapturedDatagram(1.0, ("192.0.2.5", 2000), ("192.0.2.1", 69), b"x"))
+    )
+    line = pktcap.frame_summary(
+        frame._replace(layers=frame.layers + (layer,), payloads=frame.payloads + (b"",))
+    )
+    assert line.isascii() and "\x1b" not in line and "\n" not in line
+    assert line.endswith('tftp: RRQ "a\\x1b[31m\'b" octet x\\ny=1')
+
+
+def test_a_summary_never_raises_on_a_layer_the_dissector_can_produce():
+    """Every packet of the wire's grammar, mutated at random: whatever reads as a layer has a one-line summary."""
+    rng = random.Random(20261009)
+    seeds = [packet for packet, _, _ in SAMPLES.values()]
+    produced = 0
+    for _ in range(4000):
+        data = bytearray(rng.choice(seeds))
+        for _ in range(rng.randint(0, 4)):
+            position = rng.randrange(len(data) + 1)
+            action = rng.choice("flip drop add cut".split())
+            if action == "flip" and data:
+                data[min(position, len(data) - 1)] = rng.randrange(256)
+            elif action == "drop" and data:
+                del data[min(position, len(data) - 1)]
+            elif action == "add":
+                data.insert(position, rng.randrange(256))
+            else:
+                del data[position:]
+        try:
+            layer = dissect_tftp(bytes(data)).layer
+        except pktcap.DissectError:
+            continue
+        produced += 1
+        for session in (None, "c1"):
+            text = layer._replace(session=session).summary()
+            assert isinstance(text, str) and text
+    assert produced > 1000
+
+
+def test_a_summary_never_raises_on_a_layer_with_fields_a_hand_built_value_may_lack():
+    for layer in (
+        TFTPLayer("DATA"),
+        TFTPLayer("ACK"),
+        TFTPLayer("RRQ"),
+        TFTPLayer("ERROR"),
+        TFTPLayer("OACK"),
+        TFTPLayer("X"),
+    ):
+        assert isinstance(layer.summary(), str)

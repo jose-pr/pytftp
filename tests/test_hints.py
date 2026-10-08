@@ -41,6 +41,7 @@ LAZILY_IMPORTED = {
     "tftp.capture.dissect_tftp": "pktcap",
     "tftp.capture.register_tftp_dissector": "pktcap",
     "tftp.capture.pktcap_plugin": "pktcap",
+    "tftp.capture.follow_transfers": "pktcap",
 }
 
 

@@ -35,6 +35,14 @@ differs and "Fixed" the defects corrected on the way.
   gives a `TFTPLayer` on the datagrams to the request port, `pktcap.frame_record` writes
   it and the filter `proto=tftp` selects it. Nothing registers on import; the call registers
   in the registry given, or in pktcap's default one.
+- `TFTPLayer.session` and `TFTPLayer.summary()`, and `tftp.capture.follow_transfers(frames, tracker)`:
+  pktcap dissects TFTP by port, so only a datagram to or from the request port had a layer and a
+  transfer's DATA, ACK and OACK, which run between other ports, had none. `follow_transfers` feeds
+  the dissected frames to a `FlowTracker` and gives each datagram it attributes to a transfer its
+  layer, with the transfer's id in `session`, so that `pktcap`'s filter `op=DATA and tftp.session=c3`
+  selects one transfer's data and a record carries the id. A datagram a snap length cut and one that
+  is not TFTP are left as they were. `summary()` is the line pktcap's `text` output prints for the
+  layer (`[c3] RRQ 'boot.efi' octet`). `pktcap_plugin` registers the filter key `session`.
 - `tftp.capture.pktcap_plugin(registry)`: the hook pktcap loads by name, so `PKTCAP_LOAD=tftp.capture
   pktcap convert -i boot.pcap -f "op=RRQ and file=*.efi"` filters TFTP with the keys `op`, `file`, `block`
   and `code` (`op` refuses a name that is none of the six opcodes when the filter is compiled). It

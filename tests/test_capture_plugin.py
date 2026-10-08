@@ -6,8 +6,10 @@ Ground truth is the datagrams the tests write into a capture, never the plugin's
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import uuid
@@ -18,7 +20,15 @@ pktcap = pytest.importorskip("pktcap")
 
 import tftp.capture
 from tftp import TFTPOpcode
-from tftp.capture import PacketEvent, TFTPLayer, compile_filter, dissect_tftp, pktcap_plugin
+from tftp.capture import (
+    FlowTracker,
+    PacketEvent,
+    TFTPLayer,
+    compile_filter,
+    dissect_tftp,
+    follow_transfers,
+    pktcap_plugin,
+)
 from tftp.packet import encode_ack, encode_data, encode_error, encode_oack, encode_request
 
 CLIENT, SERVER = ("192.0.2.5", 2000), ("192.0.2.1", 69)
@@ -72,16 +82,17 @@ def _event_selection(text):
 # -- what a call registers -----------------------------------------------------------------
 
 
-def test_the_plugin_declares_the_layer_with_its_four_keys_and_the_dissector_on_the_request_port():
+def test_the_plugin_declares_the_layer_with_its_keys_and_the_dissector_on_the_request_port():
     registry = _registry()
     assert registry.layers() == {"tftp": TFTPLayer}
     assert registry.get("udp", 69) is dissect_tftp
     assert ("udp", 69) in registry.selectors()
     keys = pktcap.frame_filter_keys(registry)
-    for key in ("op", "file", "block", "code", "tftp.op", "tftp.file", "tftp.block", "tftp.code"):
+    for key in ("op", "file", "block", "code", "session", "tftp.op", "tftp.file", "tftp.block", "tftp.code"):
         assert key in keys
-    # The library's own trace keys are not registered: a frame has no session, leg or direction.
-    for key in ("session", "leg", "direction"):
+    assert "tftp.session" in keys
+    # The relay's side of a trace event and its direction are not on the wire: a frame has neither.
+    for key in ("leg", "direction"):
         assert key not in keys
         with pytest.raises(pktcap.CaptureFilterError):
             pktcap.compile_capture_filter(key + "=x", pktcap.frame_filter_for(registry))
@@ -366,3 +377,127 @@ def test_pktcap_plugins_lists_the_four_keys_and_the_layer(need_command, tmp_path
     assert all(word in keys.replace(",", " ").split() for word in ("op", "file", "block", "code"))
     assert "tftp" in next(line for line in lines if line.strip().startswith("layers:"))
     assert any("tftp.capture" in line and "udp 69" in line and "layer tftp" in line for line in lines)
+
+
+# -- following a transfer across its ports --------------------------------------------------
+
+_CASES = pathlib.Path(__file__).resolve().parent / "capture_cases"
+
+
+def _script():
+    spec = importlib.util.spec_from_file_location("capture_cases_build", _CASES / "build.py")
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    return build.plain_script()
+
+
+def _dissected(capture, registry):
+    return list(pktcap.read_dissected(str(capture), dissector=pktcap.FrameDissector(registry)))
+
+
+def _followed(capture):
+    registry = _registry()
+    tracker = FlowTracker(max_tracked=None)
+    frames = list(follow_transfers(_dissected(capture, registry), tracker))
+    return frames, tracker, registry
+
+
+def _opcode_name(payload):
+    return {1: "RRQ", 2: "WRQ", 3: "DATA", 4: "ACK", 5: "ERROR", 6: "OACK"}.get(payload[1])
+
+
+def test_every_datagram_of_a_transfer_carries_its_layer_and_its_session_whatever_its_ports():
+    frames, tracker, _ = _followed(_CASES / "plain.pcap")
+    script = _script()
+    assert len(frames) == len(script)
+    # The wire says which transfer a datagram is of: the client's port, the same in both directions.
+    clients = (2000, 2001, 2002, 2003)
+    sessions = {}
+    for frame, (_, source, destination, payload) in zip(frames, script):
+        port = next((p for p in (source[1], destination[1]) if p in clients), None)
+        layer = frame.layer(TFTPLayer)
+        if port is None or payload == b"hello":
+            assert layer is None or layer.session is None
+            continue
+        assert layer is not None and layer.opcode == _opcode_name(payload)
+        sessions.setdefault(port, set()).add(layer.session)
+        if layer.opcode == "DATA":
+            assert frame.payload == payload[4:]
+    assert all(len(found) == 1 and None not in found for found in sessions.values()) and len(sessions) == 4
+    assert {next(iter(found)) for found in sessions.values()} == {t.session for t in tracker.transfers}
+
+
+def test_a_frame_the_tracker_cannot_attribute_or_that_has_no_udp_is_left_as_it_was():
+    for name in ("plain.pcap", "wifi.pcapng", "vlan_fragments.pcapng"):
+        registry = _registry()
+        before = _dissected(_CASES / name, registry)
+        after = list(follow_transfers(iter(before), FlowTracker()))
+        assert len(after) == len(before)
+        for old, new in zip(before, after):
+            if new.layer(TFTPLayer) is None or new.layer(TFTPLayer).session is None:
+                assert new is old
+
+
+def test_a_datagram_a_snap_length_cut_is_followed_by_the_tracker_and_left_alone_as_a_frame():
+    frames, tracker, _ = _followed(_CASES / "cut.pcap")
+    layers = [f.layer(TFTPLayer) for f in frames]
+    assert [None if layer is None else layer.opcode for layer in layers] == ["RRQ", "DATA", None, "ACK"]
+    (transfer,) = tracker.transfers
+    assert (transfer.packets, transfer.size, transfer.is_complete) == (4, 512, False)
+    assert {layer.session for layer in layers if layer is not None} == {transfer.session}
+
+
+def test_a_request_to_the_request_port_has_its_layer_replaced_by_one_with_the_session():
+    frames, tracker, registry = _followed(_CASES / "plain.pcap")
+    plain = _dissected(_CASES / "plain.pcap", registry)
+    first, before = frames[0].layer(TFTPLayer), plain[0].layer(TFTPLayer)
+    assert before.session is None and first == before._replace(session=tracker.transfers[0].session)
+    assert len(frames[0].layers) == len(plain[0].layers)  # replaced, not added
+
+
+def test_a_datagram_to_the_request_port_the_tracker_does_not_follow_keeps_its_layer_with_no_session(tmp_path):
+    path = tmp_path / "stray.pcap"
+    _write(path, [encode_ack(7)])
+    (frame,), tracker, _ = _followed(path)
+    assert frame.layer(TFTPLayer) == TFTPLayer("ACK", block=7) and tracker.transfers == []
+
+
+def test_pktcaps_filter_selects_one_transfers_data_by_its_session_and_nothing_else():
+    frames, tracker, registry = _followed(_CASES / "plain.pcap")
+    script = _script()
+    first = next(t for t in tracker.transfers if t.filename == "boot/ipxe.efi")
+    # Ground truth: the DATA the server sent from the transfer's own port, counted off the wire script.
+    wanted = [i for i, (_, source, _, payload) in enumerate(script) if source[1] == 40001 and payload[1] == 3]
+    assert len(wanted) == 4
+    build = pktcap.frame_filter_for(registry)
+    for text in (
+        "op=DATA and tftp.session=%s" % first.session,
+        "op=DATA and session=%s" % first.session,
+        "proto=tftp and tftp.session=%s and tftp.op=DATA" % first.session,
+    ):
+        chosen = pktcap.compile_capture_filter(text, build)
+        assert [i for i, frame in enumerate(frames) if chosen(frame)] == wanted, text
+    others = pktcap.compile_capture_filter("session!=%s and op=DATA" % first.session, build)
+    assert [i for i, frame in enumerate(frames) if others(frame)] == [
+        i for i, (_, _, _, payload) in enumerate(script) if payload[1] == 3 and i not in wanted
+    ]
+    nobody = pktcap.compile_capture_filter("session=nosuch", build)
+    assert not [frame for frame in frames if nobody(frame)]
+
+
+def test_the_session_is_in_the_record_a_frame_makes():
+    frames, tracker, _ = _followed(_CASES / "plain.pcap")
+    record = pktcap.frame_record(frames[3])
+    (layer,) = [entry for entry in record["layers"] if entry["layer"] == "tftp"]
+    assert (layer["opcode"], layer["block"], layer["session"]) == ("DATA", 1, tracker.transfers[0].session)
+    assert bytes.fromhex(record["payload"]) == frames[3].payload and len(frames[3].payload) == 512
+
+
+def test_following_is_lazy_and_keeps_the_order_of_the_frames():
+    tracker = FlowTracker()
+    followed = follow_transfers(iter(_dissected(_CASES / "plain.pcap", _registry())), tracker)
+    assert iter(followed) is followed and tracker.transfers == []
+    first = next(followed)
+    assert first.layer(TFTPLayer).opcode == "RRQ" and len(tracker.transfers) == 1
+    times = [first.time] + [frame.time for frame in followed]
+    assert times == sorted(times) and len(times) == len(_script())

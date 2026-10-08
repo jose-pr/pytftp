@@ -98,8 +98,9 @@ def test_importing_the_library_and_its_command_package_needs_no_pktcap():
         "tftp.capture.replay_transfers('boot.pcap', '127.0.0.1')",
         "tftp.capture.analyze('boot.pcap')",
         "tftp.capture.trace_to(object())",
+        "tftp.capture.follow_transfers([], tftp.capture.FlowTracker())",
     ],
-    ids=["dissect", "register", "plugin", "replay", "analyze-path", "trace_to"],
+    ids=["dissect", "register", "plugin", "replay", "analyze-path", "trace_to", "follow"],
 )
 def test_a_capture_function_without_pktcap_raises_the_one_line(call):
     done = without("pktcap", "import tftp.capture\n%s\n" % call)

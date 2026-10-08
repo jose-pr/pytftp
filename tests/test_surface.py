@@ -88,6 +88,7 @@ POSITIONAL = {
     "tftp.capture.dissect_tftp": 1,
     "tftp.capture.register_tftp_dissector": 1,
     "tftp.capture.pktcap_plugin": 1,
+    "tftp.capture.follow_transfers": 2,
     "tftp.capture.replay_transfers": 3,
 }
 

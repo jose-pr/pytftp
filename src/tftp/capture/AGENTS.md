@@ -26,7 +26,6 @@ methods `decode()`, `to_dict(payload=False)` (JSON-
 ready metadata; DATA payloads only as hex with `payload=True`);
 `str(event)` is the human line. `summarize(data)` is the one-line description on its own.
 
-
 ```python
 combine_hooks(*hooks)
 trace_to(writer)
@@ -157,9 +156,11 @@ analyze(source, *, ports=(69,), filter=None, keep_payloads=True)
 ## TFTP as a pktcap layer (`tftp.capture`)
 
 ```python
-TFTPLayer(opcode, block=None, filename=None, mode=None, options=None, code=None, message=None)
+TFTPLayer(opcode, block=None, filename=None, mode=None, options=None, code=None, message=None, session=None)
+TFTPLayer.summary()
 dissect_tftp(data)
 register_tftp_dissector(registry=None, *, ports=(69,))
+follow_transfers(frames, tracker)
 ```
 
   `register_tftp_dissector(registry=None, *, ports=(69,)) -> None`** — TFTP as a layer
@@ -168,15 +169,21 @@ register_tftp_dissector(registry=None, *, ports=(69,))
   caller registers, in `registry` (a `pktcap.DissectorRegistry`) or, given none, in
   pktcap's process-wide default one. It is registered under `("udp", port)` for each
   port, the request port only: a transfer's DATA and ACK run between ports chosen
-  per transfer, which no selector names, so they carry no `TFTPLayer`; follow them
-  with `FlowTracker`. A port already holding a dissector, or outside 1 to 65535, is a
+  per transfer, which no selector names, so they carry no `TFTPLayer`; `follow_transfers`
+  gives them one (below). A port already holding a dissector, or outside 1 to 65535, is a
   `ValueError` and this call registers nothing (a non-`int` port is a `TypeError`).
   `TFTPLayer(opcode, block=None, filename=None, mode=None, options=None, code=None,
-  message=None)` is a named tuple of plain values: `opcode` is `"RRQ"`, `"WRQ"`,
+  message=None, session=None)` is a named tuple of plain values: `opcode` is `"RRQ"`, `"WRQ"`,
   `"DATA"`, `"ACK"`, `"ERROR"` or `"OACK"`; `block` is DATA's and ACK's,
   `filename`, `mode` (lower case) and `options` (a tuple of `(name, value)` pairs,
   names lower-cased, in the order sent) a request's, `options` an OACK's too,
-  `code` and `message` an ERROR's, each `None` where the packet has none. It equals
+  `code` and `message` an ERROR's, each `None` where the packet has none; `session` is the
+  id of the transfer the datagram belongs to (`"c1"`), `None` for a layer read from the octets
+  alone. `summary() -> str` is the line a person reads, `[c1] RRQ 'boot/ipxe.efi' octet
+  blksize=512` (the `[c1] ` only when `session` is set; `DATA 3`, `ACK 3`, `ERROR 1 'file not
+  found'`, `OACK blksize=512`): pktcap's `text` output prints it after the addresses, and it
+  never raises, even for a layer built by hand with fields missing. The peer's text in it is
+  not escaped, because pktcap escapes the whole line. It equals
   another `TFTPLayer` with the same fields and nothing else (not the same fields
   as a plain tuple), is hashable and immutable, and its repr is a constructor
   call. `dissect_tftp` reads with the package's `decode`: a DATA's payload is what
@@ -185,6 +192,18 @@ register_tftp_dissector(registry=None, *, ports=(69,))
   with the text `not a TFTP packet` and none of the octets (a datagram to the
   request port that is not TFTP is therefore a frame with that `error` and no
   `TFTPLayer`). It passes `pktcap.check_dissector`.
+
+**`follow_transfers(frames, tracker) -> Iterator[pktcap.DissectedFrame]`** — `frames` (what
+`pktcap.read_dissected` or `pktcap.sniff_frames` yields, dissected with a registry that holds the
+dissector) with a `TFTPLayer` on every datagram `tracker` (a `FlowTracker`) attributes to a transfer,
+whatever its ports: every UDP datagram is fed to the tracker, and one it attributes is yielded with a
+layer whose `session` is the transfer's id (the one in `CapturedTransfer.session`). A layer the
+dissector already made (a request to the request port) is replaced by one with the session;
+otherwise the layer is added after the UDP layer, and the octets after it (a DATA's) become the
+frame's payload. A frame with no UDP datagram, a datagram the tracker does not attribute, one a snap
+length cut (the tracker counts it, as `FlowTracker.feed` says) and one that is not a TFTP packet are
+yielded as they were. Lazy, in order, one frame out for each frame in; the tracker and its
+`transfers` are the caller's. `ImportError` naming the `pktcap` extra when pktcap is not installed.
 
 ## TFTP in pktcap's commands (`tftp.capture`)
 
@@ -206,20 +225,22 @@ neither pktcap nor asyncio and registers nothing.
 | `file` | a request's file name, a shell-style pattern, case-sensitive | nothing |
 | `block` | a DATA's or ACK's block number | text that is not a number, or one outside 0 to 65535 |
 | `code` | an ERROR's code | the same |
+| `session` | the id of the transfer (`tftp.session=c3`), exactly; set by `follow_transfers`, so a frame it did not follow never matches | nothing |
 
 A comma means "any of" and `!=` negates, as in pktcap's grammar; the values are the ones `compile_filter`
 reads, converted by the same functions, so the two filters select the same packets. Every field of
 `TFTPLayer` is also `tftp.FIELD` (`tftp.mode=octet`), pktcap's rule. With another loaded layer that has an `op`
 key, a bare `op=` is refused naming both: write `tftp.op=RRQ`. `host`, `src`, `dst` and `port` are
-pktcap's own (`src=ADDR and sport=N`); `session`, `leg` and `direction` belong to this library's trace
+pktcap's own (`src=ADDR and sport=N`); `leg` and `direction` belong to this library's trace
 events, which a frame does not have.
 
-**Only datagrams to or from the request port carry the layer** (UDP 69, the one selector
-`register_tftp_dissector` registers; pktcap tries the destination port, then the source's). A
-transfer's DATA and ACK run between ports chosen for it and have none, so `block=` and `op=DATA`
-select only what was sent to or from the request port, such as a stray ACK or an ERROR sent from it. A
-frame without the layer fails every clause, so `!=` holds for it. Follow a whole transfer with
-`pytftp capture`. `pytftp capture --filter` keeps its own filter over its own events.
+**Only datagrams to or from the request port carry the layer** until `follow_transfers` has
+seen them (UDP 69, the one selector `register_tftp_dissector` registers; pktcap tries the
+destination port, then the source's). A transfer's DATA and ACK run between ports chosen for it and
+have none, so `block=` and `op=DATA` over frames that were not followed select only what was sent to
+or from the request port, such as a stray ACK or an ERROR sent from it; over `follow_transfers`'
+frames they select the whole transfer, and `session=` selects one. A frame without the layer fails
+every clause, so `!=` holds for it. `pytftp capture` follows the transfers itself. `pytftp capture --filter` keeps its own filter over its own events.
 
 ## Replay (`tftp.capture`)
 
@@ -258,20 +279,13 @@ replay_transfers(
 compile_filter(text)
 ```
 
-**Filters** — **`compile_filter`**: the grammar is
-pktcap's (`pktcap.parse_capture_filter`, `compile_capture_filter`): `key=value`
-clauses joined by `and` (any letter case, a space on each side), `,` for "any
-of", `!=` to negate; empty or `None` matches all. There is no `or`: the word
-alone is refused, so a value cannot contain ` or ` or ` and `, and a trailing
-`and` is refused. The first `=` ends the key, so a value may hold `=` and `!`
-(`file=a!=b` is the pattern `a!=b`). What a key means is this library's:
-`op` (opcode name), `host`/`src`/`dst` (address, CIDR, `addr:port`,
-`[v6]:port`, `:port`; mapped v4 matches v4), `port`, `file` (shell pattern,
-requests only), `block`, `code` (ERROR code), `session`, `leg`, `direction`
-(`FILTER_KEYS`). `pktcap.CaptureFilterError` (a `ValueError`, not a
-`TFTPError`), naming the clause, for an expression that does not parse, an
-unknown key or a value that does not convert (a port that is not ASCII digits
-or is over 65535, text that is no address), once, when the filter is compiled.
+**Filters** — **`compile_filter`**: pktcap's grammar (`pktcap.parse_capture_filter`,
+`compile_capture_filter`): `key=value` clauses joined by `and`, `,` for "any of", `!=` to negate; empty
+or `None` matches all; there is no `or`. What a key means is this library's: `op` (opcode name),
+`host`/`src`/`dst` (address, CIDR, `addr:port`, `[v6]:port`, `:port`; mapped v4 matches v4), `port`,
+`file` (shell pattern, requests only), `block`, `code`, `session`, `leg`, `direction` (`FILTER_KEYS`).
+`pktcap.CaptureFilterError` (a `ValueError`), naming the clause, for an expression that does not
+parse, an unknown key or a value that does not convert, once, when the filter is compiled.
 
 ## Types (`tftp.capture`)
 

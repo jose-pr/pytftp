@@ -114,6 +114,7 @@ EXPECTED = {
         "combine_hooks",
         "compile_filter",
         "dissect_tftp",
+        "follow_transfers",
         "new_session_id",
         "pktcap_plugin",
         "register_tftp_dissector",

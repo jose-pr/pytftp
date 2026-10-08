@@ -20,7 +20,7 @@ this file never runs.
 from __future__ import annotations
 
 import io
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
+from typing import Any, Callable, Coroutine, Dict, Iterable, Iterator, List, Optional, Tuple
 
 from typing_extensions import assert_type
 
@@ -44,13 +44,15 @@ from tftp import (
     upload,
 )
 from tftp.backends import CaseInsensitive, FilesystemBackend, PerClient, Remap
-from pktcap import DissectorRegistry, Dissected, PcapWriter, PcapngWriter
+from pktcap import DissectedFrame, DissectorRegistry, Dissected, PcapWriter, PcapngWriter
 from tftp.capture import (
+    FlowTracker,
     PacketEvent,
     ReplayedTransfers,
     TFTPLayer,
     combine_hooks,
     dissect_tftp,
+    follow_transfers,
     pktcap_plugin,
     register_tftp_dissector,
     replay_transfers,
@@ -305,7 +307,13 @@ def the_dissector_is_pktcaps_and_its_layer_a_value(data: bytes, registry: Dissec
     pktcap_plugin(registry)
     layer = TFTPLayer("RRQ", filename="f", mode="octet", options=(("blksize", "512"),))
     assert_type(layer.block, Optional[int])
+    assert_type(layer.session, Optional[str])
+    assert_type(layer.summary(), str)
     assert_type(layer.options, Optional[Tuple[Tuple[str, str], ...]])
+
+
+def a_transfer_is_followed_across_its_ports(frames: Iterable[DissectedFrame]) -> None:
+    assert_type(follow_transfers(frames, FlowTracker()), Iterator[DissectedFrame])
 
 
 def a_replay_asks_the_server_the_caller_names(path: str) -> None:
