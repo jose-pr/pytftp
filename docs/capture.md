@@ -38,7 +38,7 @@ pcap and pcapng files, from tcpdump, dumpcap or Wireshark, or a live pipe, are r
 ```python
 from tftp.capture import analyze
 
-analysis = analyze("boot.pcapng", filter="op=RRQ,WRQ,ERROR")
+analysis = analyze("boot.pcapng")
 for transfer in analysis.transfers:
     print(transfer)                     # CapturedTransfer(c1 read 'bootx64.efi' ..., complete)
     print(transfer.acknowledged, transfer.retransmissions, transfer.missing_blocks)   # gaps as (first, last) ranges

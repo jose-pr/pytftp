@@ -1,5 +1,4 @@
-"""The pktcap plugin: the keys it registers, that they agree with the library's own filter, and what
-it leaves alone.
+"""The pktcap plugin: the keys it registers, what they select, and what it leaves alone.
 
 Ground truth is the datagrams the tests write into a capture, never the plugin's own conversions.
 """
@@ -22,9 +21,7 @@ import tftp.capture
 from tftp import TFTPOpcode
 from tftp.capture import (
     FlowTracker,
-    PacketEvent,
     TFTPLayer,
-    compile_filter,
     dissect_tftp,
     follow_transfers,
     pktcap_plugin,
@@ -72,11 +69,6 @@ def _frame_selection(capture, text, registry):
     wanted = pktcap.compile_capture_filter(text, pktcap.frame_filter_for(registry))
     frames = pktcap.read_dissected(str(capture), dissector=pktcap.FrameDissector(registry))
     return [i for i, frame in enumerate(frames) if wanted(frame)]
-
-
-def _event_selection(text):
-    wanted = compile_filter(text)
-    return [i for i, data in enumerate(DATAGRAMS) if wanted(PacketEvent(0.0, "seen", SERVER, CLIENT, data))]
 
 
 # -- what a call registers -----------------------------------------------------------------
@@ -138,39 +130,40 @@ def test_a_second_call_on_one_registry_is_refused_and_leaves_the_first_in_place(
     assert registry.layers() == {"tftp": TFTPLayer} and registry.get("udp", 69) is dissect_tftp
 
 
-# -- the two filters agree -----------------------------------------------------------------
+# -- what the keys select ------------------------------------------------------------------
 
-AGREE = [
-    "op=RRQ",
-    "op=rrq",
-    "op=Wrq",
-    "op=RRQ,WRQ",
-    "op=DATA",
-    "op=ACK,ERROR,OACK",
-    "op!=ACK",
-    "op!=RRQ,WRQ,DATA,ACK,ERROR,OACK",
-    "file=*.efi",
-    "file=*.EFI",
-    "file=boot/*",
-    "file=?.bin",
-    "file=a.bin,pxelinux.0",
-    "file=*",
-    "file!=*.efi",
-    "block=3",
-    "block=0",
-    "block=0,65535",
-    "block=03",
-    "block=+3",
-    "block!=3",
-    "code=1",
-    "code=1,8",
-    "code=0",
-    "code!=1",
-    "op=RRQ and file=*.efi",
-    "op=ERROR and code=8",
-    "op=DATA and block=3",
-    "op=ACK and block!=3",
-]
+#: The indices of ``DATAGRAMS`` each filter selects, counted by hand from the list above.
+SELECTED = {
+    "op=RRQ": [0, 1],
+    "op=rrq": [0, 1],
+    "op=Wrq": [2, 3],
+    "op=RRQ,WRQ": [0, 1, 2, 3],
+    "op=DATA": [4, 5],
+    "op=ACK,ERROR,OACK": [6, 7, 8, 9, 10],
+    "op!=ACK": [0, 1, 2, 3, 4, 5, 8, 9, 10],
+    "op!=RRQ,WRQ,DATA,ACK,ERROR,OACK": [],
+    "file=*.efi": [0],
+    "file=*.EFI": [2],
+    "file=boot/*": [0],
+    "file=?.bin": [3],
+    "file=a.bin,pxelinux.0": [1, 3],
+    "file=*": [0, 1, 2, 3],
+    "file!=*.efi": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "block=3": [4, 6],
+    "block=0": [5],
+    "block=0,65535": [5, 7],
+    "block=03": [4, 6],
+    "block=+3": [4, 6],
+    "block!=3": [0, 1, 2, 3, 5, 7, 8, 9, 10],
+    "code=1": [8],
+    "code=1,8": [8, 9],
+    "code=0": [],
+    "code!=1": [0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
+    "op=RRQ and file=*.efi": [0],
+    "op=ERROR and code=8": [9],
+    "op=DATA and block=3": [4],
+    "op=ACK and block!=3": [7],
+}
 REFUSED = [
     "block=x",
     "block=-1",
@@ -184,31 +177,26 @@ REFUSED = [
 ]
 
 
-@pytest.mark.parametrize("text", AGREE)
-def test_the_library_filter_over_events_and_pktcaps_over_frames_select_the_same_datagrams(capture, text):
-    by_events, by_frames = _event_selection(text), _frame_selection(capture, text, _registry())
-    assert by_frames == by_events
+@pytest.mark.parametrize("text", SELECTED)
+def test_each_key_selects_the_datagrams_the_list_says(capture, text):
+    assert _frame_selection(capture, text, _registry()) == SELECTED[text]
 
 
-def test_the_table_selects_something_for_most_rows_so_agreement_is_not_agreement_on_nothing(capture):
-    empty = [t for t in AGREE if not _event_selection(t)]
-    assert empty == ["op!=RRQ,WRQ,DATA,ACK,ERROR,OACK", "code=0"]
-    assert _event_selection("op=RRQ and file=*.efi") == [0]
-    assert _event_selection("file=*.EFI") == [2]
-    assert _event_selection("block=0,65535") == [5, 7]
+def test_the_table_selects_something_for_most_rows_so_it_is_not_a_table_of_nothing():
+    assert [text for text, chosen in SELECTED.items() if not chosen] == [
+        "op!=RRQ,WRQ,DATA,ACK,ERROR,OACK",
+        "code=0",
+    ]
 
 
 @pytest.mark.parametrize("text", REFUSED)
-def test_a_value_the_library_filter_refuses_pktcaps_refuses_too_when_the_filter_is_compiled(text):
-    with pytest.raises(ValueError):
-        compile_filter(text)
+def test_a_value_that_is_no_number_is_refused_when_the_filter_is_compiled(text):
     with pytest.raises(pktcap.CaptureFilterError) as caught:
         pktcap.compile_capture_filter(text, pktcap.frame_filter_for(_registry()))
     assert text.split("=")[0] in str(caught.value)
 
 
-def test_an_opcode_name_that_is_none_of_the_six_is_refused_here_and_accepted_by_the_library_filter(capture):
-    assert _event_selection("op=nosuch") == []  # the library's own filter takes any text
+def test_an_opcode_name_that_is_none_of_the_six_is_refused_when_the_filter_is_compiled(capture):
     registry = _registry()
     with pytest.raises(pktcap.CaptureFilterError) as caught:
         pktcap.compile_capture_filter("op=nosuch", pktcap.frame_filter_for(registry))

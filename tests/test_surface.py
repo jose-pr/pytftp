@@ -214,3 +214,15 @@ def test_the_header_lists_what_each_module_exports():
     assert set(rows) == set(EXPECTED)
     for module, names in rows.items():
         assert sorted(names) == [n for n in EXPECTED[module] if n != "__version__"], module
+
+
+def test_the_capture_filter_is_pktcaps_and_this_package_has_none():
+    import inspect
+
+    import tftp.capture
+
+    gone = ("compile_filter", "EventPredicate", "FILTER_KEYS")
+    assert [name for name in gone if hasattr(tftp.capture, name)] == []
+    assert "filter" not in inspect.signature(tftp.capture.analyze).parameters
+    with pytest.raises(TypeError):
+        tftp.capture.analyze([], filter="op=RRQ")  # type: ignore[call-arg]

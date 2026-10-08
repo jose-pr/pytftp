@@ -106,7 +106,7 @@ CapturedTransfer.write_to(directory)
 CapturedTransfer.add_ack(wire)
 CapturedTransfer.add_data(wire, payload, keep=True, cut=False)
 CapturedTransfer.to_dict()
-analyze(source, *, ports=(69,), filter=None, keep_payloads=True)
+analyze(source, *, ports=(69,), keep_payloads=True)
 ```
 
 - **`FlowTracker`** — `feed(datagram: DatagramLike) ->
@@ -221,18 +221,16 @@ neither pktcap nor asyncio and registers nothing.
 
 | Key | Matches | Refused when the filter is compiled |
 | --- | --- | --- |
-| `op` | the opcode name: `RRQ`, `WRQ`, `DATA`, `ACK`, `ERROR`, `OACK`, in any case | a name that is none of the six (`compile_filter`'s own `op` takes any text) |
+| `op` | the opcode name: `RRQ`, `WRQ`, `DATA`, `ACK`, `ERROR`, `OACK`, in any case | a name that is none of the six |
 | `file` | a request's file name, a shell-style pattern, case-sensitive | nothing |
 | `block` | a DATA's or ACK's block number | text that is not a number, or one outside 0 to 65535 |
 | `code` | an ERROR's code | the same |
 | `session` | the id of the transfer (`tftp.session=c3`), exactly; set by `follow_transfers`, so a frame it did not follow never matches | nothing |
 
-A comma means "any of" and `!=` negates, as in pktcap's grammar; the values are the ones `compile_filter`
-reads, converted by the same functions, so the two filters select the same packets. Every field of
+A comma means "any of" and `!=` negates, as in pktcap's grammar. Every field of
 `TFTPLayer` is also `tftp.FIELD` (`tftp.mode=octet`), pktcap's rule. With another loaded layer that has an `op`
 key, a bare `op=` is refused naming both: write `tftp.op=RRQ`. `host`, `src`, `dst` and `port` are
-pktcap's own (`src=ADDR and sport=N`); `leg` and `direction` belong to this library's trace
-events, which a frame does not have.
+pktcap's own (`src=ADDR and sport=N`).
 
 **Only datagrams to or from the request port carry the layer** until `follow_transfers` has
 seen them (UDP 69, the one selector `register_tftp_dissector` registers; pktcap tries the
@@ -240,7 +238,7 @@ destination port, then the source's). A transfer's DATA and ACK run between port
 have none, so `block=` and `op=DATA` over frames that were not followed select only what was sent to
 or from the request port, such as a stray ACK or an ERROR sent from it; over `follow_transfers`'
 frames they select the whole transfer, and `session=` selects one. A frame without the layer fails
-every clause, so `!=` holds for it. `pytftp capture` follows the transfers itself. `pytftp capture --filter` keeps its own filter over its own events.
+every clause, so `!=` holds for it. `pytftp capture` follows the transfers itself.
 
 ## Replay (`tftp.capture`)
 
@@ -273,27 +271,17 @@ replay_transfers(
 - **Live capture** is `pktcap.sniff(interface=None, *, stop=None,
   dissector=None)`, Linux only (`AF_PACKET`, needs `CAP_NET_RAW`;
   `pktcap.has_live_capture()` asks the platform). Elsewhere pipe
-  `tcpdump`/`dumpcap -w -` into `pytftp capture -` or `pktcap.read_datagrams`.
-
-```python
-compile_filter(text)
-```
-
-**Filters** — **`compile_filter`**: pktcap's grammar (`pktcap.parse_capture_filter`,
-`compile_capture_filter`): `key=value` clauses joined by `and`, `,` for "any of", `!=` to negate; empty
-or `None` matches all; there is no `or`. What a key means is this library's: `op` (opcode name),
-`host`/`src`/`dst` (address, CIDR, `addr:port`, `[v6]:port`, `:port`; mapped v4 matches v4), `port`,
-`file` (shell pattern, requests only), `block`, `code`, `session`, `leg`, `direction` (`FILTER_KEYS`).
-`pktcap.CaptureFilterError` (a `ValueError`), naming the clause, for an expression that does not
-parse, an unknown key or a value that does not convert, once, when the filter is compiled.
+  `tcpdump`/`dumpcap -w -` into `pytftp capture --input -` or `pktcap.read_datagrams`.
+- **Filters** are pktcap's: `pktcap.compile_capture_filter(text, pktcap.frame_filter_for(registry))`
+  over frames, with the keys of the table above once the registry holds `pktcap_plugin`'s;
+  `pktcap.CaptureFilterError` (a `ValueError`) names the clause that does not compile, once, when the
+  filter is compiled. This library has no filter of its own.
 
 ## Types (`tftp.capture`)
 
 | Name | Meaning |
 | --- | --- |
-| `EventPredicate` | what `compile_filter` returns: `predicate(event) -> bool` |
 | `Endpoint` | `(host, port)` |
 | `DatagramLike` | what `FlowTracker.feed` takes: anything with `time`, `source`, `destination` and `payload`, as `pktcap.CapturedDatagram` has |
 | `DatagramWriter` | what `trace_to` takes: anything with `write(time, source, destination, payload)`, as the pktcap writers have |
 | `Analysis`, `ReplayedTransfers` | the named results of `analyze` and `replay_transfers` |
-| `FILTER_KEYS` | the keys `compile_filter` understands |

@@ -27,7 +27,6 @@ from __future__ import annotations
 from ._analysis import Analysis, analyze
 from ._dissector import TFTPLayer, dissect_tftp, register_tftp_dissector
 from ._events import PacketEvent, new_session_id, summarize
-from ._filters import FILTER_KEYS, EventPredicate, compile_filter
 from ._flows import CapturedTransfer, DatagramLike, Endpoint, FlowTracker
 from ._follow import follow_transfers
 from ._hook import DatagramWriter, combine_hooks, trace_to
@@ -38,10 +37,7 @@ __all__ = [
     "PacketEvent",
     "summarize",
     "new_session_id",
-    "compile_filter",
-    "EventPredicate",
     "Endpoint",
-    "FILTER_KEYS",
     "CapturedTransfer",
     "DatagramLike",
     "DatagramWriter",

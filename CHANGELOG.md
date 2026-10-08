@@ -114,9 +114,6 @@ differs and "Fixed" the defects corrected on the way.
   `pytftp replay` and `--pcap` on `get`, `put`, `serve` and `relay` print that line on standard error
   and end with status 1 before a socket is bound or a file created; `pytftp --help` still lists
   `capture` and `replay`. `dev` installs `tftp[cli,path,pktcap]`.
-- **`compile_filter` refuses a `block` or `code` outside 0 to 65535** (both are two octets on the wire)
-  with `pktcap.CaptureFilterError`, where it took any integer and matched nothing; the same check
-  serves the `pktcap_plugin` keys, so the two filters cannot disagree.
 - **The `path` extra needs pathlib-next 0.9.12**: `pathlib-next[uri]>=0.9.12,<0.10`, where it
   was `>=0.9.0,<0.10`. From that release `copy(overwrite=True)` asks its target to
   `unlink(missing_ok=True)`, which a TFTP path answers by doing nothing.
@@ -441,7 +438,7 @@ differs and "Fixed" the defects corrected on the way.
 - **Public aliases are exported.** `tftp.client`: `SinkLike`, `SourceLike`,
   `ProgressFunction`, `AsyncSink`, `AsyncSource`; `tftp.transfer`: `SendFunction`,
   `SupportsWrite`, `SupportsReadinto`, `SupportsRead`; `tftp.relay`: `UpstreamLike`;
-  `tftp.capture`: `EventPredicate`, `Endpoint`. `OptionRegistry.copy()` returns the
+  `tftp.capture`: `Endpoint`. `OptionRegistry.copy()` returns the
   subclass it was called on.
 - **The command line is a package with one entry, `tftp.cli.main(argv=None) -> int`.**
   The console script maps to it (`pytftp = "tftp.cli:main"`) and `python -m tftp`
@@ -500,18 +497,8 @@ differs and "Fixed" the defects corrected on the way.
   capture and `except ValueError` does. `FlowTracker.feed(datagram)` and `feed_all` take
   anything with `time`, `source`, `destination` and `payload` (`tftp.capture.DatagramLike`,
   new), and `analyze(source)` a path, a stream or an iterable of those.
-  The filter grammar is pktcap's (`pktcap.parse_capture_filter`, `compile_capture_filter`);
-  `compile_filter(text)` keeps the eleven keys and what each means, and raises
-  `pktcap.CaptureFilterError` (a `ValueError`, not a `TFTPError`, naming the clause) where it
-  raised `CaptureFilterError`. Six expressions mean something else: `file=a!=b` is the
-  pattern `a!=b` (it was an error: the first `=` ends the key); `op=RRQ and` and
-  `file=*.efi and` are refused (a trailing `and` was accepted and became part of the
-  value); `file=a or b` and `op=RRQ or op=WRQ` are refused by name (there is no `or`; they
-  compiled and matched nothing or a pattern containing the word); and an address value
-  that is an IPv6 address on its own, such as `host=::1`, is accepted (it was refused as a
-  port). `host=10.0.0.5:` and `host=:` are refused (an empty port was ignored), and a CIDR
-  that `ipaddress` reads with an IPv4 tail after `::ffff:` (`::ffff:10.0.0.0/104`) is
-  refused.
+  The filter grammar is pktcap's (`pktcap.parse_capture_filter`, `compile_capture_filter`), and this
+  library has no filter of its own (see "Removed").
   The writer: a pcap file written through pktcap promises the datagrams it holds, each
   with its time to the microsecond, both addresses and its payload, and not its octets.
   Against the old writer's file three things differ and nothing else: the header's snap
@@ -605,13 +592,21 @@ Old names are not kept as aliases.
 | `upload(host, filename, source)`, `TFTPClient.upload(filename, source)` | `src` |
 | `TFTPRelay(upstream_source=)` | `upstream_src=` |
 | `TFTPClient(local_address=)` (`client.local_address`) | `src=` (`client.src`) |
-| the type aliases `PathOrFile`, `Progress` (`tftp.client`), `SendFn` (`tftp.transfer`), `Predicate` (`tftp.capture`) | `SinkLike` and `SourceLike`, `ProgressFunction`, `SendFunction`, `EventPredicate` |
+| the type aliases `PathOrFile`, `Progress` (`tftp.client`), `SendFn` (`tftp.transfer`), `Predicate` (`tftp.capture`) | `SinkLike` and `SourceLike`, `ProgressFunction`, `SendFunction`; `Predicate` goes with the filter (see "Removed") |
 | `read_datagrams`, `read_frames`, `FrameDecoder`, `UDPDatagram`, `LINKTYPES`, `sniff`, `live_capture_supported`, `CaptureFormatError`, `CaptureFilterError`, `PcapWriter` (`tftp.capture`) | pktcap's own, each named in the table under "Reading a capture is pktcap's" |
 | `_tftp_fast_open_`, `_tftp_copies_`, `_tftp_listing_` (marker attributes of a handler or stream) | `opens_fast`, `copies_writes`, `lists_directories` |
 | entry point `pytftp = "tftp.cli:run"` | `pytftp = "tftp.cli:main"` |
 
 ### Removed
 
+- **The capture filter of `tftp.capture`: `compile_filter`, `EventPredicate`, `FILTER_KEYS` and the
+  `filter=` argument of `analyze`.** What a filter does is pktcap's:
+  `pktcap.compile_capture_filter(text, pktcap.frame_filter_for(registry))` over the frames of
+  `pktcap.read_dissected`, with the keys of `pktcap_plugin` (`op`, `file`, `block`, `code`, `session`) once
+  the registry holds it, or `pytftp capture --filter` / `pktcap convert --load tftp.capture --filter`.
+  `analyze(source)` returns every event, and a caller that wants some keeps them in Python. The keys
+  `host`, `src`, `dst` and `port` are pktcap's (`src=ADDR:PORT` is `src=ADDR and sport=PORT`); `leg` and
+  `direction` belong to a trace event, which a captured frame does not have.
 - **`tftp.uri` and `tftp.result` are gone as module paths.** `TFTPURL`, `download_url`,
   `upload_url` and `TransferResult` are imported from `tftp`, where they were already
   exported. `tftp.transfer`, `tftp.listing` and `tftp.netascii` stay public topic modules.

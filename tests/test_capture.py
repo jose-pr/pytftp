@@ -22,7 +22,6 @@ from tftp.capture import (
     FlowTracker,
     PacketEvent,
     analyze,
-    compile_filter,
     summarize,
     trace_to,
 )
@@ -311,108 +310,7 @@ def test_flow_answer_from_another_address():
     assert tracker.transfers[0].server_tid == other and tracker.transfers[0].data() == b"x"
 
 
-# -- filters --------------------------------------------------------------------------------------
-
-
-def _event(data, src=("10.0.0.5", 2000), dst=("10.0.0.1", 69), **kw):
-    return PacketEvent(0, "seen", dst, src, data, **kw)
-
-
-@pytest.mark.parametrize(
-    "expression,matches",
-    [
-        ("op=RRQ", True),
-        ("op=rrq,wrq", True),
-        ("op=DATA", False),
-        ("host=10.0.0.0/8", True),
-        ("host=192.168.0.0/16", False),
-        ("src=10.0.0.5:2000", True),
-        ("src=:2000 and dst=:69", True),
-        ("dst=:70", False),
-        ("port=69", True),
-        ("file=*.efi", True),
-        ("file=*.bin", False),
-        ("op=RRQ and file=boot/*", True),
-        ("op!=RRQ", False),
-        ("session=c1", True),
-        ("session!=c1", False),
-    ],
-)
-def test_filters(expression, matches):
-    event = _event(encode_request(TFTPOpcode.RRQ, "boot/x.efi"), session="c1")
-    assert compile_filter(expression)(event) is matches
-
-
-def test_filter_numbers_and_mapped_addresses():
-    error = _event(encode_error(2, "no"), src=("::ffff:10.0.0.1", 69), dst=("::1", 1))
-    assert compile_filter("op=ERROR and code=1,2")(error)
-    assert compile_filter("src=10.0.0.0/8")(error)
-    assert compile_filter("block=3")(_event(encode_ack(3)))
-    assert compile_filter("")(error) and compile_filter(None)(error)
-
-
-@pytest.mark.parametrize(
-    "expression", ["op", "colour=red", "host=not-an-ip", "port=x", "block=x", "src=1.2.3.4:x"]
-)
-def test_filter_errors(expression):
-    with pytest.raises(pktcap.CaptureFilterError) as caught:
-        compile_filter(expression)
-    assert isinstance(caught.value, ValueError) and not isinstance(caught.value, tftp.TFTPError)
-
-
-def test_a_filter_that_changed_meaning_with_the_grammar():
-    # No longer an error: the first "=" ends the key, so a value may hold "=" and "!".
-    pattern = compile_filter("file=a!=b")
-    assert pattern(_event(encode_request(TFTPOpcode.RRQ, "a!=b")))
-    assert not pattern(_event(encode_request(TFTPOpcode.RRQ, "a")))
-
-
-@pytest.mark.parametrize(
-    "expression",
-    ["op=RRQ and", "file=*.efi and", "file=a or b", "op=RRQ or op=WRQ"],
-    ids=["a trailing and", "a trailing and after a pattern", "or in a value", "or between clauses"],
-)
-def test_a_filter_with_a_dangling_and_or_an_or_is_refused(expression):
-    with pytest.raises(pktcap.CaptureFilterError):
-        compile_filter(expression)
-
-
-def test_a_clause_the_keys_refuse_is_named_in_the_error():
-    with pytest.raises(pktcap.CaptureFilterError, match="colour"):
-        compile_filter("op=RRQ and colour=red")
-
-
-@pytest.mark.parametrize(
-    "expression,matches",
-    [
-        ("host=10.0.0.5", True),
-        ("src=[2001:db8::5]:1000", False),
-        ("dst=2001:db8::/32", False),
-        ("src=10.0.0.5:2000,[::1]:9", True),
-        ("host=fe80::/10", False),
-        ("dst=::ffff:0:0/96", False),
-        ("dst=::1", False),
-        ("src=:2000", True),
-    ],
-)
-def test_address_forms_of_the_address_keys(expression, matches):
-    assert compile_filter(expression)(_event(encode_request(TFTPOpcode.RRQ, "f"))) is matches
-
-
-def test_an_address_with_a_zone_matches_its_network_and_a_mapped_one_its_ipv4_host():
-    zoned = _event(encode_ack(1), src=("fe80::1%eth0", 5), dst=("fe80::2%eth0", 6))
-    assert compile_filter("src=fe80::/10 and dst=fe80::2")(zoned)
-    assert compile_filter("src=[fe80::1]:5")(zoned)
-    mapped = _event(encode_ack(1), src=("::ffff:192.0.2.9", 5))
-    assert compile_filter("src=192.0.2.0/24")(mapped) and not compile_filter("src=198.51.100.0/24")(mapped)
-
-
-@pytest.mark.parametrize(
-    "value", ["10.0.0.5:", ":", ":x", ":99999", "[::1", "[10.0.0.5]:5", "host:80:extra", "10.0.0.5:70000"]
-)
-def test_a_malformed_address_is_refused_when_the_filter_is_compiled(value):
-    with pytest.raises(pktcap.CaptureFilterError):
-        compile_filter("host=" + value)
+# -- events ---------------------------------------------------------------------------------------
 
 
 def test_an_endpoint_is_written_with_brackets_for_ipv6_and_a_question_mark_for_none():
