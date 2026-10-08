@@ -213,7 +213,7 @@ that adds the filter keys `op`, `file`, `block` and `code`. Only the datagrams t
 port carry the layer, so a transfer is followed with `pytftp capture`.
 
 ```bash
-PKTCAP_PLUGINS=tftp.capture pktcap convert -i boot.pcapng -f "op=RRQ and file=*.efi"
+PKTCAP_LOAD=tftp.capture pktcap convert -i boot.pcapng -f "op=RRQ and file=*.efi"
 ```
 
 ## API overview

@@ -327,7 +327,7 @@ def test_pktcap_convert_with_the_plugin_named_writes_the_one_request_the_filter_
 ):
     out = _pktcap(
         ["convert", "-i", str(capture), "-f", "op=RRQ and file=*.efi"],
-        {"PKTCAP_PLUGINS": "tftp.capture"},
+        {"PKTCAP_LOAD": "tftp.capture"},
         tmp_path,
     )
     assert out.returncode == 0, out.stderr
@@ -339,7 +339,7 @@ def test_pktcap_convert_with_the_plugin_named_writes_the_one_request_the_filter_
 
 def test_pktcap_convert_refuses_an_unknown_opcode_name_with_status_2(need_command, capture, tmp_path):
     out = _pktcap(
-        ["convert", "-i", str(capture), "-f", "op=nosuch"], {"PKTCAP_PLUGINS": "tftp.capture"}, tmp_path
+        ["convert", "-i", str(capture), "-f", "op=nosuch"], {"PKTCAP_LOAD": "tftp.capture"}, tmp_path
     )
     assert out.returncode == 2 and "nosuch" in out.stderr and out.stdout == ""
 
@@ -348,7 +348,7 @@ def test_with_another_op_key_loaded_the_bare_key_is_status_2_naming_both_and_the
     need_command, capture, other_plugin, tmp_path
 ):
     name, directory = other_plugin
-    environment = {"PKTCAP_PLUGINS": "tftp.capture," + name, "PYTHONPATH": str(directory)}
+    environment = {"PKTCAP_LOAD": "tftp.capture," + name, "PYTHONPATH": str(directory)}
     bare = _pktcap(["convert", "-i", str(capture), "-f", "op=RRQ"], environment, tmp_path)
     assert bare.returncode == 2
     assert "tftp.op" in bare.stderr and "other.op" in bare.stderr
@@ -358,7 +358,7 @@ def test_with_another_op_key_loaded_the_bare_key_is_status_2_naming_both_and_the
 
 
 def test_pktcap_plugins_lists_the_four_keys_and_the_layer(need_command, tmp_path):
-    out = _pktcap(["plugins"], {"PKTCAP_PLUGINS": "tftp.capture"}, tmp_path)
+    out = _pktcap(["plugins"], {"PKTCAP_LOAD": "tftp.capture"}, tmp_path)
     assert out.returncode == 0, out.stderr
     lines = out.stdout.splitlines()
     keys = next(line for line in lines if line.strip().startswith("keys:"))

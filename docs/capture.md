@@ -108,7 +108,7 @@ chosen per transfer, which no selector names, so `FlowTracker` follows them. Wit
 registered, `pktcap.compile_capture_filter("proto=tftp", pktcap.frame_filter)` selects the
 frames that have it and `pktcap.frame_record` writes its fields.
 
-pktcap's own commands load it by name: `PKTCAP_PLUGINS=tftp.capture pktcap convert -i boot.pcapng -f
+pktcap's own commands load it by name: `PKTCAP_LOAD=tftp.capture pktcap convert -i boot.pcapng -f
 "op=RRQ and file=*.efi"`. `tftp.capture.pktcap_plugin` adds the keys `op`, `file`, `block` and `code`
 (and `tftp.FIELD` for every field of `TFTPLayer`), which read the same text as `pytftp capture --filter`
 does, except that `op` refuses a name that is none of the six opcodes. The layer is on the datagrams

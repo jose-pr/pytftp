@@ -192,9 +192,9 @@ register_tftp_dissector(registry=None, *, ports=(69,))
 pktcap_plugin(registry)
 ```
 
-**`pktcap_plugin(registry) -> None`** — the hook pktcap loads by name: `PKTCAP_PLUGINS=tftp.capture
-pktcap convert -i boot.pcap -f "op=RRQ and file=*.efi"` (or `--plugins tftp.capture`, or a
-`plugins` key in pktcap's configuration file). It declares `TFTPLayer` in `registry` (a
+**`pktcap_plugin(registry) -> None`** — the hook pktcap loads by name: `PKTCAP_LOAD=tftp.capture
+pktcap convert -i boot.pcap -f "op=RRQ and file=*.efi"` (or `--load tftp.capture`, or a
+`load` key in pktcap's configuration file). It declares `TFTPLayer` in `registry` (a
 `pktcap.DissectorRegistry`) with the filter keys below, then calls `register_tftp_dissector(registry)`;
 when that raises, the layer is taken out again and the error goes on, so a failed call registers
 nothing (`ValueError` for a layer name or a port that is taken). Importing `tftp.capture` imports

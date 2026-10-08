@@ -35,7 +35,7 @@ differs and "Fixed" the defects corrected on the way.
   gives a `TFTPLayer` on the datagrams to the request port, `pktcap.frame_record` writes
   it and the filter `proto=tftp` selects it. Nothing registers on import; the call registers
   in the registry given, or in pktcap's default one.
-- `tftp.capture.pktcap_plugin(registry)`: the hook pktcap loads by name, so `PKTCAP_PLUGINS=tftp.capture
+- `tftp.capture.pktcap_plugin(registry)`: the hook pktcap loads by name, so `PKTCAP_LOAD=tftp.capture
   pktcap convert -i boot.pcap -f "op=RRQ and file=*.efi"` filters TFTP with the keys `op`, `file`, `block`
   and `code` (`op` refuses a name that is none of the six opcodes when the filter is compiled). It
   registers the layer and `register_tftp_dissector(registry)` and, when that raises, nothing. Importing
