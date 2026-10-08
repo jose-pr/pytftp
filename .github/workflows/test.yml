@@ -44,10 +44,11 @@ jobs:
           # (`[tool.mypy] python_version`, the oldest mypy 2 accepts); the 3.9
           # floor is what the test matrix below runs.
           python-version: "3.14"
-      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
-        # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-        # yet. Remove this step when pktcap 0.1.0 is on PyPI.
-        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
+      - name: Install pktcap 0.1 and netimps 0.4.1 from their repositories (until both are on PyPI)
+        # TEMPORARY: the pktcap extra's requirement, pktcap>=0.1.0, is not
+        # published yet, and it needs netimps 0.4.1, which is not either.
+        # Remove this step when pktcap 0.1.0 is on PyPI.
+        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment" "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install package with all extras
         run: python -m pip install -e ".[dev]"
       - name: Check formatting
@@ -104,10 +105,11 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
-        # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-        # yet. Remove this step when pktcap 0.1.0 is on PyPI.
-        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
+      - name: Install pktcap 0.1 and netimps 0.4.1 from their repositories (until both are on PyPI)
+        # TEMPORARY: the pktcap extra's requirement, pktcap>=0.1.0, is not
+        # published yet, and it needs netimps 0.4.1, which is not either.
+        # Remove this step when pktcap 0.1.0 is on PyPI.
+        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment" "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install package with all extras
         # Install every extra that has tests depending on it, or those tests
         # silently skip (pytest.importorskip) instead of actually running.
@@ -157,12 +159,11 @@ jobs:
                   pins.append("%s==%s" % (m.group(1), m.group(3)))
           open("floors.txt", "w").write("\n".join(pins) + "\n")
           print("\n".join(pins) or "(no floors declared)")
-      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
-        # TEMPORARY: the floor, pktcap 0.1.0, is not published yet, so the
-        # floor pin below cannot be installed from PyPI. This installs the
-        # same version from its repository; the pin then finds it satisfied.
+      - name: Install pktcap 0.1 and netimps 0.4.1 from their repositories (until both are on PyPI)
+        # TEMPORARY: the pktcap extra's requirement, pktcap>=0.1.0, is not
+        # published yet, and it needs netimps 0.4.1, which is not either.
         # Remove this step when pktcap 0.1.0 is on PyPI.
-        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
+        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment" "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install at the floors
         run: python -m pip install -c floors.txt -e ".[dev]"
       - name: Install TFTP peers for interop tests (Linux)
@@ -191,10 +192,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
-        # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-        # yet. Remove this step when pktcap 0.1.0 is on PyPI.
-        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
+      - name: Install netimps 0.4.1 from its repository (until 0.4.1 is on PyPI)
+        # TEMPORARY: the declared requirement, netimps>=0.4.1, is not published
+        # yet. Remove this step when netimps 0.4.1 is on PyPI.
+        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
       - name: Install the package with no extra
         run: python -m pip install .
       - name: Import it, transfer a file and start the script
@@ -233,9 +234,9 @@ jobs:
           python -m venv "$RUNNER_TEMP/bare"
           BIN="$RUNNER_TEMP/bare/bin"
           [ -d "$RUNNER_TEMP/bare/Scripts" ] && BIN="$RUNNER_TEMP/bare/Scripts"
-          # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-          # yet. Remove this when pktcap 0.1.0 is on PyPI.
-          "$BIN/python" -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
+          # TEMPORARY: the declared requirement, netimps>=0.4.1, is not published
+          # yet. Remove this line when netimps 0.4.1 is on PyPI.
+          "$BIN/python" -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
           "$BIN/python" -m pip install dist/*.whl
           cd "$RUNNER_TEMP"
           "$BIN/python" "$GITHUB_WORKSPACE/tests/integration/smoke_installed.py"
@@ -244,9 +245,11 @@ jobs:
           python -m venv "$RUNNER_TEMP/full"
           BIN="$RUNNER_TEMP/full/bin"
           [ -d "$RUNNER_TEMP/full/Scripts" ] && BIN="$RUNNER_TEMP/full/Scripts"
-          # TEMPORARY: see above.
-          "$BIN/python" -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
-          "$BIN/python" -m pip install "$(ls dist/*.whl)[cli,path]"
+          # TEMPORARY: the pktcap extra's requirement, pktcap>=0.1.0, is not
+          # published yet, and it needs netimps 0.4.1, which is not either.
+          # Remove this line when pktcap 0.1.0 is on PyPI.
+          "$BIN/python" -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment" "pktcap @ git+https://github.com/jose-pr/pktcap@main"
+          "$BIN/python" -m pip install "$(ls dist/*.whl)[cli,path,pktcap]"
           cd "$RUNNER_TEMP"
           "$BIN/python" "$GITHUB_WORKSPACE/tests/integration/smoke_installed.py" --extras
 
@@ -263,10 +266,11 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-      - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
-        # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-        # yet. Remove this step when pktcap 0.1.0 is on PyPI.
-        run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
+      - name: Install pktcap 0.1 and netimps 0.4.1 from their repositories (until both are on PyPI)
+        # TEMPORARY: the pktcap extra's requirement, pktcap>=0.1.0, is not
+        # published yet, and it needs netimps 0.4.1, which is not either.
+        # Remove this step when pktcap 0.1.0 is on PyPI.
+        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment" "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install package with all extras
         run: python -m pip install -e ".[dev]"
       - name: Install TFTP peers for interop tests
