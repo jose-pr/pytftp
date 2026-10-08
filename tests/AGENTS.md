@@ -48,7 +48,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `test_guards.py` | the name guard refuses a host name that would leave the machine; the structure-guard modules exist |
 | `test_readme.py` | the README's Python blocks and `pytftp` command lines run as written |
 | `test_examples.py` | the docs' Python blocks and the example scripts run as written (a block that cannot run says why in a `<!-- not run: reason -->` comment), and the command-line page names every option each command's `--help` shows |
-| `test_extras.py` | a capability whose dependency is absent names the extra to install, in a fresh interpreter |
+| `test_extras.py` | a capability whose dependency is absent names the extra to install, in a fresh interpreter: duho, pathlib-next and pktcap (the bare install transfers, serves and relays; the capture functions and commands print the one line) |
 | `test_packet.py` | the codec: wire vectors from the RFCs, round trips, the refusals |
 | `test_uri.py` | `TFTPURL`: RFC 3617's grammar, both option spellings, the conversion and value contracts |
 | `test_options.py` | negotiation: each option handler, the policy, the client side |

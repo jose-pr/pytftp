@@ -56,7 +56,7 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
   or on asyncio, with coroutine routes.
 - **Capture and debugging** — trace every datagram from the client, server or
   relay; write Wireshark-readable pcap or pcapng; read pcap/pcapng files or a
-  live `tcpdump` pipe (both through [pktcap](https://github.com/jose-pr/pktcap)),
+  live `tcpdump` pipe (both through [pktcap](https://github.com/jose-pr/pktcap), the `pktcap` extra),
   reconstruct each transfer and extract its file, or ask a server for the transfers a
   capture holds again (`pytftp replay`: reads only, unless told to upload too).
 - **Directory listings** — an opt-in extension between pytftp peers: `pytftp ls`,
@@ -80,16 +80,17 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
 ```bash
 pip install tftp            # library
 pip install "tftp[cli]"     # plus the pytftp command
+pip install "tftp[cli,pktcap]"   # plus pytftp capture and replay, and --pcap
 ```
 
 | Extra | Adds | Needed for |
 | --- | --- | --- |
 | `cli` | `duho` | the `pytftp` command and `python -m tftp` |
 | `path` | `pathlib-next[uri]` | `TFTPPath`, and `tftp://` URLs in `pathlib_next.uri.UriPath` |
+| `pktcap` | [`pktcap`](https://github.com/jose-pr/pktcap) | reading, writing and replaying captures: `pytftp capture`, `pytftp replay`, `--pcap`, `tftp.capture.analyze` of a file |
 
-Requires Python 3.9+. The required dependencies are
-[`netimps`](https://github.com/jose-pr/netimps), which has none of its own,
-and [`pktcap`](https://github.com/jose-pr/pktcap), which needs only `netimps`.
+Requires Python 3.9+. The one required dependency is
+[`netimps`](https://github.com/jose-pr/netimps), which has none of its own.
 
 ## Quick start
 
@@ -155,7 +156,7 @@ Relay, capture and asyncio (the commands are under "Command line"):
 ```python
 import tftp
 from tftp.relay import TFTPRelay, RouteTable, by_subnet
-import pktcap
+import pktcap                      # the pktcap extra
 from tftp.capture import analyze, trace_to
 
 # Forward requests to per-subnet boot servers, recording everything.
@@ -209,8 +210,9 @@ pytftp replay --input boot.pcapng --to 192.0.2.1 --speed 10
 ```
 
 pktcap's own commands read TFTP too once they are told to load it: `tftp.capture` is a pktcap plugin
-that adds the filter keys `op`, `file`, `block` and `code`. Only the datagrams to or from the request
-port carry the layer, so a transfer is followed with `pytftp capture`.
+that adds the filter keys `op`, `file`, `block`, `code` and `session`. Only the datagrams to or from the
+request port carry the layer until `follow_transfers` has seen them, so a transfer is followed with
+`pytftp capture`, which prints pktcap's `text` listing of `TFTPLayer.summary()` by default.
 
 ```bash
 PKTCAP_LOAD=tftp.capture pktcap convert -i boot.pcapng -f "op=RRQ and file=*.efi"
@@ -224,7 +226,7 @@ PKTCAP_LOAD=tftp.capture pktcap convert -i boot.pcapng -f "op=RRQ and file=*.efi
 | `tftp.server` | `TFTPServer`, `AsyncTFTPServer`, `TFTPServerLimits`, `AtomicWriter`, `TFTPRequestContext` |
 | `tftp.backends` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend` (proxy), `Pipe` |
 | `tftp.relay` | `TFTPRelay`, `AsyncTFTPRelay` and routing helpers |
-| `tftp.capture` | trace events, `trace_to`, `FlowTracker`, `analyze`, filters, `replay_transfers`, and TFTP as a pktcap layer (`TFTPLayer`, `register_tftp_dissector`, `pktcap_plugin`); reading and writing a capture are pktcap's |
+| `tftp.capture` | trace events, `trace_to`, `FlowTracker`, `analyze`, `replay_transfers`, and TFTP as a pktcap layer (`TFTPLayer`, `register_tftp_dissector`, `pktcap_plugin`, `follow_transfers`); reading and writing a capture are pktcap's |
 | `tftp.options` | `TFTPServerOptions`, option registry, profiles, `Negotiated` |
 | `tftp.packet` | `TFTPOpcode`, `TFTPErrorCode`, packet types, `encode_*`/`decode` |
 | `tftp.transfer` | I/O-free `Sender`/`Receiver`/`Requester` engine |

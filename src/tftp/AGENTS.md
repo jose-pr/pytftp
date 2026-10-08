@@ -13,17 +13,20 @@ name has one home, its role module or one of the topic modules `tftp.transfer`,
 (`from tftp.options import OptionRegistry`): "Where names live" lists every public
 module's exports. Modules starting with `_` are internal.
 
-Install with `pip install tftp`; its required dependencies are `netimps` and
-`pktcap`. The `cli` extra (`pip install "tftp[cli]"`) adds `duho`, which the
-`pytftp` command needs; the `path` extra (`pip install "tftp[path]"`) adds
-`pathlib-next[uri]`, which `tftp.path` needs. Importing `tftp` never requires
-either. Python 3.9 or newer.
+Install with `pip install tftp`; its one required dependency is `netimps`. The `cli`
+extra (`pip install "tftp[cli]"`) adds `duho`, which the `pytftp` command needs; the `path` extra
+(`pip install "tftp[path]"`) adds `pathlib-next[uri]`, which `tftp.path` needs; the `pktcap` extra
+(`pip install "tftp[pktcap]"`) adds `pktcap`, which reading, writing, dissecting and replaying
+captures need (`pytftp capture` and `pytftp replay` need it and `cli`; `--pcap` needs it). Importing
+`tftp` never requires any of them, and a capture function or command without `pktcap` says
+`captures need the 'pktcap' extra: pip install "tftp[pktcap]"` (an `ImportError`; on stderr with
+status 1 from the commands). Python 3.9 or newer.
 
 `netimps` (no dependencies of its own) supplies the pktinfo receive and reply sockets
 (`UDPEndpoint`, and `arecv` for `AsyncTFTPServer`), broadcast and multicast checks, MTU payload
 sizing, the retransmission timer (`Backoff`), socket binding, host:port parsing, the address and
 network types (`HostLike`, `IPNetworkLike`, `Host`, `Interface`: what the address-taking parameters
-accept) and bind-error hints; `pktcap` reads, writes and dissects captures.
+accept) and bind-error hints; `pktcap` (the extra) reads, writes and dissects captures.
 
 `tftp.__version__` — the installed distribution's version.
 
@@ -44,7 +47,7 @@ that implements it; those headers ship in the package, at the paths below
 | `tftp/options/AGENTS.md` | `TFTPServerOptions`, the option handlers and registry, the built-in options, `Profile`, `Negotiated` |
 | `tftp/backends/AGENTS.md` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend`, `Pipe`, and the `Remap`, `PerClient` and `CaseInsensitive` wrappers |
 | `tftp/relay/AGENTS.md` | `TFTPRelay`, `AsyncTFTPRelay` and their routing helpers |
-| `tftp/capture/AGENTS.md` | packet events and trace hooks, `FlowTracker`, `analyze`, `replay_transfers`, TFTP as a pktcap layer, the event filters |
+| `tftp/capture/AGENTS.md` | packet events and trace hooks, `FlowTracker`, `analyze`, `replay_transfers`, TFTP as a pktcap layer, `follow_transfers` |
 | `tftp/packet/AGENTS.md` | the packet types, the codec and the enums |
 | `tftp/transfer/AGENTS.md` | the I/O-free engine: `Sender`, `Receiver`, `Requester`, `Transfer`, `as_readinto` and `as_write` |
 | `tftp/path/AGENTS.md` | `TFTPPath` and `TFTPURIPath` (the `path` extra) |
@@ -298,7 +301,8 @@ the others in `tftp/cli/AGENTS.md`, through its argument parser.
 
 - **`netimps` and `pktcap` are imported by the call that needs them**, never by `import tftp`
   or by building a client or a server: `bind()`, the first transfer and `Upstream.parse`
-  import `netimps`; reading, writing or dissecting a capture imports `pktcap`.
+  import `netimps`; reading, writing or dissecting a capture imports `pktcap`, an extra: without
+  it that call raises `ImportError` naming it.
   `asyncio` is not imported until `AsyncTFTPClient` or `AsyncTFTPServer` is first accessed, so
   the blocking half never loads it; `duho`, `pathlib_next` and `uritools` are imported by the
   command and by `tftp.path` only.

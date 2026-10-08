@@ -46,9 +46,8 @@ The private modules at the root: `_uri.py` (`TFTPURL`, the URL one-shots), `_res
 
 Venvs are named `.venv/<version>-<os>-<arch>/`, one per interpreter this project is
 tested against: the latest (3.14) and the floor (3.9), which is what CI's oldest job runs.
-The suffix is what the interpreter was **built** for, not what the host is. `netimps` 0.4 and `pktcap` 0.1
-are not on PyPI yet: install them first from their repositories, as CI does (`pip install --no-deps -e
-../netimps -e ../pktcap` from sibling checkouts).
+The suffix is what the interpreter was **built** for, not what the host is. `netimps` 0.4 and `pktcap` 0.1 are
+not on PyPI yet: install them first as CI does (`pip install --no-deps -e ../netimps -e ../pktcap`, sibling checkouts).
 
 ```bash
 py -3.14 -m venv .venv/3.14-nt-arm64
@@ -58,7 +57,7 @@ py -3.9  -m venv .venv/3.9-nt-arm64
 ```
 
 On POSIX the scripts live in `bin/` rather than `Scripts/`, and the name is e.g.
-`.venv/3.14-posix-x86_64`. The `dev` extra installs the `cli` and `path` extras, so the tests
+`.venv/3.14-posix-x86_64`. The `dev` extra installs the `cli`, `path` and `pktcap` extras, so the tests
 that depend on them run rather than skip.
 
 ## Checks
@@ -94,7 +93,8 @@ JSON is committed, and a release's performance claims come from CI, not a laptop
 - **The server loop is single-threaded.** A handler's streams run on it; its `open_read` and
   `open_write` do too when it has `opens_fast = True`, else in a worker thread.
 - **`netimps` and `pktcap` are imported lazily**, inside functions, so `import tftp` stays cheap and
-  does not install the netimps socket patch until a transfer starts. `duho`, `pathlib_next` and
+  does not install the netimps socket patch until a transfer starts; `pktcap` is an extra (`_extras.py` names it
+  when missing) and only `cli/capture.py` and `cli/replay.py` import it at the top. `duho`, `pathlib_next` and
   `uritools` are imported only by `cli/` and `path/`; the library never requires an extra.
 - **A private module imports a name from the module that owns it, never from the root.**
   `tests/test_import_structure.py` pins the direction, the 500-line module limit (the exceptions are named there, each with its reason) and the logger

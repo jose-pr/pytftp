@@ -1,5 +1,12 @@
 # Capture and debugging
 
+Reading, writing, dissecting, filtering and replaying captures are [pktcap](https://github.com/jose-pr/pktcap)'s,
+and it is the `pktcap` extra: `pip install "tftp[pktcap]"` (with `tftp[cli,pktcap]`, `pytftp capture` and
+`pytftp replay` work). Transferring, serving, relaying and `trace=` hooks need none of it; a function or
+a command that does prints `captures need the 'pktcap' extra: pip install "tftp[pktcap]"` (an
+`ImportError` from the function; on stderr with status 1 from `pytftp capture`, `pytftp replay` and
+`--pcap` on the other commands, before a socket is bound).
+
 ## Tracing your own traffic
 
 `TFTPClient`, `TFTPServer` and `TFTPRelay` take `trace=`, called with a
@@ -32,7 +39,7 @@ records them, on `get`, `put`, `serve` and `relay`.
 ## Reading captures
 
 pcap and pcapng files, from tcpdump, dumpcap or Wireshark, or a live pipe, are read by
-[pktcap](https://github.com/jose-pr/pktcap), a dependency of this library, and followed here:
+pktcap, and followed here:
 
 <!-- not run: it reads a capture file the reader recorded -->
 ```python
@@ -71,18 +78,50 @@ a block too short for its kind. `pktcap.read_datagrams(source)` gives the datagr
 of a capture, and `FlowTracker.feed` takes anything with a `time`, a `source`, a
 `destination` and a `payload` (and a `truncated`, when it has one).
 
-A frame no dissector reads is reported, never taken for "no traffic": `pytftp capture`
-prints one `warning: N of M frames not read: ...` line on stderr naming the count and the
-link-type numbers, and exits 2 when every frame was of an unsupported link type (802.11, for
-one). A datagram the capture's snap length cut is listed as a packet but never read as the
-last block of its transfer: the transfer is incomplete, its block is in `missing_blocks`, and
+A frame no dissector reads is reported, never taken for "no traffic": the summary line
+`pytftp capture` prints on stderr counts the frames of an unsupported link type (802.11, for one) and
+the malformed ones, with the link-type numbers. A datagram the capture's snap length cut is never read
+as the last block of its transfer: the transfer is incomplete, its block is in `missing_blocks`, and
 `--extract` writes it with `.partial`.
 
+## `pytftp capture`
+
 ```bash
-pytftp capture boot.pcapng --transfers
-tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "host=10.1.0.0/16 and op=ERROR"
-sudo pytftp capture -i eth0 --extract recovered/            # Linux, live
+pytftp capture --input boot.pcapng --transfers
+tcpdump -i eth0 -U -w - udp | pytftp capture --input - --filter "host=10.1.0.0/16 and op=ERROR"
+sudo pytftp capture --interface eth0 --extract recovered/   # Linux, live
+pytftp capture --input boot.pcapng --format json --filter "op=DATA and tftp.session=c3"
 ```
+
+The command is pktcap's capture command (`pktcap.cli.Capture`) with the `tftp.capture` plugin always
+loaded: it reads a file, standard input or an interface, follows each transfer across its ports with
+`follow_transfers`, and writes the TFTP packets the way pktcap writes: by default one readable line a
+packet, which is pktcap's `text` output with `TFTPLayer.summary()` after the addresses,
+
+```text
+2023-11-14T22:13:20.512345Z 192.0.2.5:2000 > 192.0.2.1:69 tftp: [c1] RRQ 'boot/ipxe.efi' octet blksize=512
+2023-11-14T22:13:20.549380Z 192.0.2.1:40001 > 192.0.2.5:2000 tftp: [c1] DATA 1
+```
+
+and with `--format json` pktcap's record: the `ipv4`, `udp` and `tftp` layers (the `tftp` layer carries
+`session`, the id of the transfer) and the DATA's octets in `payload`. `--transfers` prints a line per
+transfer on stderr at the end; a machine reads the transfers from `FlowTracker` or `analyze`.
+`--extract DIR` writes each transfer's file. The summary line on stderr counts the frames read, written
+and skipped. Everything else pktcap's capture command takes is the same: `--output`, `--format`
+(`pcap`, `pcapng`, `json`, `yaml`, `toml`, `ini`, `text`), `--per-record`, `--max-files`, `--datagrams`,
+`--append`, `--count`, `--duration`, `--hook`, `--hook-fail-fast`, `--hook-timeout`, `--load` and
+`--config`; pktcap's header documents each, and its statuses are the command's: 0 done, 1 a file or
+an interface that cannot be opened, 2 a file that is no capture or a bad option.
+
+| Before | Now |
+| --- | --- |
+| the positional `SOURCE` | `--input`/`-i FILE` (`-` for standard input); it excludes `--interface` |
+| `--interface`/`-i` | `--interface` |
+| `--filter` over events: `host`, `src=ADDR:PORT`, `dst`, `leg`, `direction`, `session` | pktcap's filter: `src`, `dst`, `host` (addresses and networks), `sport`, `dport`, `port`, plus `op`, `file`, `block`, `code`, `session`; `src=ADDR:PORT` is `src=ADDR and sport=PORT`; `leg` and `direction` are gone |
+| `--json`, `--payload` | `--format json`: a DATA's octets are always in the record |
+| `--transfers` on standard output | one line each on standard error |
+| `warning: N of M frames not read`, status 2 for a capture of an unsupported link type | the count in the summary line, status 0 |
+| (hidden, refused) | `--listen`: a socket on port 69 sees requests, never a transfer's data, and takes the port a server needs |
 
 ## TFTP in pktcap
 
@@ -104,38 +143,62 @@ for frame in pktcap.read_dissected("boot.pcapng", dissector=dissector):
 ```
 
 The layer is on the datagrams to the request port: a transfer's DATA and ACK run between ports
-chosen per transfer, which no selector names, so `FlowTracker` follows them. With the layer
-registered, `pktcap.compile_capture_filter("proto=tftp", pktcap.frame_filter)` selects the
-frames that have it and `pktcap.frame_record` writes its fields.
+chosen per transfer, which no selector names. `follow_transfers(frames, tracker)` gives them one:
+it feeds the dissected frames to a `FlowTracker` and returns each datagram the tracker attributes to a
+transfer with its `TFTPLayer`, whose `session` is the transfer's id; a frame it cannot attribute is
+returned as it was.
+
+<!-- not run: it reads a capture file the reader recorded -->
+```python
+import pktcap
+from tftp.capture import FlowTracker, TFTPLayer, follow_transfers, pktcap_plugin
+
+registry = pktcap.DissectorRegistry()
+pktcap_plugin(registry)                               # the layer, its filter keys and the dissector
+frames = pktcap.read_dissected("boot.pcapng", dissector=pktcap.FrameDissector(registry))
+for frame in follow_transfers(frames, FlowTracker()):
+    layer = frame.layer(TFTPLayer)
+    if layer is not None and layer.opcode == "DATA":
+        print(layer.session, layer.block, len(frame.payload))
+```
+
+With the layer registered, `pktcap.compile_capture_filter("proto=tftp", pktcap.frame_filter_for(registry))`
+selects the frames that have it and `pktcap.frame_record` writes its fields. `TFTPLayer.summary()` is the
+line pktcap's `text` output prints for it.
 
 pktcap's own commands load it by name: `PKTCAP_LOAD=tftp.capture pktcap convert -i boot.pcapng -f
-"op=RRQ and file=*.efi"`. `tftp.capture.pktcap_plugin` adds the keys `op`, `file`, `block` and `code`
-(and `tftp.FIELD` for every field of `TFTPLayer`), which read the same text as `pytftp capture --filter`
-does, except that `op` refuses a name that is none of the six opcodes. The layer is on the datagrams
-to or from the request port only, so `block=` and `op=DATA` select what was sent there; follow a
-transfer with `pytftp capture`.
+"op=RRQ and file=*.efi"`. `tftp.capture.pktcap_plugin` adds the keys `op` (which refuses a name that
+is none of the six opcodes), `file`, `block`, `code` and `session` (and `tftp.FIELD` for every field of
+`TFTPLayer`). Over frames pktcap's own commands read, the layer is on the datagrams to or from the
+request port only, so `block=` and `op=DATA` select what was sent there; `pytftp capture` follows the
+transfer, and over `follow_transfers`' frames `op=DATA and tftp.session=c3` selects one transfer's data.
 
 ## Replay
 
-`pytftp replay FILE HOST` asks a server you name for each transfer the capture holds again, each
+`pytftp replay --input FILE --to HOST[:PORT]` asks a server you name for each transfer the capture holds again, each
 by a client built from what the capture's client asked for (mode, file name, options) and paced
 by the capture's own times. It is **not a replay of datagrams**: after the request a transfer runs
 between ports chosen anew, so the request is repeated and the client answers the server as any
-client does. **Nothing is sent to an address in the capture**: `HOST` is the only destination.
+client does. **Nothing is sent to an address in the capture**: `--to` is the only destination (port 69
+when it names none). The command is pktcap's replay command (`pktcap.cli.Replay`) with the plugin loaded
+and its datagram sending replaced by this one; pktcap's `--source-port` and `--broadcast` are not
+offered, since no captured datagram is sent.
 
 ```bash
-pytftp replay boot.pcapng 192.0.2.1 --speed 10
-pytftp replay boot.pcapng 192.0.2.1 -p 6969 --json --limit 5
+pytftp replay --input boot.pcapng --to 192.0.2.1 --speed 10
+pytftp replay --input boot.pcapng --to 192.0.2.1:6969 --json --limit 5
 ```
 
 - A **read** is asked for again and its octets are discarded. A **write** is replayed only with
   `--writes`, and then it uploads the octets the capture holds of it, **which overwrites that file
   on the server**; a write the capture holds only partly is never replayed.
-- `--speed` divides each recorded gap (default 1.0, the recorded pace) and `--max-delay` bounds
-  any single wait, so a capture with a jump of a year does not hang a replay.
+- `--speed` divides each recorded gap (default 1.0, the recorded pace), `--no-delay` removes the waits
+  and `--max-delay` bounds any single wait, so a capture with a jump of a year does not hang a replay.
+  `--limit` counts transfers. `--filter` chooses which frames reach the tracker.
 - One line per transfer on stdout (`--json`: the transfer's result), and a count of what was
   replayed, failed and skipped on stderr. Status 0 when every transfer run succeeded, 1 when one
-  failed, 2 for a file that is no capture.
+  failed or the file cannot be opened, 2 for a file that is no capture.
+- The positionals `SOURCE` and `HOST` and `-p`/`--port` became `--input`/`-i` and `--to HOST[:PORT]`.
 
 ```python
 from tftp.capture import replay_transfers
@@ -146,15 +209,18 @@ print(len(done.results), "run,", done.skipped, "skipped")
 
 ## Filters
 
-`key=value` clauses joined by `and`; a comma means "any of"; `!=` negates. The grammar is
-pktcap's, and there is no `or`; an expression that does not parse, an unknown key or a bad
-value is a `pktcap.CaptureFilterError` (a `ValueError`) naming the clause.
+A filter is pktcap's: `key=value` clauses joined by `and`, a comma for "any of", `!=` to negate, and no
+`or`; `pktcap.compile_capture_filter(text, pktcap.frame_filter_for(registry))` over frames, or
+`--filter` of `pytftp capture`, `pytftp replay` and pktcap's commands with the plugin loaded. An
+expression that does not parse, an unknown key or a bad value is a `pktcap.CaptureFilterError` (a
+`ValueError`) naming the clause. This library has no filter of its own.
 
 | key | matches |
 | --- | --- |
 | `op` | opcode name: RRQ WRQ DATA ACK ERROR OACK |
-| `host`, `src`, `dst` | an address, a CIDR, `addr:port`, `[v6]:port` or `:port` |
-| `port` | either end's port |
 | `file` | requested filename, shell pattern |
 | `block`, `code` | DATA/ACK block, ERROR code |
-| `session`, `leg`, `direction` | transfer id, relay side, in/out/seen |
+| `session` | the id of the transfer (`tftp.session=c3`), set by `follow_transfers` |
+| `src`, `dst`, `host` | pktcap's: an address or a network |
+| `sport`, `dport`, `port` | pktcap's: the UDP source, destination or either port |
+| `proto`, `vlan`, `linktype`, `LAYER.FIELD` | pktcap's |

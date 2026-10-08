@@ -16,8 +16,10 @@ new one, "Removed" lists what is gone and "Changed" has the detail of each behav
 kept as an alias and there is no deprecation period, so an upgrade is a search and replace and a read
 of this list.
 
-- **Dependencies.** `netimps>=0.4.0,<0.5` (0.3 is no longer supported) and `pktcap>=0.1.0,<0.2` are
-  required; the `cli` extra is `duho>=0.7.0,<0.8` and the `path` extra `pathlib-next[uri]>=0.9.12,<0.10`.
+- **Dependencies.** `netimps>=0.4.0,<0.5` (0.3 is no longer supported) is the one required dependency; the
+  `cli` extra is `duho>=0.7.0,<0.8`, the `path` extra `pathlib-next[uri]>=0.9.12,<0.10` and the `pktcap`
+  extra `pktcap>=0.1.0,<0.2`, which `pytftp capture`, `pytftp replay`, `--pcap` and reading a capture
+  need (`pip install "tftp[cli,pktcap]"`); without it they say so and nothing else changes.
 - **Names.** Acronyms are upper case and every role is named for what it is: `TFTPClient`,
   `TFTPServer`, `TFTPRelay`, `TFTPHandler`, `FilesystemBackend`, `TFTPError`, `TFTPURL`,
   `RequestPacket`, `TransferTimeoutError`. Every exception lives in `tftp.exceptions`.
@@ -34,8 +36,11 @@ of this list.
   handler reaches the asyncio server through `tftp.server.ThreadedHandler`.
 - **Values.** `TFTPURL`, `Upstream`, `PortRange` and the packet types are frozen values that compare by
   type, not tuples; a `tftp://` URL carries transfer options in either spelling.
-- **Capture.** Reading, writing and live capture are pktcap's; `tftp.capture` keeps events, flows,
-  analysis, filters and replay, and adds `trace_to`, `TFTPLayer` and `replay_transfers`.
+- **Capture.** Reading, writing, filtering and live capture are pktcap's, and `pytftp capture` and
+  `pytftp replay` are its commands with TFTP loaded (`--input`, `--to`, pktcap's output options and
+  statuses; `--json` and `--payload` are `--format json`); `tftp.capture` keeps events, flows and
+  analysis and adds `trace_to`, `TFTPLayer`, `follow_transfers` and `replay_transfers`. Its own filter
+  (`compile_filter`) is gone.
 - **Command line.** The entry point is `tftp.cli.main(argv)`, which returns the exit status; the command
   refuses flag combinations it used to ignore (exit 2), and `pytftp replay` is new.
 - **Defaults that bound a request.** A server ends a transfer silent for 60 seconds (`max_idle`),
