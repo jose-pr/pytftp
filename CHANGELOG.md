@@ -71,6 +71,9 @@ differs and "Fixed" the defects corrected on the way.
 - **`compile_filter` refuses a `block` or `code` outside 0 to 65535** (both are two octets on the wire)
   with `pktcap.CaptureFilterError`, where it took any integer and matched nothing; the same check
   serves the `pktcap_plugin` keys, so the two filters cannot disagree.
+- **The `path` extra needs pathlib-next 0.9.12**: `pathlib-next[uri]>=0.9.12,<0.10`, where it
+  was `>=0.9.0,<0.10`. From that release `copy(overwrite=True)` asks its target to
+  `unlink(missing_ok=True)`, which a TFTP path answers by doing nothing.
 - **The `cli` extra needs `duho` 0.7**: `duho>=0.7.0,<0.8`, where it was `>=0.6.0,<0.7`. The
   `pytftp` command, its options and its output are the same.
 - **`AsyncTFTPClient` reports an expired `deadline` in the first wait as `TFTPClient` does.** A
@@ -876,8 +879,8 @@ Old names are not kept as aliases.
   before.
 - **`copy(overwrite=True)` onto a name the server has works.** `unlink()` on a
   `TFTPPath` or `TFTPURIPath` still raises `NotImplementedError`, except for
-  `unlink(missing_ok=True)` and the call `pathlib_next`'s `copy()` makes on its
-  target: they do nothing, and the write that follows replaces the file.
+  `unlink(missing_ok=True)`, which is what `pathlib_next`'s `copy()` asks of its
+  target: it does nothing, and the write that follows replaces the file.
   `move()` from a TFTP path is not supported: it copies and then raises
   `NotImplementedError` because the source cannot be deleted.
 - `TFTPPath.as_uri()` keeps a leading slash (`/boot/x` is `tftp://h//boot/x`, as

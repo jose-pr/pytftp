@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 import errno
 import posixpath
-import sys
 from typing import Any, Callable, Iterator, List, Optional, Tuple
 
 from pathlib_next import Path, Pathname
@@ -85,17 +84,15 @@ def tftp_scandir(client: TFTPClient, dirname: str, path: Any) -> Iterator[Tuple[
         )
 
 
-def tftp_unlink(path: Any, missing_ok: bool, caller: Any) -> None:
+def tftp_unlink(path: Any, missing_ok: bool) -> None:
     """``unlink()`` for a TFTP path, which cannot delete.
 
-    ``missing_ok=True`` returns without doing anything, and so does a plain
-    call made by :meth:`pathlib_next.Path.copy` on its target: the write that
-    follows replaces the file. Anything else, a deletion nobody can do,
-    raises ``NotImplementedError``. ``caller`` is the frame of the call.
+    ``missing_ok=True`` returns without doing anything: it is how
+    :meth:`pathlib_next.Path.copy` asks a target to make way, and the write
+    that follows replaces the file. A plain call, a deletion nobody can do,
+    raises ``NotImplementedError``.
     """
     if missing_ok:
-        return
-    if caller.f_code is getattr(Path.copy, "__code__", None) and caller.f_locals.get("target") is path:
         return
     raise NotImplementedError("TFTP cannot delete a file")
 
@@ -266,7 +263,7 @@ class TFTPPath(Path):
         return tftp_open(self._client, self.as_posix(), self._mode, mode, self)
 
     def unlink(self, missing_ok: bool = False) -> None:
-        tftp_unlink(self, missing_ok, sys._getframe(1))
+        tftp_unlink(self, missing_ok)
 
     def _scandir(self) -> Iterator[Tuple[str, FileStat]]:
         return tftp_scandir(self._client, self.as_posix(), self)

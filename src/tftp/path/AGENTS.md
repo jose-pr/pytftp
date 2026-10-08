@@ -74,9 +74,9 @@ Both support what TFTP can do, plus listing against a server speaking
   a directory raises `FileNotFoundError`; listing a file raises
   `NotADirectoryError`.
 - Deleting, renaming, creating directories and permissions raise
-  `NotImplementedError`. `unlink()` raises it too, with two exceptions that
-  do nothing, because the write that follows replaces the file:
-  `unlink(missing_ok=True)` and the call `copy(overwrite=True)` makes on its
+  `NotImplementedError`. `unlink()` raises it too, except
+  `unlink(missing_ok=True)`, which does nothing, because the write that
+  follows replaces the file: it is what `copy(overwrite=True)` asks of its
   target. So `copy(target, overwrite=True)` onto a name the server has
   replaces it (the server must allow overwriting).
 - `tftp.path.TFTPURIPath` without `uritools` raises `ImportError` naming the

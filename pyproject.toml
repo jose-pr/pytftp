@@ -45,7 +45,7 @@ dependencies = ["netimps>=0.4.0,<0.5", "pktcap>=0.1.0,<0.2"]
 cli = ["duho>=0.7.0,<0.8"]
 # pathlib-style paths: TFTPPath, and the tftp:// scheme for pathlib_next's
 # UriPath (its "uri" extra). Importing tftp never requires it.
-path = ["pathlib-next[uri]>=0.9.0,<0.10"]
+path = ["pathlib-next[uri]>=0.9.12,<0.10"]
 # Tooling only: the extras the tests need are named here, their ranges are above.
 dev = ["black", "build", "coverage", "mypy>=1.19,<3", "pytest", "tftp[cli,path]"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]

@@ -8,7 +8,6 @@ cross between ``tftp:``, ``file:``, ``http:``, ``s3:``...
 
 from __future__ import annotations
 
-import sys
 from typing import Any, Dict, Iterator, Mapping, Optional, Tuple
 from urllib.parse import quote
 
@@ -125,7 +124,7 @@ class TFTPURIPath(UriPath):
         return tftp_open(self._client_for(options), filename, transfer_mode, mode, self)
 
     def unlink(self, missing_ok: bool = False) -> None:
-        tftp_unlink(self, missing_ok, sys._getframe(1))
+        tftp_unlink(self, missing_ok)
 
     def _scandir(self) -> Iterator[Tuple[str, FileStat]]:
         filename, _, options = self._parts()
