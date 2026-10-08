@@ -181,7 +181,7 @@ differs and "Fixed" the defects corrected on the way.
   number and a `src` of the wrong shape raise `TypeError`. `backoff` below 1 is
   a `ValueError`, where it was silently stored as 1. The host text is still
   read when the transfer starts.
-- Requires `netimps>=0.4.0,<0.5`; netimps 0.3 is no longer supported.
+- Requires `netimps>=0.4.1,<0.5`; netimps 0.3 is no longer supported.
 - `TFTPClient(timeout=..., max_timeout=...)` raises `ValueError` when
   `max_timeout` is below `timeout`, where it used to be raised to `timeout`
   silently.

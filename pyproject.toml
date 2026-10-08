@@ -33,8 +33,8 @@ classifiers = [
 # `split_host`, `Host.ip`, `get_interface`) and its keyword-only options
 # (`Backoff`, `max_udp_payload`), and needs its link-local IPv6 bind fixes for
 # `interface=` with host '::' and for replies to a link-local IPv6 client.
-#
-dependencies = ["netimps>=0.4.0,<0.5"]
+# 0.4.1 is the floor the `pktcap` extra can be installed beside: pktcap needs it.
+dependencies = ["netimps>=0.4.1,<0.5"]
 
 [project.optional-dependencies]
 # The CLI is optional: importing tftp never requires duho.
