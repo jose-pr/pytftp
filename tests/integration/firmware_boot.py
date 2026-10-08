@@ -12,12 +12,24 @@ our server listening on 192.168.77.1:69. QEMU's user-mode network cannot be
 used: it answers port 69 on its gateway itself. Prints each transfer the
 server completed, then a verdict per firmware.
 
-Status: ``ipxe`` passes (iPXE fetches its script and a 2 MB file with
-blksize 1432 and tsize). ``uefi`` does not get as far as the network: the
-OVMF build tried (Fedora 44 edk2-ovmf 20260812, 2M and 4M images, virtio-net
-and e1000, with and without the NIC option ROM, with the IPv4PXESupport
-fw_cfg knob) reports "No bootable option or device was found" without
-sending a DHCP request, so EDK2's PXE client is not yet verified.
+Both pass, measured 2026-10-08 on a KVM host (QEMU 11.0.3, dnsmasq 2.91):
+
+``ipxe``: iPXE fetches its script and a 2 MB file with ``blksize=1432`` and
+``tsize=0``.
+
+``uefi``: EDK2's PXE client, from the OVMF of pve-edk2-firmware 4.2026.08
+(``OVMF_CODE.fd``, the 2 MB image) with a virtio-net device and the
+IPv4PXESupport fw_cfg knob. It sends two requests for the boot file. The first
+carries ``tsize=0 blksize=1468 windowsize=4`` and is ended by the client with
+ERROR 8 as soon as the OACK has told it the size; the second, without
+``tsize``, downloads the file in blocks of 1468 octets and windows of four.
+The first one is therefore reported as a failed transfer, and is not one.
+
+Not every OVMF build boots from the network. Fedora 44's edk2-ovmf 20260812
+(2M and 4M images, virtio-net and e1000, with and without the NIC option ROM,
+with the same knob) prints "No bootable option or device was found" and sends
+no DHCP request. Name another image with ``OVMF_CODE`` in the environment.
+With ``/dev/kvm`` usable a boot takes seconds; emulated, about three minutes.
 """
 
 from __future__ import annotations
@@ -34,11 +46,21 @@ import tftp
 
 TAP = "tftptap0"
 HOST = "192.168.77.1"
+#: Where a firmware image is looked for, in order. ``OVMF_CODE`` in the
+#: environment names one outright. Not every build can boot from the network:
+#: see the module docstring for which did.
 OVMF_CANDIDATES = [
+    os.environ.get("OVMF_CODE", ""),
+    "/usr/share/pve-edk2-firmware/OVMF_CODE.fd",
     "/usr/share/edk2/ovmf/OVMF_CODE.fd",
     "/usr/share/OVMF/OVMF_CODE.fd",
     "/usr/share/ovmf/OVMF.fd",
 ]
+
+
+def _accel() -> list:
+    """Hardware virtualisation where the host offers it: a boot takes seconds, not minutes."""
+    return ["-accel", "kvm"] if os.access("/dev/kvm", os.R_OK | os.W_OK) else []
 
 
 class Lab:
@@ -68,6 +90,8 @@ class Lab:
                 "--conf-file=/dev/null",
                 "--pid-file=",
                 "--dhcp-leasefile=" + os.path.join(self.workdir, "leases"),
+                "--log-dhcp",
+                "--log-facility=" + os.path.join(self.workdir, "dhcp.log"),
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -87,6 +111,11 @@ class Lab:
         self.dhcp.terminate()
         self.dhcp.wait(5)
         subprocess.run(["ip", "link", "del", TAP], capture_output=True)
+        try:
+            with open(os.path.join(self.workdir, "dhcp.log"), errors="replace") as handle:
+                self.dhcp_log = [line.rstrip() for line in handle if "DHCP" in line]
+        except OSError:
+            self.dhcp_log = []
 
 
 def boot(args, seconds: float, until: str = "") -> str:
@@ -120,6 +149,9 @@ def _net(device: str) -> list:
 
 
 def _report(name: str, lab: Lab) -> None:
+    # What the firmware asked the DHCP server: none at all means it never tried the network.
+    for line in lab.dhcp_log[:12]:
+        print("  %s dhcp: %s" % (name, line.split(": ", 1)[-1]))
     for result in lab.results:
         print("  %s: %r" % (name, result))
     requests = [e for e in lab.events if e.opcode_name in ("RRQ", "WRQ")]
@@ -140,6 +172,7 @@ def ipxe(workdir: str) -> bool:
         out = boot(
             [
                 "qemu-system-x86_64",
+                *_accel(),
                 "-nographic",
                 "-m",
                 "256",
@@ -174,6 +207,7 @@ def uefi(workdir: str) -> bool:
         out = boot(
             [
                 "qemu-system-x86_64",
+                *_accel(),
                 "-nographic",
                 "-m",
                 "512",

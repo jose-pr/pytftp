@@ -41,6 +41,14 @@ of this list.
 - **Defaults that bound a request.** A server ends a transfer silent for 60 seconds (`max_idle`),
   `MemoryBackend` takes uploads up to 16 MiB, and `max_sessions` is 500 on every platform.
 
+### Real firmware
+
+Both PXE clients fetch from the server in QEMU (`tests/integration/firmware_boot.py`, measured
+2026-10-08 under KVM): iPXE with `blksize=1432` and `tsize`, and EDK2's UEFI PXE client (the OVMF of
+pve-edk2-firmware 4.2026.08), which asks for `tsize=0 blksize=1468 windowsize=4`, ends that first
+request with ERROR 8 once the OACK has told it the size, and then downloads the boot file in blocks
+of 1468 octets and windows of four.
+
 The version in development is 0.1.0; the number of the release is chosen when it is cut.
 
 ## [0.0.0] - 2026-10-03

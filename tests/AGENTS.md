@@ -87,7 +87,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `integration/test_live_capture.py` | `pytftp capture -i` on Linux with `CAP_NET_RAW` |
 | `integration/test_interop.py` | curl's TFTP client against the server |
 | `integration/test_interop_peers.py` | tftp-hpa, BusyBox and dnsmasq, wherever they are found |
-| `integration/firmware_boot.py` | not collected: boots iPXE (and, not yet passing, UEFI PXE) in QEMU against the server; see "Scripts" |
+| `integration/firmware_boot.py` | not collected: boots iPXE and EDK2's UEFI PXE client in QEMU against the server; see "Scripts" |
 | `integration/ctrlc_driver.py` | not collected: raises a console event at an idle `serve` or `relay` on Windows, on a console of its own |
 | `integration/smoke_installed.py` | not collected: the installed distribution; see "Scripts" |
 | `conformance/` | what tftp-hpa answered, replayed against this library |
@@ -141,8 +141,9 @@ of the peers installed skips less.
   every header the top one lists is in it, that a loopback transfer works, and that `pytftp` starts or
   names the extra it needs. `python tests/integration/smoke_installed.py [--extras]`.
 - `integration/firmware_boot.py` boots real firmware in QEMU against the server and needs Linux, root,
-  `qemu-system-x86_64`, the iPXE ROMs, OVMF and dnsmasq: `sudo python tests/integration/firmware_boot.py ipxe`.
-  Its `uefi` scenario does not pass yet.
+  `qemu-system-x86_64`, the iPXE ROMs, OVMF and dnsmasq: `sudo python tests/integration/firmware_boot.py [ipxe|uefi]`.
+  Both pass with an OVMF that has a PXE client (its docstring names the build that does and the one
+  that does not); `OVMF_CODE` in the environment names an image.
 - `integration/ctrlc_driver.py` is started by `test_cli.py` on a console of its own, because a Windows
   console event goes to every process on the console.
 - `capture_cases/build.py` writes the captures (`python tests/capture_cases/build.py`) and records the
