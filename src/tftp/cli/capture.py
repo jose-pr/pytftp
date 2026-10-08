@@ -73,7 +73,7 @@ class CaptureCmd(Capture):
     ("--extract",)
 
     _tracker: _ty.Optional[FlowTracker] = None
-    _written: _ty.Optional[_ty.List[str]] = None
+    _extracted: _ty.Optional[_ty.List[str]] = None
 
     def _read(self, dissector: "FrameDissector") -> "_ty.Iterator[DissectedFrame]":
         import pktcap
@@ -96,7 +96,7 @@ class CaptureCmd(Capture):
 
         if self.input is None and not pktcap.has_live_capture():
             raise pktcap.LiveCaptureError(_NOT_LINUX)
-        self._written = []
+        self._extracted = []
         # A transfer the tracker lets go of (a live capture holds a bounded number) is
         # summarised and written when it goes, the rest at the end.
         self._tracker = FlowTracker(self.port, keep_payloads=bool(self.extract), on_complete=self._finish)
@@ -113,7 +113,7 @@ class CaptureCmd(Capture):
         if self._tracker is not None:
             for transfer in list(self._tracker.transfers):
                 self._finish(transfer)
-            if self.extract and not self._written:
+            if self.extract and not self._extracted:
                 error("no transfer data to extract")
         return super()._report(result, dissector)
 
@@ -121,10 +121,10 @@ class CaptureCmd(Capture):
         """The transfer is complete as far as this capture goes: summarise it, write its file."""
         if self.transfers:
             error(repr(transfer))
-        if self.extract and self._written is not None:
+        if self.extract and self._extracted is not None:
             path = transfer.write_to(self.extract)
             if path is not None:
-                self._written.append(path)
+                self._extracted.append(path)
                 error(
                     "wrote %s (%d bytes%s)"
                     % (path, _os.path.getsize(path), ", incomplete" if path.endswith(".partial") else "")

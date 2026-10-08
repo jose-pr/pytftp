@@ -473,6 +473,18 @@ def test_a_request_to_a_port_other_than_69_is_followed_when_the_port_is_given(tm
     assert capsys.readouterr().out == ""
 
 
+def test_a_hook_runs_for_each_record_written_as_pktcaps_capture_command_runs_it(capsys):
+    plain = os.path.join(_CASES, "plain.pcap")
+    # pprint:pformat is called with each frame written and returns; the summary counts no failure.
+    assert main(["capture", "--input", plain, "--hook", "pprint:pformat", "--format", "json", "-q"]) == 0
+    assert len(capsys.readouterr().out.splitlines()) == 19
+    # json:loads cannot take a frame: with --hook-fail-fast the first call ends the capture, status 1.
+    assert main(["capture", "--input", plain, "--hook", "json:loads", "--hook-fail-fast", "-q"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err.startswith("error: ") and "Traceback" not in captured.err
+    assert len(captured.out.splitlines()) == 1
+
+
 def test_serve_deployment_flags(root):
     import tftp
 
