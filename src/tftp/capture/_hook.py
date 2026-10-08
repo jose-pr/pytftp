@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Optional, Protocol, Tuple
 
+from .._extras import require_pktcap
 from ._events import PacketEvent
 
 __all__ = ["DatagramWriter", "HookGuard", "combine_hooks", "guard", "trace_to"]
@@ -87,8 +88,9 @@ def trace_to(writer: DatagramWriter) -> Callable[[PacketEvent], None]:
 
     ``writer`` stays the caller's to close. A write that raises (a full disk, a
     port or a time the format cannot hold) is the hook's failure: the transfer
-    goes on and the first one is logged.
+    goes on and the first one is logged. ``ImportError`` when pktcap is not installed.
     """
+    require_pktcap()
 
     def hook(event: PacketEvent) -> None:
         writer.write(event.time, event.source, event.destination, event.data)

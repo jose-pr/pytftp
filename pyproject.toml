@@ -34,20 +34,21 @@ classifiers = [
 # (`Backoff`, `max_udp_payload`), and needs its link-local IPv6 bind fixes for
 # `interface=` with host '::' and for replies to a link-local IPv6 client.
 #
-# pktcap supplies reading pcap and pcapng captures, dissecting their frames
-# (IP fragments reassembled), writing pcap and pcapng, the filter grammar and
-# live capture on Linux. It is imported inside the functions that use it, so
-# importing tftp loads none of it.
-dependencies = ["netimps>=0.4.0,<0.5", "pktcap>=0.1.0,<0.2"]
+dependencies = ["netimps>=0.4.0,<0.5"]
 
 [project.optional-dependencies]
 # The CLI is optional: importing tftp never requires duho.
 cli = ["duho>=0.7.0,<0.8"]
+# Captures: pktcap reads pcap and pcapng files, dissects their frames (IP
+# fragments reassembled), writes pcap and pcapng, filters and captures live on
+# Linux; `pytftp capture` and `pytftp replay` are its commands, and --pcap on
+# the other commands writes a capture. Importing tftp never requires it.
+pktcap = ["pktcap>=0.1.0,<0.2"]
 # pathlib-style paths: TFTPPath, and the tftp:// scheme for pathlib_next's
 # UriPath (its "uri" extra). Importing tftp never requires it.
 path = ["pathlib-next[uri]>=0.9.12,<0.10"]
 # Tooling only: the extras the tests need are named here, their ranges are above.
-dev = ["black", "build", "coverage", "mypy>=1.19,<3", "pytest", "tftp[cli,path]"]
+dev = ["black", "build", "coverage", "mypy>=1.19,<3", "pytest", "tftp[cli,path,pktcap]"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]

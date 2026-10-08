@@ -68,6 +68,15 @@ differs and "Fixed" the defects corrected on the way.
 
 ### Changed
 
+- **pktcap is an optional dependency, the `pktcap` extra** (`pip install "tftp[pktcap]"`); `dependencies`
+  names `netimps` alone. Importing `tftp`, `tftp.capture` and `tftp.cli`, transferring, serving and
+  relaying need no pktcap. A function that reads, dissects, replays or writes a capture (`analyze` of a
+  path or a stream, `replay_transfers`, `dissect_tftp`, `register_tftp_dissector`, `pktcap_plugin`,
+  `trace_to`) raises `ImportError` with the line `captures need the 'pktcap' extra: pip install
+  "tftp[pktcap]"` when it is missing; `analyze` of datagrams needs none. `pytftp capture`,
+  `pytftp replay` and `--pcap` on `get`, `put`, `serve` and `relay` print that line on standard error
+  and end with status 1 before a socket is bound or a file created; `pytftp --help` still lists
+  `capture` and `replay`. `dev` installs `tftp[cli,path,pktcap]`.
 - **`compile_filter` refuses a `block` or `code` outside 0 to 65535** (both are two octets on the wire)
   with `pktcap.CaptureFilterError`, where it took any integer and matched nothing; the same check
   serves the `pktcap_plugin` keys, so the two filters cannot disagree.
@@ -430,9 +439,9 @@ differs and "Fixed" the defects corrected on the way.
   what omitting a value means, and the `--port-range`, `--remap`, `--route-subnet` and
   `--route-prefix` errors name their flag.
 
-- **Reading a capture is pktcap's.** `pktcap>=0.1.0,<0.2` is a required dependency,
-  imported inside the functions that use it, so importing `tftp` or `tftp.capture` loads
-  none of it. The reader, the frame decoder and live capture leave `tftp.capture`; where
+- **Reading a capture is pktcap's.** `pktcap>=0.1.0,<0.2` is the `pktcap` extra
+  (`pip install "tftp[pktcap]"`), imported inside the functions that use it, so importing `tftp`
+  or `tftp.capture` loads none of it. The reader, the frame decoder and live capture leave `tftp.capture`; where
   each lives now (every one is imported from `pktcap`, and `tftp.capture` re-exports none):
 
   | Left | Now |

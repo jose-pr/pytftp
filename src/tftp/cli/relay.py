@@ -61,6 +61,8 @@ class RelayCmd(Traced):
     ("--port-range",)
 
     def __call__(self) -> _ty.Optional[int]:
+        if self._pcap_missing():
+            return 1
         try:
             routes = []
             if self.route_prefix:

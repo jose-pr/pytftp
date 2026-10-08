@@ -8,8 +8,9 @@ import random
 import struct
 import time
 
-import pktcap
 import pytest
+
+pktcap = pytest.importorskip("pktcap")
 
 import tftp
 import tftp.capture

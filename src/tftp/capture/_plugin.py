@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
+from .._extras import require_pktcap
 from ..packet._enums import TFTPOpcode
 from ._dissector import TFTPLayer, register_tftp_dissector
 from ._filters import _name_matches, _numbers, _opcode_names
@@ -49,6 +50,7 @@ def pktcap_plugin(registry: "pktcap.DissectorRegistry") -> None:
     A call that raises leaves ``registry`` as it found it: ``ValueError`` for a layer name or a
     port that is taken.
     """
+    require_pktcap()
     registry.register_layer(
         TFTPLayer, keys={"op": _op, "file": _file, "block": _number("block"), "code": _number("code")}
     )

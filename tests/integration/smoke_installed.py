@@ -7,7 +7,7 @@ transfer works, and the ``pytftp`` script either starts or says which extra it
 needs.
 
     python tests/integration/smoke_installed.py            # installed bare
-    python tests/integration/smoke_installed.py --extras   # installed with tftp[cli,path]
+    python tests/integration/smoke_installed.py --extras   # installed with tftp[cli,path,pktcap]
 """
 
 from __future__ import annotations
@@ -85,6 +85,17 @@ def main(argv) -> int:
         else:
             assert done.returncode == 1 and done.stdout == "", (argv_, done)
             assert "'cli' extra" in done.stderr and "Traceback" not in done.stderr, (argv_, done.stderr)
+
+    packets = run(sys.executable, "-c", "import tftp.capture; tftp.capture.dissect_tftp(bytes(4))")
+    absent = run(sys.executable, "-c", "import pktcap")
+    if extras:
+        assert absent.returncode == 0, absent.stderr
+        for command in ("capture", "replay"):
+            done = run(script, command, "--help")
+            assert done.returncode == 0 and "usage" in done.stdout.lower(), (command, done)
+    else:
+        assert absent.returncode != 0, "pktcap is installed in the bare environment"
+        assert packets.returncode != 0 and 'pip install "tftp[pktcap]"' in packets.stderr, packets.stderr
 
     path = run(sys.executable, "-c", "import tftp.path")
     if extras:

@@ -14,6 +14,9 @@ import struct
 
 import pytest
 
+pytest.importorskip("pktcap")
+pytest.importorskip("duho")
+
 _CASES = pathlib.Path(__file__).resolve().parent / "capture_cases"
 _spec = importlib.util.spec_from_file_location("capture_cases_build", _CASES / "build.py")
 assert _spec is not None and _spec.loader is not None

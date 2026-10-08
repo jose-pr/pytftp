@@ -9,6 +9,7 @@ import typing as _ty
 
 from duho import Cmd, LoggingArgs
 
+from .._extras import PKTCAP_LINE, have_pktcap
 from .._text import escape
 from ..capture._hook import combine_hooks, trace_to
 from ..options._profiles import PROFILES
@@ -101,17 +102,24 @@ class Traced(Base):
     "Also write every datagram to this pcap file (opens in Wireshark). Default: none"
     ("--pcap",)
 
+    def _pcap_missing(self) -> bool:
+        """Whether ``--pcap`` was given without pktcap installed; says so on stderr, once, before any socket."""
+        if self.pcap and not have_pktcap():
+            print(PKTCAP_LINE, file=_sys.stderr)
+            return True
+        return False
+
     def _tracer(self) -> _ty.Optional[_ty.Callable[[_ty.Any], None]]:
         """The hook for ``--trace`` and ``--pcap``, or ``None``.
 
         The pcap file is created here, so a command calls this last: after its
         arguments are accepted and its sockets bound, never before.
         """
-        from pktcap import PcapWriter
-
         show = _show if self.trace else None
         record = None
         if self.pcap:
+            from pktcap import PcapWriter
+
             self._stream = open(self.pcap, "wb")
             self._writer = PcapWriter(self._stream)
             record = trace_to(self._writer)

@@ -10,8 +10,9 @@ import pickle
 import subprocess
 import sys
 
-import pktcap
 import pytest
+
+pktcap = pytest.importorskip("pktcap")
 
 import tftp.capture
 from tftp import TFTPOpcode

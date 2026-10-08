@@ -142,6 +142,14 @@ _LOCAL_IMPORTS = {
         "the root parser's base class comes from duho, the optional `cli` extra: importing "
         "`tftp.cli` must work without it so `main` can name the extra"
     ),
+    ("cli/_root.py", "tftp.cli.capture"): (
+        "the capture command is a subclass of pktcap's, the optional `pktcap` extra: the root lists it "
+        "only when pktcap is installed"
+    ),
+    ("cli/_root.py", "tftp.cli.replay"): (
+        "the replay command is a subclass of pktcap's, the optional `pktcap` extra: the root lists it "
+        "only when pktcap is installed"
+    ),
     ("backends/_http.py", "tftp.__version__"): "the root defines it after it has imported this package",
     ("client/__init__.py", "tftp.client._asyncio"): (
         "the asyncio twin is bound on first use, so importing the package does not import asyncio"
@@ -281,7 +289,7 @@ def test_a_sibling_is_imported_at_the_top_of_a_module_or_the_reason_is_recorded(
 _LAZY = ("netimps", "pktcap", "duho", "pathlib_next")
 
 
-@pytest.mark.parametrize("statement", ["import tftp", "import tftp.capture"])
+@pytest.mark.parametrize("statement", ["import tftp", "import tftp.capture", "import tftp.cli"])
 def test_importing_the_package_loads_no_optional_dependency(statement):
     code = "import sys, %s\nprint(sorted(n for n in sys.modules if n.split('.')[0] in %r))\n" % (
         statement.split()[1],

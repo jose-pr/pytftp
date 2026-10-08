@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Iterable, List, NamedTuple, Optional, Tuple
 
+from .._extras import require_pktcap
 from ..exceptions import TFTPDecodeError
 from ..packet._codec import (
     AckPacket,
@@ -58,6 +59,7 @@ def dissect_tftp(data: bytes) -> "pktcap.Dissected":
     ``pktcap.DissectError`` (a ``ValueError``) for octets that are not a TFTP packet; its text
     holds none of them. Follows the contract ``pktcap.check_dissector`` checks.
     """
+    require_pktcap()
     import pktcap
 
     try:
@@ -95,6 +97,7 @@ def register_tftp_dissector(
     rule), in which case nothing is registered by this call; ``TypeError`` for a port that is
     not an ``int``.
     """
+    require_pktcap()
     import pktcap
 
     wanted: List[Any] = list(ports)

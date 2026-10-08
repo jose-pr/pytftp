@@ -126,6 +126,8 @@ class ClientCmd(Traced):
         does not resolve) is the operation failing; a usage error (``ValueError``)
         is left to :func:`tftp.cli.main`.
         """
+        if self._pcap_missing():
+            return None, 1
         try:
             client.trace = self._tracer()
             return work(), 0

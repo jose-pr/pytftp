@@ -103,6 +103,7 @@ def test_a_readme_command_line_runs_as_written(line, served):
     if command in ("get", "put", "ls", "capture", "replay"):
         stdin = None
         if command in ("capture", "replay"):
+            pytest.importorskip("pktcap")
             from pktcap import PcapWriter
             from tftp.capture import trace_to
 

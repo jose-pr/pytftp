@@ -95,6 +95,8 @@ class Serve(Content, Negotiation, Traced):
         )
 
     def __call__(self) -> _ty.Optional[int]:
+        if self._pcap_missing():
+            return 1
         try:
             server = self._server()
         except ValueError as exc:

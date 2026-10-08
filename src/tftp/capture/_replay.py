@@ -11,6 +11,7 @@ import os
 import time as _time
 from typing import Any, BinaryIO, Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
 
+from .._extras import require_pktcap
 from .._result import TransferResult
 from ..exceptions import TFTPError
 from ..options._handler import Negotiated, read_decimal
@@ -134,6 +135,7 @@ def replay_transfers(
     ``pktcap.CaptureFormatError`` for a file that is not a capture; ``OSError`` when ``host`` does
     not resolve or a socket fails.
     """
+    require_pktcap()
     import pktcap
 
     if isinstance(port, bool) or not isinstance(port, int) or not 0 < port < 65536:

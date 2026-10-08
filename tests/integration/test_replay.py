@@ -12,8 +12,10 @@ import pathlib
 import subprocess
 import sys
 
-import pktcap
 import pytest
+
+pktcap = pytest.importorskip("pktcap")
+pytest.importorskip("duho")
 from conftest import RequestSpy
 from pktcap import CapturedDatagram
 

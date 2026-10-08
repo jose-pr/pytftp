@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import BinaryIO, Iterable, List, NamedTuple, Optional, Union, cast
 
+from .._extras import require_pktcap
 from ._events import PacketEvent
 from ._filters import compile_filter
 from ._flows import CapturedTransfer, DatagramLike, FlowTracker
@@ -35,6 +36,7 @@ def analyze(
     the capture holds.
     """
     if isinstance(source, (str, os.PathLike)) or hasattr(source, "read"):
+        require_pktcap()
         from pktcap import read_datagrams
 
         datagrams: Iterable[DatagramLike] = read_datagrams(
@@ -43,6 +45,6 @@ def analyze(
     else:
         datagrams = source
     tracker = FlowTracker(ports, keep_payloads=keep_payloads, max_tracked=None)
-    wanted = compile_filter(filter)
-    events = [e for e in tracker.feed_all(datagrams) if wanted(e)]
+    wanted = compile_filter(filter) if filter else None
+    events = [e for e in tracker.feed_all(datagrams) if wanted is None or wanted(e)]
     return Analysis(events, tracker.transfers)

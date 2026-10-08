@@ -9,16 +9,43 @@ import typing as _ty
 from duho import AUTO, Cli, DefaultsFormatter, LoggingArgs
 from duho import main as _duho_main
 
+from .._extras import PKTCAP_LINE, have_pktcap
 from ._common import error
-from .capture import CaptureCmd
+from ._missing import MissingCapture, MissingReplay
 from .get import Get
 from .ls import Ls
 from .put import Put
 from .relay import RelayCmd
-from .replay import ReplayCmd
 from .serve import Serve
 
 __all__ = ["Pytftp", "execute"]
+
+#: The commands that need the ``pktcap`` extra, which stay listed without it.
+_NEEDS_PKTCAP = ("capture", "replay")
+
+
+def _commands() -> _ty.List[_ty.Any]:
+    """The subcommands: the two that need pktcap are its commands when it is installed, else stubs."""
+    commands: _ty.List[_ty.Any] = [Get, Put, Ls, Serve, RelayCmd]
+    if have_pktcap():
+        from .capture import CaptureCmd
+        from .replay import ReplayCmd
+
+        return commands + [CaptureCmd, ReplayCmd]
+    return commands + [MissingCapture, MissingReplay]
+
+
+def _command_word(argv: _ty.Sequence[str]) -> _ty.Optional[str]:
+    """The first word of ``argv`` that is not an option of the root or its value."""
+    skip = False
+    for word in argv:
+        if skip:
+            skip = False
+        elif word == "--loglevel":
+            skip = True
+        elif not word.startswith("-"):
+            return word
+    return None
 
 
 class Pytftp(LoggingArgs, Cli):
@@ -32,7 +59,7 @@ class Pytftp(LoggingArgs, Cli):
     # get replaces files, so PYTFTP_MCP=stdio is not read.
     _mcp_ = False
     _help_formatter_ = DefaultsFormatter
-    _subcommands_ = [Get, Put, Ls, Serve, RelayCmd, CaptureCmd, ReplayCmd]
+    _subcommands_ = _commands()
 
 
 def execute(argv: _ty.Optional[_ty.Sequence[str]]) -> int:
@@ -41,6 +68,11 @@ def execute(argv: _ty.Optional[_ty.Sequence[str]]) -> int:
     A ``ValueError`` out of the library is a caller error (an out-of-range
     ``--blksize``, an unknown mode) and becomes a usage error, status 2.
     """
+    # The parser would answer a capture option it does not know with a usage error before the
+    # command could name the extra.
+    if _command_word(_sys.argv[1:] if argv is None else argv) in _NEEDS_PKTCAP and not have_pktcap():
+        error(PKTCAP_LINE)
+        return 1
     try:
         status = _duho_main(Pytftp, argv)
     except ValueError as exc:
