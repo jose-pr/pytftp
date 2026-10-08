@@ -35,14 +35,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-      - name: Install netimps 0.4 from its branch (until 0.4.0 is on PyPI)
-        # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
-        # yet. Remove this step when netimps 0.4.0 is on PyPI.
-        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
       - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
         # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-        # yet. It requires netimps 0.4, installed by the step above. Remove
-        # this step when pktcap 0.1.0 is on PyPI.
+        # yet. Remove this step when pktcap 0.1.0 is on PyPI.
         run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install the package
         run: python -m pip install -e .

@@ -44,15 +44,9 @@ jobs:
           # (`[tool.mypy] python_version`, the oldest mypy 2 accepts); the 3.9
           # floor is what the test matrix below runs.
           python-version: "3.14"
-      - name: Install netimps 0.4 from its branch (until 0.4.0 is on PyPI)
-        # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
-        # yet, and mypy needs netimps installed to see its types. Remove this
-        # step when netimps 0.4.0 is on PyPI.
-        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
       - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
         # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-        # yet. It requires netimps 0.4, installed by the step above. Remove
-        # this step when pktcap 0.1.0 is on PyPI.
+        # yet. Remove this step when pktcap 0.1.0 is on PyPI.
         run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install package with all extras
         run: python -m pip install -e ".[dev]"
@@ -110,15 +104,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install netimps 0.4 from its branch (until 0.4.0 is on PyPI)
-        # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
-        # yet. Installing it first makes the project install below find it
-        # satisfied. Remove this step when netimps 0.4.0 is on PyPI.
-        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
       - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
         # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-        # yet. It requires netimps 0.4, installed by the step above. Remove
-        # this step when pktcap 0.1.0 is on PyPI.
+        # yet. Remove this step when pktcap 0.1.0 is on PyPI.
         run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install package with all extras
         # Install every extra that has tests depending on it, or those tests
@@ -169,18 +157,11 @@ jobs:
                   pins.append("%s==%s" % (m.group(1), m.group(3)))
           open("floors.txt", "w").write("\n".join(pins) + "\n")
           print("\n".join(pins) or "(no floors declared)")
-      - name: Install netimps 0.4 from its branch (until 0.4.0 is on PyPI)
-        # TEMPORARY: the floor, netimps 0.4.0, is not published yet, so the
-        # floor pin below cannot be installed from PyPI. This installs the
-        # same version from its branch; the pin then finds it satisfied.
-        # Remove this step when netimps 0.4.0 is on PyPI.
-        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
       - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
         # TEMPORARY: the floor, pktcap 0.1.0, is not published yet, so the
         # floor pin below cannot be installed from PyPI. This installs the
-        # same version from its repository, after netimps, which it requires;
-        # the pin then finds it satisfied. Remove this step when pktcap 0.1.0
-        # is on PyPI.
+        # same version from its repository; the pin then finds it satisfied.
+        # Remove this step when pktcap 0.1.0 is on PyPI.
         run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install at the floors
         run: python -m pip install -c floors.txt -e ".[dev]"
@@ -210,14 +191,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install netimps 0.4 from its branch (until 0.4.0 is on PyPI)
-        # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
-        # yet. Remove this step when netimps 0.4.0 is on PyPI.
-        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
       - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
         # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-        # yet. It requires netimps 0.4, installed by the step above. Remove
-        # this step when pktcap 0.1.0 is on PyPI.
+        # yet. Remove this step when pktcap 0.1.0 is on PyPI.
         run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install the package with no extra
         run: python -m pip install .
@@ -257,10 +233,8 @@ jobs:
           python -m venv "$RUNNER_TEMP/bare"
           BIN="$RUNNER_TEMP/bare/bin"
           [ -d "$RUNNER_TEMP/bare/Scripts" ] && BIN="$RUNNER_TEMP/bare/Scripts"
-          # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
-          # yet. Remove this when netimps 0.4.0 is on PyPI.
-          "$BIN/python" -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
-          # TEMPORARY: pktcap 0.1.0 is not published yet; it requires the netimps above.
+          # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
+          # yet. Remove this when pktcap 0.1.0 is on PyPI.
           "$BIN/python" -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
           "$BIN/python" -m pip install dist/*.whl
           cd "$RUNNER_TEMP"
@@ -271,8 +245,6 @@ jobs:
           BIN="$RUNNER_TEMP/full/bin"
           [ -d "$RUNNER_TEMP/full/Scripts" ] && BIN="$RUNNER_TEMP/full/Scripts"
           # TEMPORARY: see above.
-          "$BIN/python" -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
-          # TEMPORARY: pktcap 0.1.0 is not published yet; it requires the netimps above.
           "$BIN/python" -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
           "$BIN/python" -m pip install "$(ls dist/*.whl)[cli,path]"
           cd "$RUNNER_TEMP"
@@ -291,14 +263,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-      - name: Install netimps 0.4 from its branch (until 0.4.0 is on PyPI)
-        # TEMPORARY: the declared requirement, netimps>=0.4.0, is not published
-        # yet. Remove this step when netimps 0.4.0 is on PyPI.
-        run: python -m pip install "netimps @ git+https://github.com/jose-pr/netimps@standard-alignment"
       - name: Install pktcap 0.1 from its repository (until 0.1.0 is on PyPI)
         # TEMPORARY: the declared requirement, pktcap>=0.1.0, is not published
-        # yet. It requires netimps 0.4, installed by the step above. Remove
-        # this step when pktcap 0.1.0 is on PyPI.
+        # yet. Remove this step when pktcap 0.1.0 is on PyPI.
         run: python -m pip install "pktcap @ git+https://github.com/jose-pr/pktcap@main"
       - name: Install package with all extras
         run: python -m pip install -e ".[dev]"
