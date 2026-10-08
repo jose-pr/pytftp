@@ -114,27 +114,42 @@ no limit), `--idle-timeout` (seconds without traffic before a relayed transfer e
 
 ## Captures: `capture` and `replay`
 
+Both are pktcap's commands with TFTP loaded, so they need the `pktcap` extra (`pip install
+"tftp[pktcap]"`); without it they print `captures need the 'pktcap' extra: pip install
+"tftp[pktcap]"` on stderr and end with status 1, as `--pcap` does on the other commands. The rest of
+the command line works without it.
+
 ```bash
-pytftp capture boot.pcapng --transfers
-tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
-sudo pytftp capture -i eth0 --extract recovered/         # Linux, live
-pytftp replay boot.pcapng 192.0.2.1 --speed 10
+pytftp capture --input boot.pcapng --transfers
+tcpdump -i eth0 -U -w - udp | pytftp capture --input - --filter "op=RRQ,ERROR"
+sudo pytftp capture --interface eth0 --extract recovered/   # Linux, live
+pytftp capture --input boot.pcapng --format json --filter "op=DATA and tftp.session=c3"
+pytftp replay --input boot.pcapng --to 192.0.2.1 --speed 10
 ```
 
-`capture` reads a pcap or pcapng file, a live pipe on stdin (`-`), or (Linux) an interface (`-i`).
-Packets print as they are decoded; `--transfers` adds a summary per transfer at the end, `--no-packets`
-leaves the packets out, `--extract DIR` writes each transfer's file as `<session>-<name>` (`.partial`
-when incomplete) and `--payload` adds the DATA octets, in hex, to `--json`. `-p`/`--port` (repeatable)
-names the port a request is sent to (default 69) and `-f`/`--filter` selects packets, e.g.
-`'op=RRQ,ERROR and host=10.0.0.0/8'`. A frame nothing here dissects is never silent: one `warning: N of
-M frames not read: ...` line on stderr counts each kind, and when every frame was of an unsupported link
-type the status is 2.
+`capture` reads a pcap or pcapng file or a live pipe on stdin (`--input`/`-i`, `-` for stdin), or
+(Linux) an interface (`--interface`); the two exclude each other. It writes what pktcap's capture
+command writes (`--output`, `--format`, `--per-record`, `--max-files`, `--datagrams`, `--append`,
+`--count`, `--duration`, `--hook`, `--hook-fail-fast`, `--hook-timeout`, `--load` and `--config`: pktcap's
+header lists them), filtered to the TFTP packets of the transfers it follows, and by default as one
+readable line a packet. `--format json` is pktcap's record, with the `tftp` layer, its `session` and a
+DATA's octets. `--transfers` prints a line per transfer on stderr at the end, `--no-packets` writes no
+packets, `--extract DIR` writes each transfer's file as `<session>-<name>` (`.partial` when incomplete),
+`-p`/`--port` (repeatable) names the port a request is sent to (default 69) and `-f`/`--filter` selects
+packets, e.g. `'op=RRQ,ERROR and host=10.0.0.0/8'`, with the keys `op`, `file`, `block`, `code` and
+`session`, and pktcap's `src`, `dst`, `host`, `sport`, `dport` and `port`. A summary line on stderr counts
+the frames read, written and skipped, and each kind of frame nothing here dissects. The status is
+pktcap's: 0 done, 1 a file or an interface that cannot be opened, 2 a file that is no capture or a bad
+filter or option.
 
-`replay` asks `HOST`, the only address anything is sent to, for each transfer the capture holds again:
-one line per transfer on stdout (`--json`: its `TransferResult.to_dict()`) and a `replayed N transfers,
-F failed, S skipped` line on stderr. It asks for reads only; `--writes` also uploads what the capture
-holds of each write, **which overwrites that file on the server**. `-p`/`--port` is the server's port and
-`--request-port` the capture's request port; `--speed` divides the recorded gap between transfers,
-`--max-delay` bounds one wait, `--limit` ends the replay after that many transfers, and `-t` and `-r`
-are the clients' timeout and retries. It exits 0 when every transfer run succeeded (none run is 0), 1
-when one failed or `HOST` does not resolve, and 2 for a file that is no capture or a value out of range.
+`replay` asks `--to HOST[:PORT]` (port 69 when left out), the only address anything is sent to, for each
+transfer the capture holds again: one line per transfer on stdout (`--json`: its
+`TransferResult.to_dict()`) and a `replayed N transfers, F failed, S skipped` line on stderr. It asks for
+reads only; `--writes` also uploads what the capture holds of each write, **which overwrites that file
+on the server**. `--input`/`-i` is the capture, `--request-port` the capture's request port; `--speed`
+divides the recorded gap between transfers, `--no-delay` removes the waits, `--max-delay` bounds one
+wait, `--limit` ends the replay after that many transfers, `--filter`, `--load` and `--config` are
+pktcap's, and `-t` and `-r` are the clients' timeout and retries. No datagram of the capture is sent,
+so pktcap's `--source-port` and `--broadcast` are not offered. It exits 0 when every transfer run
+succeeded (none run is 0), 1 when one failed, when `HOST` does not resolve or the file cannot be opened,
+and 2 for a file that is no capture or a value out of range.

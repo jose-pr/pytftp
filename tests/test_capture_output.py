@@ -2,7 +2,9 @@
 
 The captures and the output recorded for them are in `tests/capture_cases/`; the
 command runs as a process, so the whole path from the file to the terminal is
-what is compared, octet for octet.
+what is compared, octet for octet: standard output, standard error and the status.
+`capture_cases/listing_before/` holds the listing the command printed before it was
+pktcap's, and the listing it prints now is held to it.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import pathlib
+import re
 import struct
 
 import pytest
@@ -28,22 +31,62 @@ _EXPECTED = _CASES / "expected"
 
 def _expected(capture: str, variant: str):
     folder = _EXPECTED / pathlib.Path(capture).stem
-    return (folder / (variant + ".out")).read_bytes(), int((folder / (variant + ".status")).read_text())
+    return (
+        (folder / (variant + ".out")).read_bytes(),
+        (folder / (variant + ".err")).read_bytes(),
+        int((folder / (variant + ".status")).read_text()),
+    )
 
 
 @pytest.mark.parametrize("variant", build.VARIANTS)
 @pytest.mark.parametrize("capture", build.CAPTURES)
 def test_the_command_prints_what_was_recorded(capture, variant):
-    out, status = build.run_capture(_CASES / capture, build.VARIANTS[variant])
-    assert (out, status) == _expected(capture, variant)
+    assert build.run_capture(_CASES / capture, build.VARIANTS[variant]) == _expected(capture, variant)
+
+
+#: What the listing keeps from the one it replaced, line for line. The time was local and is UTC with the
+#: date now, a DATA's size is not in the layer, and pktcap writes an address as the capture holds it.
+_LINE = re.compile(r"^\d{4}-\d\d-\d\dT(\S+)Z (\S+ > \S+) tftp: (\[c\d+\]) (.*)$")
+_SIZE = re.compile(r" \(\d+ bytes\)$")
+_MAPPED = re.compile(r"\[::ffff:([0-9.]+)\]")
+#: A line the old listing had and this one has not, and why: the datagram a snap length cut is left alone.
+_LEFT_OUT = {"cut": {"22:13:21.200000 [c1] 192.0.2.1:40001 > 192.0.2.5:2000 DATA 2"}}
+
+
+@pytest.mark.parametrize("capture", [name for name in build.CAPTURES if name != "wifi.pcapng"])
+def test_the_listing_is_the_one_the_command_printed_before_but_for_what_is_named(capture):
+    stem = pathlib.Path(capture).stem
+    before = (_CASES / "listing_before" / (stem + ".txt")).read_text(encoding="utf-8").splitlines()
+    kept = []
+    for line in before:
+        line = _SIZE.sub("", line)
+        if "malformed" not in line and line not in _LEFT_OUT.get(stem, ()):
+            kept.append(line)
+    out, _, status = _expected(capture, "text")
+    after = []
+    for line in out.decode("ascii").splitlines():
+        found = _LINE.match(line)
+        assert found, line
+        time, endpoints, session, text = found.groups()
+        after.append("%s %s %s %s" % (time, session, _MAPPED.sub(r"\1", endpoints), text))
+    assert after == kept and status == 0
+
+
+def test_the_line_of_a_datagram_that_is_not_tftp_is_the_only_one_the_listing_lost_besides_the_cut_one():
+    before = (_CASES / "listing_before" / "plain.txt").read_text(encoding="utf-8").splitlines()
+    assert [line for line in before if "malformed" in line] == [
+        "22:13:20.746902 192.0.2.77:5555 > 192.0.2.1:69 malformed (unknown opcode 26725)"
+    ]
+    # It is still counted: the summary on standard error says so.
+    assert _expected("plain.pcap", "text")[1] == b"21 frames read, 19 written, 2 skipped, 1 malformed\n"
 
 
 @pytest.mark.parametrize("capture", build.CAPTURES)
 def test_the_command_writes_the_files_that_were_recorded(capture, tmp_path):
-    out, status, files = build.run_extract(_CASES / capture, tmp_path / "files")
+    out, err, status, files = build.run_extract(_CASES / capture, tmp_path / "files")
     folder = _EXPECTED / pathlib.Path(capture).stem
     recorded = folder / build.EXTRACT
-    assert (out, status) == _expected(capture, build.EXTRACT)
+    assert (out, err, status) == _expected(capture, build.EXTRACT)
     assert files == ({p.name: p.read_bytes() for p in recorded.glob("*")} if recorded.exists() else {})
 
 

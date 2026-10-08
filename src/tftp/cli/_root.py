@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno as _errno
 import os as _os
 import sys as _sys
 import typing as _ty
@@ -62,6 +63,37 @@ class Pytftp(LoggingArgs, Cli):
     _subcommands_ = _commands()
 
 
+def _is_pktcap_extra(exc: ImportError) -> bool:
+    """Whether ``exc`` is pktcap's ``MissingExtraError``, the one import failure a command reports."""
+    if not have_pktcap():
+        return False
+    import pktcap
+
+    return isinstance(exc, pktcap.MissingExtraError)
+
+
+def _silence_stdout() -> None:
+    """Nobody reads stdout any more: point it at the null device so that the flush at exit does not fail again."""
+    try:
+        _os.dup2(_os.open(_os.devnull, _os.O_WRONLY), _sys.stdout.fileno())
+    except (OSError, ValueError):
+        pass
+
+
+def _stdout_closed(exc: OSError) -> bool:
+    """Whether ``exc`` is a write to a pipe its reader closed, which Windows reports as ``EINVAL``.
+
+    The test is that what stdout holds cannot be flushed either.
+    """
+    if exc.errno not in (_errno.EPIPE, _errno.EINVAL):
+        return False
+    try:
+        _sys.stdout.flush()
+    except (OSError, ValueError):
+        return True
+    return False
+
+
 def execute(argv: _ty.Optional[_ty.Sequence[str]]) -> int:
     """Run the command line and return its exit status.
 
@@ -79,11 +111,17 @@ def execute(argv: _ty.Optional[_ty.Sequence[str]]) -> int:
         error("error: %s" % exc)
         return 2
     except BrokenPipeError:
-        # Nobody reads stdout any more. Point it at the null device so that the flush at exit
-        # does not fail again, and end without a word.
-        try:
-            _os.dup2(_os.open(_os.devnull, _os.O_WRONLY), _sys.stdout.fileno())
-        except (OSError, ValueError):
-            pass
+        _silence_stdout()
+        return 1
+    except OSError as exc:  # a file or a socket of a capture command; a hook that failed
+        if _stdout_closed(exc):
+            _silence_stdout()
+            return 1
+        error("error: %s" % exc)
+        return 1
+    except ImportError as exc:  # a capture format whose extra is missing
+        if not _is_pktcap_extra(exc):
+            raise
+        error("error: %s" % exc)
         return 1
     return 0 if status is None else int(status)

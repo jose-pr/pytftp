@@ -1,0 +1,4 @@
+wrote DIRECTORY/c1-ipxe.efi (1124 bytes)
+wrote DIRECTORY/c2-Net_Ascii.txt (14 bytes)
+wrote DIRECTORY/c4-holey.bin.partial (512 bytes, incomplete)
+21 frames read, 0 written, 21 skipped, 1 malformed

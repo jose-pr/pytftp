@@ -1,4 +1,4 @@
-"""`pytftp capture -i`: live capture on Linux, which needs CAP_NET_RAW (root, or a capability on the interpreter)."""
+"""`pytftp capture --interface`: live capture on Linux, which needs CAP_NET_RAW (root, or a capability on the interpreter)."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def test_a_transfer_on_loopback_is_followed_live(tmp_path):
     server = tftp.TFTPServer(str(tmp_path), host="127.0.0.1", port=0, timeout=1.0).start()
     port = server.server_address[1]
     proc = subprocess.Popen(
-        [sys.executable, "-m", "tftp", "capture", "-i", "lo", "-p", str(port), "--json"],
+        [sys.executable, "-m", "tftp", "capture", "--interface", "lo", "-p", str(port), "--format", "json"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -61,11 +61,14 @@ def test_a_transfer_on_loopback_is_followed_live(tmp_path):
         out, err = proc.communicate(timeout=30)
         server.close()
     records = [json.loads(line) for line in lines + out.splitlines()]
-    requests = [r for r in records if r["opcode"] == "RRQ"]
-    assert requests and {r["filename"] for r in requests} == {"live.bin"}
+    layers = [{layer["layer"]: layer for layer in record["layers"]} for record in records]
+    requests = [layer for layer in layers if layer["tftp"]["opcode"] == "RRQ"]
+    assert requests and {layer["tftp"]["filename"] for layer in requests} == {"live.bin"}
     assert all(
-        r["source"].startswith("127.0.0.1:") and r["destination"] == "127.0.0.1:%d" % port for r in requests
+        layer["ipv4"]["source"] == "127.0.0.1" and layer["udp"]["destination_port"] == port
+        for layer in requests
     )
-    assert {"DATA", "ACK"} <= {r["opcode"] for r in records}
+    assert {"DATA", "ACK"} <= {layer["tftp"]["opcode"] for layer in layers}
+    assert {layer["tftp"]["session"] for layer in layers} >= {requests[0]["tftp"]["session"]}
     assert "Traceback" not in err, err
     assert proc.returncode == 0

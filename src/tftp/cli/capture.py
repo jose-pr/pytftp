@@ -1,168 +1,130 @@
-"""``pytftp capture``: decode TFTP from a pcap/pcapng file, a live pipe, or an interface.
+"""``pytftp capture``: pktcap's capture command with TFTP loaded, following each transfer across its ports.
 
-pytftp capture boot.pcapng --transfers
-tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,WRQ,ERROR"
-sudo pytftp capture -i eth0 --extract recovered/          (Linux)
+pytftp capture --input boot.pcapng --transfers
+tcpdump -i eth0 -U -w - udp | pytftp capture --input - --filter "op=RRQ,WRQ,ERROR"
+sudo pytftp capture --interface eth0 --extract recovered/          (Linux)
 """
 
 from __future__ import annotations
 
-import json as _json
+import argparse
 import os as _os
 import sys as _sys
 import typing as _ty
 
-from ..capture._filters import compile_filter
-from ..capture._flows import FlowTracker
-from ._common import Base, error, write_line
+from duho import Meta
+from pktcap.cli import Capture
+
+from ..capture._flows import CapturedTransfer, FlowTracker
+from ..capture._follow import follow_transfers
+from ._common import error
 
 if _ty.TYPE_CHECKING:
-    from pktcap import FrameDissector
+    from pktcap import DissectedFrame, FrameDissector
 
 __all__ = ["CaptureCmd"]
 
-#: Link-type numbers named in the line about frames nothing here reads.
-_LISTED_LINKTYPES = 8
+_NOT_LINUX = (
+    "live capture needs Linux (AF_PACKET); pipe a capture tool's output in instead: "
+    "tcpdump -U -w - udp | pytftp capture --input -"
+)
 
 
-def _datagrams_of(frames: _ty.Iterable[_ty.Any], unread: _ty.Dict[int, int]) -> _ty.Iterator[_ty.Any]:
-    """The UDP datagrams of dissected frames; ``unread`` counts the frames no dissector took, by link type."""
-    for frame in frames:
-        if not frame.layers and frame.error is None:
-            unread[frame.frame.linktype] = unread.get(frame.frame.linktype, 0) + 1
-        datagram = frame.datagram()
-        if datagram is not None:
-            yield datagram
+class CaptureCmd(Capture):
+    """Show the TFTP in a capture or on an interface, reconstruct its transfers, extract their files.
 
-
-def _unread_line(stats: _ty.Any, unread: _ty.Dict[int, int]) -> _ty.Optional[str]:
-    """The one line about frames that were not dissected, or ``None`` when every frame was."""
-    if not (stats.unsupported or stats.malformed):
-        return None
-    parts = []
-    if stats.unsupported:
-        numbers = sorted(unread)
-        listed = ", ".join(str(number) for number in numbers[:_LISTED_LINKTYPES])
-        parts.append(
-            "%d of an unsupported link type (%s%s)"
-            % (stats.unsupported, listed, ", ..." if len(numbers) > _LISTED_LINKTYPES else "")
-        )
-    if stats.malformed:
-        parts.append("%d malformed" % stats.malformed)
-    return "warning: %d of %d frames not read: %s" % (
-        stats.unsupported + stats.malformed,
-        stats.frames,
-        ", ".join(parts),
-    )
-
-
-class CaptureCmd(Base):
-    """Show the TFTP in a capture, reconstruct its transfers, extract their files."""
+    Writes what pktcap's capture command writes, filtered to the TFTP packets: one readable line a packet by default.
+    """
 
     _parsername_ = "capture"
+    _logger_name_ = "tftp"
+    _plugins_ = ("tftp.capture",)
+    _filter_ = "proto=tftp"
+    _format_ = "text"
 
-    source: _ty.Optional[str] = None
-    "pcap/pcapng file, or '-' for a live pipe on stdin (tcpdump -U -w -)"
-    ("source",)
+    input: _ty.Annotated[_ty.Optional[str], Meta(conflicts="source")] = None
+    "Read this pcap or pcapng file, or '-' for a live pipe on stdin (tcpdump -U -w -), instead of capturing. Excludes --interface"
+    ("--input", "-i")
 
-    interface: _ty.Optional[str] = None
-    "Capture live from this interface instead (Linux, needs root/CAP_NET_RAW)"
-    ("--interface", "-i")
+    interface: _ty.Annotated[_ty.Optional[str], Meta(conflicts="source")] = None
+    "Capture live from this interface, by name, address or MAC (Linux, needs root or CAP_NET_RAW). Default: every interface. Excludes --input"
+    ("--interface",)
+
+    listen: _ty.Annotated[_ty.Optional[_ty.List[str]], argparse.SUPPRESS] = None
 
     port: _ty.List[int] = [69]
     "UDP port a request is sent to, to recognise transfers by; repeatable. Default: 69"
     ("--port", "-p")
 
     filter: _ty.Optional[str] = None
-    "Show only matching packets, e.g. 'op=RRQ,ERROR and host=10.0.0.0/8'. Default: every packet"
+    "Keep only matching packets: op, file, block, code and session (tftp.session=c3) beside pktcap's src, dst, host, sport, dport, port; e.g. 'op=RRQ,ERROR and host=10.0.0.0/8'. Default: every TFTP packet"
     ("--filter", "-f")
 
     no_packets: bool = False
-    "Do not list packets (use with --transfers or --extract). Default: list them"
+    "Write no packets (use with --transfers or --extract). Default: write them"
     ("--no-packets",)
 
     transfers: bool = False
-    "Print a summary of every transfer at the end. Default: off"
+    "Print a line for every transfer on stderr at the end. Default: off"
     ("--transfers",)
 
     extract: _ty.Optional[str] = None
     "Write each transfer's file into this directory. Default: write none"
     ("--extract",)
 
-    payload: bool = False
-    "Include DATA payloads (hex) in --json output. Default: left out"
-    ("--payload",)
+    _tracker: _ty.Optional[FlowTracker] = None
+    _written: _ty.Optional[_ty.List[str]] = None
 
-    def _datagrams(self, dissector: "FrameDissector", unread: _ty.Dict[int, int]) -> _ty.Iterable[_ty.Any]:
+    def _read(self, dissector: "FrameDissector") -> "_ty.Iterator[DissectedFrame]":
         import pktcap
 
-        if self.interface:
-            if not pktcap.has_live_capture():
-                raise ValueError(
-                    "live capture needs Linux; pipe a capture instead: tcpdump -U -w - udp | pytftp capture -"
-                )
-            return pktcap.sniff(self.interface, dissector=dissector)
-        if not self.source:
-            raise ValueError("give a capture file, '-' for stdin, or --interface")
-        if self.source == "-":
-            return _datagrams_of(pktcap.read_dissected(_sys.stdin.buffer, dissector=dissector), unread)
-        if not _os.path.isfile(self.source):
-            raise ValueError("no such file: %s" % self.source)
-        return _datagrams_of(pktcap.read_dissected(self.source, dissector=dissector), unread)
-
-    def __call__(self) -> _ty.Optional[int]:
-        import pktcap
-
+        assert self.input is not None
+        name = "standard input" if self.input == "-" else self.input
+        source: _ty.Any = self.input
+        if self.input == "-":
+            source = getattr(_sys.stdin, "buffer", None)
+            if source is None:
+                raise ValueError("--input - needs a standard input: name a file")
         try:
-            wanted = compile_filter(self.filter)
-            dissector = pktcap.FrameDissector()
-            unread: _ty.Dict[int, int] = {}
-            datagrams = self._datagrams(dissector, unread)
-        except ValueError as exc:
-            error("error: %s" % exc)
-            return 2
+            yield from pktcap.read_dissected(source, dissector=dissector)
+        except pktcap.CaptureFormatError as exc:
+            raise ValueError("%s: %s" % (name, exc)) from exc
+
+    def _frames(self, dissector: "FrameDissector") -> "_ty.Iterator[DissectedFrame]":
+        """The file, or the interface, with every transfer followed across its ports."""
+        import pktcap
+
+        if self.input is None and not pktcap.has_live_capture():
+            raise pktcap.LiveCaptureError(_NOT_LINUX)
+        self._written = []
         # A transfer the tracker lets go of (a live capture holds a bounded number) is
         # summarised and written when it goes, the rest at the end.
-        written: _ty.List[_ty.Any] = []
-        tracker = FlowTracker(
-            self.port,
-            keep_payloads=bool(self.extract),
-            on_complete=lambda transfer: self._finish(transfer, written),
-        )
-        try:
-            for event in tracker.feed_all(datagrams):
-                if self.no_packets or not wanted(event):
-                    continue
-                if self.json_out:
-                    write_line(_json.dumps(event.to_dict(payload=self.payload)))
-                else:
-                    write_line(str(event))
-        except pktcap.CaptureFormatError as exc:
-            error("error: %s" % exc)
-            return 2
-        except KeyboardInterrupt:
-            pass
-        stats = dissector.stats
-        line = _unread_line(stats, unread)
-        if line:
-            error(line)
-        for transfer in list(tracker.transfers):
-            self._finish(transfer, written)
-        if self.extract and not written:
-            error("no transfer data to extract")
-        return 2 if stats.frames and stats.unsupported == stats.frames else None
+        self._tracker = FlowTracker(self.port, keep_payloads=bool(self.extract), on_complete=self._finish)
+        source = self._read(dissector) if self.input is not None else super()._frames(dissector)
+        return follow_transfers(source, self._tracker)
 
-    def _finish(self, transfer: _ty.Any, written: _ty.List[_ty.Any]) -> None:
+    def _select(self, registry: _ty.Any) -> "_ty.Callable[[DissectedFrame], bool]":
+        wanted = super()._select(registry)  # compiled either way: a bad expression is an error
+        if self.no_packets:
+            return lambda frame: False
+        return wanted
+
+    def _report(self, result: _ty.Any, dissector: "FrameDissector") -> int:
+        if self._tracker is not None:
+            for transfer in list(self._tracker.transfers):
+                self._finish(transfer)
+            if self.extract and not self._written:
+                error("no transfer data to extract")
+        return super()._report(result, dissector)
+
+    def _finish(self, transfer: CapturedTransfer) -> None:
         """The transfer is complete as far as this capture goes: summarise it, write its file."""
         if self.transfers:
-            if self.json_out:
-                write_line(_json.dumps({"transfer": transfer.to_dict()}))
-            else:
-                write_line(repr(transfer))
-        if self.extract:
+            error(repr(transfer))
+        if self.extract and self._written is not None:
             path = transfer.write_to(self.extract)
             if path is not None:
-                written.append(path)
+                self._written.append(path)
                 error(
                     "wrote %s (%d bytes%s)"
                     % (path, _os.path.getsize(path), ", incomplete" if path.endswith(".partial") else "")

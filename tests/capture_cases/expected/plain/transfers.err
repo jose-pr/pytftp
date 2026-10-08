@@ -1,0 +1,5 @@
+CapturedTransfer(c1 read 'boot/ipxe.efi' ('192.0.2.5', 2000)->('192.0.2.1', 69), 1124 bytes, complete)
+CapturedTransfer(c2 write 'logs/Net Ascii.txt' ('192.0.2.5', 2001)->('192.0.2.1', 69), 17 bytes, complete)
+CapturedTransfer(c3 read 'missing.bin' ('192.0.2.5', 2002)->('192.0.2.1', 69), 0 bytes, error 1)
+CapturedTransfer(c4 read 'holey.bin' ('192.0.2.5', 2003)->('192.0.2.1', 69), 562 bytes, complete)
+21 frames read, 0 written, 21 skipped, 1 malformed

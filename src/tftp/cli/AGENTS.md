@@ -34,10 +34,12 @@ pytftp serve [ROOT] [--http URL | --upstream HOST[:PORT]] [-l ADDRESS | --interf
 pytftp relay [UPSTREAM] [--route-subnet CIDR=HOST[:PORT]]... [--route-prefix PREFIX=HOST[:PORT]]...
              [-l ADDRESS | --interface NIC] [-p PORT] [--idle-timeout S] [--max-sessions N] [--port-range LOW:HIGH]
              [--json] [--trace] [--pcap FILE]
-pytftp capture FILE|- | -i IFACE  [-p PORT]... [-f FILTER] [--no-packets] [--transfers]
-             [--extract DIR] [--json] [--payload]
-pytftp replay FILE|- HOST [-p PORT] [--request-port PORT]... [--writes] [--speed X] [--max-delay S]
-             [--limit N] [-t S] [-r N] [--json]
+pytftp capture [-i FILE|- | --interface NIC] [-p PORT]... [-f FILTER] [--no-packets] [--transfers]
+             [--extract DIR] [-o TARGET] [--format FMT] [--per-record] [--max-files N] [--datagrams] [--append]
+             [--count N] [-d SECONDS] [--hook COMMAND] [--hook-fail-fast] [--hook-timeout S] [--load PLUGIN]...
+             [-c FILE]
+pytftp replay -i FILE|- --to HOST[:PORT] [--request-port PORT]... [--writes] [--speed X | --no-delay]
+             [--max-delay S] [--limit N] [-f FILTER] [-t S] [-r N] [--json] [--load PLUGIN]... [-c FILE]
 ```
 
 `-v`, `-q` and `--loglevel` go before or after the subcommand. `pytftp --help`
@@ -50,8 +52,10 @@ served as a tool.
   line on stderr, with the characters a terminal would interpret escaped, and
   no traceback); 2 the invocation was wrong (a bad value, a missing or
   unrecognised capture file, a bad filter, an argument that would be ignored).
-  A reader that closes stdout (`pytftp capture f | head -1`) ends a printing
-  command quietly with status 1.
+  A reader that closes stdout (`pytftp capture -i f | head -1`) ends a printing
+  command quietly with status 1. `capture` and `replay` end as pktcap's commands
+  do: a file that cannot be opened, an interface that cannot be captured on and a
+  destination that does not resolve are status 1 (not 2), a file that is no capture is 2.
 - **Output**: a result goes to stdout and diagnostics to stderr. `get` and `put`
   print one line (`received N bytes in S s (...)` or `sent ...`); it is on
   stderr when `get HOST FILE -` writes the file to stdout, and `-q` drops it.
@@ -104,25 +108,30 @@ served as a tool.
   They are `PerClient`, `CaseInsensitive` and `Remap` of `tftp.backends`.
 - `relay` needs an UPSTREAM (the default route) or routes; prefix routes are
   tried before subnet routes.
-- `capture` reads a pcap/pcapng file, a live pipe on stdin (`tcpdump -i eth0 -U
-  -w - udp | pytftp capture -`), or (Linux) an interface. Packets print as they
-  are decoded; `--transfers` adds a summary per transfer at the end;
-  `--extract DIR` writes each transfer's file as `<session>-<name>`
-  (`.partial` when incomplete). Ctrl-C ends a live capture and still prints
-  the summaries. A frame nothing here dissects (a link type with no dissector, or one
-  cut too short for its headers) is never silent: one `warning: N of M frames not read: ...`
-  line on stderr names the count of each and the link-type numbers, whatever `--json` says;
-  when every frame was of an unsupported link type the status is 2, otherwise it is not
-  changed. A datagram the capture's snap length cut is listed as a packet, and its
-  transfer is incomplete.
-- `replay` runs `replay_transfers` over a capture and asks `HOST` (the only address anything is sent
-  to) for each transfer in it again: one line per transfer on stdout (`--json`: its
-  `TransferResult.to_dict()`), and a `replayed N transfers, F failed, S skipped` line on stderr. It
-  asks for reads only: `--writes` also uploads what the capture holds of each write, which
-  overwrites that file on the server, and the help says so. `-p` is the server's port,
-  `--request-port` the capture's request port. Status 0 when every transfer run succeeded
-  (none run is 0), 1 when one failed or `HOST` does not resolve, 2 for a file that is no
-  capture or a value out of range.
+- `capture` and `replay` need the `pktcap` extra and are pktcap's commands, subclassed (its header
+  `pktcap/cli/AGENTS.md` lists the options they inherit); without it either prints `captures need the
+  'pktcap' extra: pip install "tftp[pktcap]"` and ends with status 1, as `--pcap` does on `get`, `put`,
+  `serve` and `relay`, before a socket is bound. `--help` still lists them.
+- `capture` reads a pcap/pcapng file or a live pipe on stdin (`tcpdump -i eth0 -U -w - udp |
+  pytftp capture --input -`), or (Linux) an interface (`--interface`, which excludes `--input`). It writes
+  the TFTP packets of the transfers it follows (pktcap's `proto=tftp`, ANDed with `--filter`) with
+  pktcap's writer: by default one readable line a packet on stdout (`--format text`, the
+  `TFTPLayer.summary()` after the addresses), `--format json` the record with the `tftp` layer, its
+  `session` and a DATA's octets. `--transfers` prints a line per transfer on stderr at the end;
+  `--no-packets` writes no packets; `--extract DIR` writes each transfer's file as
+  `<session>-<name>` (`.partial` when incomplete). Ctrl-C ends a live capture with status 0 and still
+  finishes the transfers. A summary line on stderr counts the frames read, written and skipped and
+  each kind pktcap could not dissect, and `-q` drops it. A datagram the capture's snap length cut is
+  followed (its transfer is incomplete) and not written. `--listen`, `--json` and `--payload` are not
+  options of it.
+- `replay` runs `replay_transfers` over a capture and asks `--to HOST[:PORT]` (port 69 when left out; the
+  only address anything is sent to) for each transfer in it again: one line per transfer on stdout
+  (`--json`: its `TransferResult.to_dict()`), and a `replayed N transfers, F failed, S skipped` line on
+  stderr. It asks for reads only: `--writes` also uploads what the capture holds of each write, which
+  overwrites that file on the server, and the help says so. `--request-port` is the capture's request
+  port; `--source-port` and `--broadcast` are not options of it. Status 0 when every transfer run
+  succeeded (none run is 0), 1 when one failed, `HOST` does not resolve or the file cannot be
+  opened, 2 for a file that is no capture or a value out of range.
 - `serve` and `relay` log each transfer at INFO on stderr (`-v`/`-q` adjust)
   and their final counters when stopped. Ctrl-C, Ctrl-Break and SIGTERM stop
   them, idle or not (the signal wakes the loop through its wake socket; there

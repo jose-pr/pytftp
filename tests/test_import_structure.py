@@ -323,10 +323,18 @@ def _module_level_imports(path, name):
     return found
 
 
-@pytest.mark.parametrize("name", ["pktcap", "netimps"])
-def test_no_module_imports_a_required_dependency_at_its_top(name):
-    at_top = {_name(p): _module_level_imports(p, name) for p in _modules()}
+def test_no_module_imports_a_required_dependency_at_its_top():
+    at_top = {_name(p): _module_level_imports(p, "netimps") for p in _modules()}
     assert {path: lines for path, lines in at_top.items() if lines} == {}
+
+
+#: The modules whose command is a subclass of pktcap's, which the root lists only when pktcap is installed.
+_PKTCAP_COMMANDS = {"cli/capture.py", "cli/replay.py"}
+
+
+def test_pktcap_is_imported_at_the_top_of_the_two_commands_that_subclass_it_and_nowhere_else():
+    at_top = {_name(p): _module_level_imports(p, "pktcap") for p in _modules()}
+    assert {path for path, lines in at_top.items() if lines} == _PKTCAP_COMMANDS
 
 
 def test_a_command_module_defines_only_commands_and_their_bases():
@@ -338,6 +346,6 @@ def test_a_command_module_defines_only_commands_and_their_bases():
                 if isinstance(node, ast.ClassDef):
                     classes[node.name] = [base.id for base in node.bases if isinstance(base, ast.Name)]
     assert classes, "no command classes found"
-    commands = {"Cmd", "Cli", "LoggingArgs"}
+    commands = {"Cmd", "Cli", "LoggingArgs", "Capture", "Replay"}  # the last two are pktcap's
     stray = {name for name, bases in classes.items() if not set(bases) & (commands | set(classes))}
     assert stray == set()

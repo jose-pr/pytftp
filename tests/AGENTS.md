@@ -64,9 +64,9 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `test_path_contract.py` | pathlib_next's own contract suite over the two path classes; the capability switches that are `False` are the skips below |
 | `test_capture.py` | packet events, trace hooks, reading a capture through pktcap, flow reconstruction, filters |
 | `test_capture_dissector.py` | the TFTP dissector: pktcap's contract, where it registers, the record it makes |
-| `test_capture_plugin.py` | the pktcap plugin: its four keys, that the library's filter and pktcap's select the same datagrams, the refusals, which datagrams carry the layer, and pktcap's own command with the plugin named |
-| `test_capture_output.py` | what `pytftp capture` prints and writes for the committed captures, octet for octet |
-| `capture_cases/` | the committed captures and the output recorded for each (`expected/`); `capture_cases/build.py` writes them |
+| `test_capture_plugin.py` | the pktcap plugin: its keys, that the library's filter and pktcap's select the same datagrams, the refusals, which datagrams carry the layer, `follow_transfers` and the filter by the transfer, and pktcap's own command with the plugin named |
+| `test_capture_output.py` | what `pytftp capture` writes to standard output and standard error, and its status, for the committed captures, octet for octet; and that its listing is the one it printed before it was pktcap's but for what the test names |
+| `capture_cases/` | the committed captures and the output recorded for each (`expected/`: `.out`, `.err`, `.status`); `listing_before/` is the listing as it was before; `capture_cases/build.py` writes them |
 | `integration/` | real sockets and processes on loopback only; `tests/conftest.py` applies to both it and the top level |
 | `integration/test_client_server.py` | the clients against the server over loopback |
 | `integration/test_aio.py` | the asyncio client and server on a real loop |

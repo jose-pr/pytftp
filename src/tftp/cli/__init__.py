@@ -7,7 +7,7 @@
     pytftp serve /srv/tftp --port 6969 --write --listing
     pytftp serve --http https://images.example.com/pxe/ --compat pxe
     pytftp relay 10.0.0.20 --route-subnet 10.1.0.0/16=10.1.0.5 --pcap relay.pcap
-    pytftp capture boot.pcapng --transfers --extract recovered/
+    pytftp capture --input boot.pcapng --transfers --extract recovered/
 
 Installed by the ``cli`` extra (``pip install tftp[cli]``). Importing this
 package does not require duho: the console script is installed either way,

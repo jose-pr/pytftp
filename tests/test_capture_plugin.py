@@ -501,3 +501,19 @@ def test_following_is_lazy_and_keeps_the_order_of_the_frames():
     assert first.layer(TFTPLayer).opcode == "RRQ" and len(tracker.transfers) == 1
     times = [first.time] + [frame.time for frame in followed]
     assert times == sorted(times) and len(times) == len(_script())
+
+
+def test_closing_the_followed_frames_closes_the_source_they_came_from():
+    closed = []
+
+    def source():
+        try:
+            yield from _dissected(_CASES / "plain.pcap", _registry())
+        finally:
+            closed.append(True)
+
+    frames = source()  # held here, so only an explicit close ends it
+    followed = follow_transfers(frames, FlowTracker())
+    next(followed)
+    followed.close()
+    assert closed == [True] and frames is not None

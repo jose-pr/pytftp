@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import pathlib
 import re
 import struct
 import subprocess
@@ -18,6 +19,8 @@ import tftp  # noqa: E402
 import tftp.options  # noqa: E402
 from conftest import free_ports  # noqa: E402
 from tftp.cli import main  # noqa: E402
+
+_CASES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "capture_cases")
 
 
 def _port(server) -> str:
@@ -194,41 +197,135 @@ def test_capture_command(root, make_server, tmp_path_factory, capsys):
             pass
         server.shutdown()
         assert server.wait_closed(5.0)
-    assert main(["capture", str(pcap), "-p", port, "--filter", "op=RRQ,ERROR"]) == 0
-    lines = capsys.readouterr().out.strip().splitlines()
+    assert main(["capture", "--input", str(pcap), "-p", port, "--filter", "op=RRQ,ERROR"]) == 0
+    captured = capsys.readouterr()
+    lines = captured.out.strip().splitlines()
     assert len(lines) == 3 and "RRQ '1428x3.bin'" in lines[0] and "ERROR 1" in lines[-1]
-    assert main(["capture", str(pcap), "-p", port, "--json", "--no-packets", "--transfers"]) == 0
-    records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
-    assert [r["transfer"]["filename"] for r in records] == ["1428x3.bin", "missing"]
-    assert records[0]["transfer"]["complete"] and records[1]["transfer"]["error"]["code"] == 1
-    assert records[0]["transfer"]["bytes"] == 1428 * 3  # counted with payloads off, as here
-    assert records[0]["transfer"]["retransmissions"] == 0 and records[0]["transfer"]["missing_blocks"] == []
+    assert captured.err == "%d frames read, 3 written, %d skipped\n" % (
+        len(list(__import__("pktcap").read_frames(str(pcap)))),
+        len(list(__import__("pktcap").read_frames(str(pcap)))) - 3,
+    )
+    assert main(["capture", "--input", str(pcap), "-p", port, "--no-packets", "--transfers"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    lines = captured.err.strip().splitlines()
+    assert "1428x3.bin" in lines[0] and lines[0].endswith("%d bytes, complete)" % (1428 * 3))
+    assert "'missing'" in lines[1] and lines[1].endswith("0 bytes, error 1)")
     target = out / "extracted"
-    assert main(["capture", str(pcap), "-p", port, "--no-packets", "--extract", str(target)]) == 0
+    assert main(["capture", "--input", str(pcap), "-p", port, "--no-packets", "--extract", str(target)]) == 0
     (written,) = list(target.iterdir())
     assert written.name.endswith("-1428x3.bin") and written.read_bytes() == (root / "1428x3.bin").read_bytes()
 
 
-def test_capture_errors(tmp_path):
-    assert main(["capture"]) == 2
-    assert main(["capture", str(tmp_path / "missing.pcap")]) == 2
+def test_capture_errors_have_pktcaps_statuses(tmp_path, monkeypatch, capsys):
+    import pktcap
+
+    # No source at all, where there is no live capture: status 1, and the line says how to pipe one in.
+    monkeypatch.setattr(pktcap, "has_live_capture", lambda: False)
+    assert main(["capture"]) == 1
+    assert capsys.readouterr().err == (
+        "error: live capture needs Linux (AF_PACKET); pipe a capture tool's output in instead: "
+        "tcpdump -U -w - udp | pytftp capture --input -\n"
+    )
+    # A file that cannot be opened is status 1; one that is no capture, status 2.
+    assert main(["capture", "--input", str(tmp_path / "missing.pcap")]) == 1
+    assert capsys.readouterr().err.startswith("error: ")
     (tmp_path / "junk.pcap").write_bytes(b"not a capture at all")
-    assert main(["capture", str(tmp_path / "junk.pcap")]) == 2
-    assert main(["capture", str(tmp_path / "junk.pcap"), "--filter", "colour=red"]) == 2
+    assert main(["capture", "--input", str(tmp_path / "junk.pcap")]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error: ") and "junk.pcap" in err and len(err.splitlines()) == 1
+    # A filter that does not compile is status 2, before the file is read.
+    assert main(["capture", "--input", str(tmp_path / "junk.pcap"), "--filter", "colour=red"]) == 2
+    err = capsys.readouterr().err
+    assert "colour" in err and "junk" not in err and len(err.splitlines()) == 1
+    # An opcode that is none of the six is refused when the filter is compiled, by the plugin.
+    assert main(["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--filter", "op=NOSUCH"]) == 2
+    assert "op is one of" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["capture", os.path.join(_CASES, "plain.pcap")],
+        ["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--json"],
+        ["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--payload"],
+        ["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--listen", "127.0.0.1:69"],
+        ["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--interface", "lo"],
+    ],
+    ids=["positional-source", "json", "payload", "listen", "input-and-interface"],
+)
+def test_an_option_the_capture_command_no_longer_has_is_the_parsers_usage_error(arguments, capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(arguments)
+    assert stop.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == "" and "error:" in captured.err
+
+
+def test_the_capture_help_lists_the_new_spellings_and_hides_what_goes(capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(["capture", "--help"])
+    assert stop.value.code == 0
+    text = " ".join(capsys.readouterr().out.split())
+    for shown in (
+        "--input",
+        "--port",
+        "--filter",
+        "--transfers",
+        "--extract",
+        "--no-packets",
+        "--format",
+    ):
+        assert shown in text, shown
+    for hidden in ("--listen", "--json", "--payload"):
+        assert hidden not in text, hidden
+
+
+def test_input_dash_reads_a_capture_from_standard_input():
+    data = pathlib.Path(_CASES, "plain.pcap").read_bytes()
+    done = subprocess.run(
+        [sys.executable, "-m", "tftp", "capture", "--input", "-", "--filter", "op=ERROR"],
+        input=data,
+        capture_output=True,
+        timeout=60,
+    )
+    assert done.returncode == 0
+    assert done.stdout.decode().splitlines()[0].endswith("tftp: [c3] ERROR 1 'file not found'")
+    assert done.stderr.decode().splitlines() == ["21 frames read, 1 written, 20 skipped, 1 malformed"]
+
+
+def test_the_records_pktcap_writes_carry_the_tftp_layer_and_its_transfer(capsys):
+    assert main(["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--format", "json", "-q"]) == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(records) == 19
+    layers = [next(layer for layer in record["layers"] if layer["layer"] == "tftp") for record in records]
+    # The wire says four transfers: the requests, one each; every datagram of one carries its id.
+    requests = {layer["filename"]: layer["session"] for layer in layers if layer["opcode"] in ("RRQ", "WRQ")}
+    assert sorted(requests) == ["boot/ipxe.efi", "holey.bin", "logs/Net Ascii.txt", "missing.bin"]
+    assert len(set(requests.values())) == 4 and {layer["session"] for layer in layers} == set(
+        requests.values()
+    )
+    first = requests["boot/ipxe.efi"]
+    data = [(record, layer) for record, layer in zip(records, layers) if layer["opcode"] == "DATA"]
+    assert [layer["block"] for _, layer in data if layer["session"] == first] == [1, 1, 2, 3]
+    # A DATA's octets are always in the record: 512, 512, 512 and 100 of the first transfer.
+    assert [len(bytes.fromhex(record["payload"])) for record, layer in data if layer["session"] == first] == [
+        512,
+        512,
+        512,
+        100,
+    ]
 
 
 def _block(block_type: int, body: bytes) -> bytes:
     return struct.pack("<II", block_type, 12 + len(body)) + body + struct.pack("<I", 12 + len(body))
 
 
-_CASES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "capture_cases")
-
-
-def test_a_capture_of_a_link_type_nothing_dissects_is_said_so_and_is_status_two(capsys):
-    assert main(["capture", os.path.join(_CASES, "wifi.pcapng"), "--transfers"]) == 2
+def test_a_capture_of_a_link_type_nothing_dissects_is_counted_in_the_summary_and_is_status_zero(capsys):
+    assert main(["capture", "--input", os.path.join(_CASES, "wifi.pcapng"), "--transfers"]) == 0
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == "warning: 3 of 3 frames not read: 3 of an unsupported link type (105)\n"
+    assert captured.err == "3 frames read, 0 written, 3 skipped, 3 of an unsupported link type (105)\n"
 
 
 def test_a_capture_with_one_frame_nothing_dissects_says_so_and_keeps_its_status(tmp_path, capsys):
@@ -240,12 +337,14 @@ def test_a_capture_with_one_frame_nothing_dissects_says_so_and_keeps_its_status(
         for frame in frames:
             writer.write_frame(frame)
         writer.write_frame(pktcap.CapturedFrame(1700000100.0, 105, b"\x01" * 40))
-    assert main(["capture", str(path), "--no-packets", "--transfers"]) == 0
+    assert main(["capture", "--input", str(path), "--no-packets", "--transfers"]) == 0
     captured = capsys.readouterr()
-    assert captured.err == "warning: 1 of %d frames not read: 1 of an unsupported link type (105)\n" % (
-        len(frames) + 1
+    total = len(frames) + 1
+    assert captured.err.endswith(
+        "%d frames read, 0 written, %d skipped, 1 malformed, 1 of an unsupported link type (105)\n"
+        % (total, total)
     )
-    assert captured.out.count("CapturedTransfer(") == 4
+    assert captured.err.count("CapturedTransfer(") == 4 and captured.out == ""
 
 
 def test_the_line_counts_what_the_dissector_counts(tmp_path, capsys):
@@ -260,20 +359,21 @@ def test_the_line_counts_what_the_dissector_counts(tmp_path, capsys):
     list(pktcap.read_dissected(str(path), dissector=dissector))
     stats = dissector.stats
     assert (stats.frames, stats.unsupported, stats.malformed) == (5, 4, 1)
-    assert main(["capture", str(path)]) == 0
+    assert main(["capture", "--input", str(path)]) == 0
     assert capsys.readouterr().err == (
-        "warning: 5 of 5 frames not read: 4 of an unsupported link type (105, 127), 1 malformed\n"
+        "5 frames read, 0 written, 5 skipped, 1 malformed, 4 of an unsupported link type (105, 127)\n"
     )
 
 
-def test_a_capture_every_frame_of_which_is_read_says_nothing_and_a_cut_one_is_incomplete(capsys, tmp_path):
-    assert main(["capture", os.path.join(_CASES, "plain.pcap"), "--no-packets"]) == 0
+def test_quiet_drops_the_summary_and_a_cut_datagram_is_an_incomplete_transfer(capsys, tmp_path):
+    assert main(["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--no-packets", "-q"]) == 0
     assert capsys.readouterr().err == ""
     target = tmp_path / "files"
     assert (
         main(
             [
                 "capture",
+                "--input",
                 os.path.join(_CASES, "cut.pcap"),
                 "--no-packets",
                 "--transfers",
@@ -284,14 +384,20 @@ def test_a_capture_every_frame_of_which_is_read_says_nothing_and_a_cut_one_is_in
         == 0
     )
     captured = capsys.readouterr()
-    assert captured.out.endswith("512 bytes, incomplete)\n")
+    assert captured.out == ""
     (written,) = list(target.iterdir())
     assert written.name.endswith("-cut.bin.partial") and written.stat().st_size == 512
-    assert "(512 bytes, incomplete)" in captured.err
-
-    assert main(["capture", os.path.join(_CASES, "cut.pcap"), "--json", "--no-packets", "--transfers"]) == 0
-    record = json.loads(capsys.readouterr().out)["transfer"]
-    assert (record["complete"], record["missing_blocks"], record["bytes"]) == (False, [[2, 2]], 512)
+    assert captured.err.splitlines()[0].endswith("512 bytes, incomplete)")
+    assert captured.err.splitlines()[1].startswith("wrote ") and captured.err.splitlines()[1].endswith(
+        "(512 bytes, incomplete)"
+    )
+    assert captured.err.splitlines()[-1] == "4 frames read, 0 written, 4 skipped"
+    # The cut datagram is the one frame the layer is not added to: the records hold the three whole ones.
+    assert main(["capture", "--input", os.path.join(_CASES, "cut.pcap"), "--format", "json", "-q"]) == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [
+        next(layer for layer in record["layers"] if layer["layer"] == "tftp")["opcode"] for record in records
+    ] == ["RRQ", "DATA", "ACK"]
 
 
 _SECTION = _block(0x0A0D0D0A, struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1))
@@ -310,10 +416,61 @@ _PCAP_HEADER = struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 101)
 def test_a_damaged_capture_is_one_error_line_and_status_two(tmp_path, capsys, blob):
     path = tmp_path / "damaged.cap"
     path.write_bytes(blob)
-    assert main(["capture", str(path)]) == 2
+    assert main(["capture", "--input", str(path)]) == 2
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err.startswith("error: ") and "Traceback" not in captured.err
     assert len(captured.err.splitlines()) == 1
+
+
+# -- what the command inherits from pktcap's, and the request port -----------------------------------
+
+
+def test_a_bad_filter_is_refused_even_when_no_packets_are_written(capsys):
+    plain = os.path.join(_CASES, "plain.pcap")
+    assert main(["capture", "--input", plain, "--no-packets", "--filter", "colour=red"]) == 2
+    err = capsys.readouterr().err
+    assert "colour" in err and len(err.splitlines()) == 1
+    assert main(["capture", "--input", plain, "--no-packets", "--filter", "op=DATA"]) == 0
+
+
+def test_count_and_output_are_pktcaps_and_the_capture_written_reads_back(tmp_path, capsys):
+    import pktcap
+
+    plain = os.path.join(_CASES, "plain.pcap")
+    assert main(["capture", "--input", plain, "--count", "2", "-q"]) == 0
+    assert len(capsys.readouterr().out.splitlines()) == 2
+    target = tmp_path / "tftp.pcap"
+    assert main(["capture", "--input", plain, "--output", str(target), "-q"]) == 0
+    assert capsys.readouterr().out == ""
+    # What was written is the 19 TFTP frames of the 21 in the file: the stray and the unrelated one are not.
+    written = list(pktcap.read_frames(str(target)))
+    assert len(written) == 19 and len(list(pktcap.read_frames(plain))) == 21
+    lines = tmp_path / "tftp.jsonl"
+    assert main(["capture", "--input", plain, "--output", str(lines), "--datagrams", "-q"]) == 0
+    assert len(lines.read_text(encoding="utf-8").splitlines()) == 19
+
+
+def test_a_request_to_a_port_other_than_69_is_followed_when_the_port_is_given(tmp_path, capsys):
+    from pktcap import PcapWriter
+    from tftp.packet import encode_ack, encode_data, encode_request
+
+    client, server, tid = ("192.0.2.5", 2000), ("192.0.2.1", 6969), ("192.0.2.1", 40001)
+    path = tmp_path / "six.pcap"
+    with PcapWriter(path) as writer:
+        writer.write(1.0, client, server, encode_request(1, "six.bin"))
+        writer.write(2.0, tid, client, encode_data(1, b"abc"))
+        writer.write(3.0, client, tid, encode_ack(1))
+    assert main(["capture", "--input", str(path), "-p", "6969", "-q"]) == 0
+    followed = capsys.readouterr().out.splitlines()
+    assert [line.split(" tftp: ")[1].split(" ", 1)[1] for line in followed] == [
+        "RRQ 'six.bin' octet",
+        "DATA 1",
+        "ACK 1",
+    ]
+    assert len({line.split(" tftp: ")[1].split(" ")[0] for line in followed}) == 1
+    # Not given, 6969 is no request port: nothing is a transfer and nothing is dissected as TFTP.
+    assert main(["capture", "--input", str(path), "-q"]) == 0
+    assert capsys.readouterr().out == ""
 
 
 def test_serve_deployment_flags(root):
@@ -682,7 +839,9 @@ def test_a_closed_stdout_ends_a_printing_command_quietly(tmp_path):
             )
             writer.write(2.5 + block, ("10.0.0.5", 2000), ("10.0.0.1", 3000), encode_ack(block % 65536))
     proc = subprocess.Popen(
-        [sys.executable, "-m", "tftp", "capture", str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        [sys.executable, "-m", "tftp", "capture", "--input", str(path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     assert b"RRQ" in proc.stdout.readline()  # the first event, then the reader goes away
     proc.stdout.close()

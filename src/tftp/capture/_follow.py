@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, Iterator
+from typing import TYPE_CHECKING, Iterable, Iterator, Type
 
 from .._extras import require_pktcap
 from ._dissector import TFTPLayer, dissect_tftp
@@ -19,32 +19,36 @@ def _followed(
 ) -> "Iterator[pktcap.DissectedFrame]":
     import pktcap
 
-    for frame in frames:
-        datagram = frame.datagram()
-        if datagram is None:
-            yield frame
-            continue
-        event = tracker.feed(datagram)
-        if event is None or event.session is None or datagram.truncated:
-            yield frame
-            continue
-        try:
-            dissected = dissect_tftp(datagram.payload)
-        except pktcap.DissectError:
-            yield frame
-            continue
-        if not isinstance(dissected.layer, TFTPLayer):  # dissect_tftp makes nothing else
-            yield frame
-            continue
-        layer = dissected.layer._replace(session=event.session)
-        index = next((i for i, known in enumerate(frame.layers) if isinstance(known, TFTPLayer)), None)
-        if index is None:
-            yield frame._replace(
-                layers=frame.layers + (layer,), payloads=frame.payloads + (dissected.payload,)
-            )
-        else:
-            layers = frame.layers[:index] + (layer,) + frame.layers[index + 1 :]
-            yield frame._replace(layers=layers)
+    try:
+        for frame in frames:
+            yield _attributed(frame, tracker, pktcap.DissectError)
+    finally:
+        close = getattr(frames, "close", None)
+        if close is not None:
+            close()
+
+
+def _attributed(
+    frame: "pktcap.DissectedFrame", tracker: FlowTracker, not_tftp: "Type[Exception]"
+) -> "pktcap.DissectedFrame":
+    """``frame``, with the layer of its transfer when ``tracker`` attributes its datagram to one."""
+    datagram = frame.datagram()
+    if datagram is None:
+        return frame
+    event = tracker.feed(datagram)
+    if event is None or event.session is None or datagram.truncated:
+        return frame
+    try:
+        dissected = dissect_tftp(datagram.payload)
+    except not_tftp:
+        return frame
+    if not isinstance(dissected.layer, TFTPLayer):  # dissect_tftp makes nothing else
+        return frame
+    layer = dissected.layer._replace(session=event.session)
+    index = next((i for i, known in enumerate(frame.layers) if isinstance(known, TFTPLayer)), None)
+    if index is None:
+        return frame._replace(layers=frame.layers + (layer,), payloads=frame.payloads + (dissected.payload,))
+    return frame._replace(layers=frame.layers[:index] + (layer,) + frame.layers[index + 1 :])
 
 
 def follow_transfers(
@@ -59,8 +63,8 @@ def follow_transfers(
     after the UDP layer and the octets that follow it (a DATA's) become the frame's payload. A frame
     with no UDP datagram, one the tracker does not attribute, one a snap length cut (the tracker
     counts it) and one whose octets are not a TFTP packet are yielded as they are. The result is
-    lazy and keeps the order; nothing is read from ``frames`` before it is iterated. ``ImportError``
-    when pktcap is not installed.
+    lazy and keeps the order; nothing is read from ``frames`` before it is iterated, and closing the
+    result closes ``frames`` when it can be closed. ``ImportError`` when pktcap is not installed.
     """
     require_pktcap()
     return _followed(frames, tracker)

@@ -204,8 +204,8 @@ pytftp --help` prints the command tree as JSON.
 ```bash
 pytftp serve --http https://images.example.com/pxe/ --compat pxe
 pytftp relay 10.0.0.20 --route-prefix windows/=wds.lan --trace
-tcpdump -i eth0 -U -w - udp | pytftp capture - --filter "op=RRQ,ERROR"
-pytftp replay boot.pcapng 192.0.2.1 --speed 10
+tcpdump -i eth0 -U -w - udp | pytftp capture --input - --filter "op=RRQ,ERROR"
+pytftp replay --input boot.pcapng --to 192.0.2.1 --speed 10
 ```
 
 pktcap's own commands read TFTP too once they are told to load it: `tftp.capture` is a pktcap plugin

@@ -29,6 +29,12 @@ _CASES = pathlib.Path(__file__).resolve().parent.parent / "capture_cases"
 _PLAIN = str(_CASES / "plain.pcap")
 
 CLIENT, SERVER = ("192.0.2.5", 2000), ("192.0.2.1", 69)
+
+
+def _to(host, port):
+    return "%s:%d" % (host, port)
+
+
 TID = ("192.0.2.1", 40001)
 
 
@@ -253,7 +259,9 @@ def test_a_file_that_is_no_capture_is_a_format_error(tmp_path):
 
 def test_the_command_prints_one_object_per_transfer_and_is_status_one_when_one_failed(served, capsys):
     spy, _, host, port = served
-    status = main(["replay", _PLAIN, host, "-p", str(port), "--speed", "100", "--json", "--timeout", "0.5"])
+    status = main(
+        ["replay", "--input", _PLAIN, "--to", _to(host, port), "--speed", "100", "--json", "--timeout", "0.5"]
+    )
     captured = capsys.readouterr()
     assert status == 1  # the server has no missing.bin
     rows = [json.loads(line) for line in captured.out.splitlines()]
@@ -262,21 +270,26 @@ def test_the_command_prints_one_object_per_transfer_and_is_status_one_when_one_f
         ("read", "missing.bin", False),
         ("read", "holey.bin", True),
     ]
-    assert "skipped" in captured.err and not any(r.opcode == TFTPOpcode.WRQ for r in spy.requests)
+    assert captured.err == "replayed 3 transfers, 1 failed, 1 skipped\n"
+    assert not any(r.opcode == TFTPOpcode.WRQ for r in spy.requests)
 
 
 def test_the_command_is_status_zero_when_every_transfer_run_succeeded(served, root, capsys):
     (root / "missing.bin").write_bytes(b"now it exists")
     _, _, host, port = served
-    assert main(["replay", _PLAIN, host, "-p", str(port), "--speed", "100", "--timeout", "0.5"]) == 0
+    assert (
+        main(["replay", "--input", _PLAIN, "--to", _to(host, port), "--speed", "100", "--timeout", "0.5"])
+        == 0
+    )
     out = capsys.readouterr().out
     assert len(out.splitlines()) == 3 and "boot/ipxe.efi" in out
+    assert all(line.startswith("ok read ") for line in out.splitlines())
 
 
 def test_the_command_replays_a_write_only_with_the_flag_that_says_so(served, root, capsys):
     (root / "missing.bin").write_bytes(b"x")
     spy, _, host, port = served
-    argv = ["replay", _PLAIN, host, "-p", str(port), "--speed", "100", "--timeout", "0.5"]
+    argv = ["replay", "--input", _PLAIN, "--to", _to(host, port), "--speed", "100", "--timeout", "0.5"]
     assert main(argv) == 0
     assert not any(r.opcode == TFTPOpcode.WRQ for r in spy.requests)
     capsys.readouterr()
@@ -287,37 +300,80 @@ def test_the_command_replays_a_write_only_with_the_flag_that_says_so(served, roo
 def test_the_command_limits_the_transfers_it_replays(served, capsys):
     spy, _, host, port = served
     main(
-        [
-            "replay",
-            _PLAIN,
-            host,
-            "-p",
-            str(port),
-            "--speed",
-            "100",
-            "--limit",
-            "1",
-            "--json",
-            "--timeout",
-            "0.5",
-        ]
+        ["replay", "--input", _PLAIN, "--to", _to(host, port), "--speed", "100", "--limit", "1", "--json"]
+        + ["--timeout", "0.5"]
     )
     assert [r.filename for r in spy.requests] == ["boot/ipxe.efi"]
     assert len(capsys.readouterr().out.splitlines()) == 1
 
 
-def test_a_file_that_is_no_capture_is_one_error_line_and_status_two(tmp_path, capsys):
+def test_the_statuses_are_pktcaps_one_line_each(tmp_path, capsys):
     junk = tmp_path / "junk.pcap"
     junk.write_bytes(b"not a capture at all")
-    assert main(["replay", str(junk), "127.0.0.1"]) == 2
+    # Not a capture: 2. A file that cannot be opened: 1. A speed that is no number of times: 2.
+    assert main(["replay", "--input", str(junk), "--to", "127.0.0.1"]) == 2
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err.startswith("error: ") and len(captured.err.splitlines()) == 1
-    assert main(["replay", str(tmp_path / "missing.pcap"), "127.0.0.1"]) == 2
-    assert main(["replay", _PLAIN, "127.0.0.1", "--speed", "0"]) == 2
+    assert main(["replay", "--input", str(tmp_path / "missing.pcap"), "--to", "127.0.0.1"]) == 1
+    assert capsys.readouterr().err.startswith("error: ")
+    assert main(["replay", "--input", _PLAIN, "--to", "127.0.0.1", "--speed", "0"]) == 2
+    assert capsys.readouterr().err.startswith("error: ")
+    # A filter that does not compile: 2, before the file is read.
+    assert main(["replay", "--input", str(junk), "--to", "127.0.0.1", "--filter", "colour=red"]) == 2
+    err = capsys.readouterr().err
+    assert "colour" in err and "junk" not in err
+
+
+def test_a_destination_with_no_port_is_the_request_port(monkeypatch, capsys):
+    import tftp.cli.replay as command
+
+    seen = []
+
+    def stub(source, host, port, **options):
+        seen.append((host, port, options))
+        return ReplayedTransfers((), 0)
+
+    monkeypatch.setattr(command, "replay_transfers", stub)
+    assert main(["replay", "--input", _PLAIN, "--to", "192.0.2.1"]) == 0
+    assert (
+        main(["replay", "--input", _PLAIN, "--to", "[2001:db8::1]:6969", "--no-delay", "--limit", "2"]) == 0
+    )
+    assert [(host, port) for host, port, _ in seen] == [("192.0.2.1", 69), ("2001:db8::1", 6969)]
+    assert seen[0][2]["speed"] == 1.0 and seen[1][2]["speed"] is None and seen[1][2]["limit"] == 2
+    assert capsys.readouterr().err == "replayed 0 transfers, 0 failed, 0 skipped\n" * 2
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        [_PLAIN, "127.0.0.1"],
+        ["--input", _PLAIN, "127.0.0.1"],
+        ["--input", _PLAIN, "--to", "127.0.0.1", "-p", "69"],
+        ["--input", _PLAIN, "--to", "127.0.0.1", "--port", "69"],
+        ["--input", _PLAIN, "--to", "127.0.0.1", "--source-port", "5000"],
+        ["--input", _PLAIN, "--to", "127.0.0.1", "--broadcast"],
+        ["--input", _PLAIN, "--to", "127.0.0.1", "--speed", "2", "--no-delay"],
+    ],
+    ids=[
+        "positionals",
+        "positional-host",
+        "short-port",
+        "port",
+        "source-port",
+        "broadcast",
+        "speed-and-no-delay",
+    ],
+)
+def test_an_option_the_replay_command_no_longer_has_is_the_parsers_usage_error(arguments, capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(["replay", *arguments])
+    assert stop.value.code == 2
+    assert capsys.readouterr().out == ""
 
 
 def test_a_host_that_does_not_resolve_is_one_error_line_and_status_one(capsys):
-    assert main(["replay", _PLAIN, "no-such-host.invalid", "--speed", "100", "--timeout", "0.5"]) == 1
+    argv = ["replay", "--input", _PLAIN, "--to", "no-such-host.invalid", "--speed", "100", "--timeout", "0.5"]
+    assert main(argv) == 1
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err.startswith("error: ")
 
@@ -331,7 +387,9 @@ def _run(*argv):
 
 def test_the_command_runs_as_a_process_and_its_help_says_a_write_overwrites(served):
     spy, _, host, port = served
-    done = _run("replay", _PLAIN, host, "-p", str(port), "--speed", "100", "--json", "--timeout", "0.5")
+    done = _run(
+        "replay", "--input", _PLAIN, "--to", _to(host, port), "--speed", "100", "--json", "--timeout", "0.5"
+    )
     assert done.returncode == 1, done.stderr
     assert [json.loads(line)["filename"] for line in done.stdout.splitlines()] == [
         "boot/ipxe.efi",
@@ -340,4 +398,8 @@ def test_the_command_runs_as_a_process_and_its_help_says_a_write_overwrites(serv
     ]
     help_text = " ".join(_run("replay", "--help").stdout.split())
     assert "overwrite" in help_text and "--writes" in help_text and "reads only" in help_text.lower()
+    for shown in ("--input", "--to", "--no-delay", "--request-port", "--timeout", "--retries"):
+        assert shown in help_text, shown
+    for hidden in ("--source-port", "--broadcast", "--port"):
+        assert hidden not in help_text.replace("--request-port", ""), hidden
     assert "replay" in _run("--help").stdout

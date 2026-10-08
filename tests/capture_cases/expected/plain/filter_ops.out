@@ -1,5 +1,5 @@
-22:13:20.512345 [c1] 192.0.2.5:2000 > 192.0.2.1:69 RRQ 'boot/ipxe.efi' octet blksize=512 windowsize=2 tsize=0
-22:13:20.623451 [c2] 192.0.2.5:2001 > 192.0.2.1:69 WRQ 'logs/Net Ascii.txt' netascii
-22:13:20.672831 [c3] 192.0.2.5:2002 > 192.0.2.1:69 RRQ 'missing.bin' octet
-22:13:20.685176 [c3] 192.0.2.1:40003 > 192.0.2.5:2002 ERROR 1 'file not found'
-22:13:20.697521 [c4] 192.0.2.5:2003 > 192.0.2.1:69 RRQ 'holey.bin' octet
+2023-11-14T22:13:20.512345Z 192.0.2.5:2000 > 192.0.2.1:69 tftp: [c1] RRQ 'boot/ipxe.efi' octet blksize=512 windowsize=2 tsize=0
+2023-11-14T22:13:20.623451Z 192.0.2.5:2001 > 192.0.2.1:69 tftp: [c2] WRQ 'logs/Net Ascii.txt' netascii
+2023-11-14T22:13:20.672831Z 192.0.2.5:2002 > 192.0.2.1:69 tftp: [c3] RRQ 'missing.bin' octet
+2023-11-14T22:13:20.685176Z 192.0.2.1:40003 > 192.0.2.5:2002 tftp: [c3] ERROR 1 'file not found'
+2023-11-14T22:13:20.697521Z 192.0.2.5:2003 > 192.0.2.1:69 tftp: [c4] RRQ 'holey.bin' octet

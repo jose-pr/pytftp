@@ -1,39 +1,50 @@
-"""``pytftp replay``: ask a server again for the transfers a capture holds.
+"""``pytftp replay``: pktcap's replay command, asking a server again for the transfers a capture holds.
 
-pytftp replay boot.pcapng 192.0.2.1
-pytftp replay boot.pcapng 192.0.2.1 --speed 10 --json
+pytftp replay --input boot.pcapng --to 192.0.2.1
+pytftp replay --input boot.pcapng --to 192.0.2.1:6969 --speed 10 --json
 """
 
 from __future__ import annotations
 
+import argparse
 import json as _json
-import os as _os
-import sys as _sys
 import typing as _ty
 
+from pktcap.cli import Replay
+
 from .._text import escape
-from ..capture._replay import replay_transfers
-from ._common import Base, error, write_line
+from ..capture._replay import ReplayedTransfers, replay_transfers
+from ._common import error, write_line
 
 __all__ = ["ReplayCmd"]
 
 
-class ReplayCmd(Base):
-    """Ask a server for each transfer a capture holds again; reads only unless told otherwise."""
+class ReplayCmd(Replay):
+    """Ask a server for each transfer a capture holds again; reads only unless told otherwise.
+
+    No datagram of the capture is sent: a client asks the server --to names for each file again.
+    """
 
     _parsername_ = "replay"
+    _logger_name_ = "tftp"
+    _plugins_ = ("tftp.capture",)
+    _default_port_ = 69
 
-    source: str
-    "pcap/pcapng file, or '-' for a capture on stdin"
-    ("source",)
+    filter: _ty.Optional[str] = None
+    "Replay only the transfers of the packets matching this: op, file, block, code and src, dst, host, sport, dport, port, e.g. 'file=*.efi'. Default: every packet"
+    ("--filter", "-f")
 
-    host: str
-    "Server to ask, the only address anything is sent to: the capture's own addresses are never used"
-    ("host",)
+    limit: _ty.Optional[int] = None
+    "Replay at most this many transfers. Default: all"
+    ("--limit",)
 
-    port: int = 69
-    "UDP port of the server"
-    ("--port", "-p")
+    source_port: _ty.Annotated[_ty.Optional[int], argparse.SUPPRESS] = None
+
+    broadcast: _ty.Annotated[bool, argparse.SUPPRESS] = False
+
+    json_out: bool = False
+    "Print each transfer as one JSON object on one line, instead of text"
+    ("--json",)
 
     request_port: _ty.List[int] = [69]
     "UDP port a request was sent to in the capture, to recognise transfers by; repeatable. Default: 69"
@@ -43,18 +54,6 @@ class ReplayCmd(Base):
     "Also replay captured uploads (WRQ): each one overwrites its file on the server. Default: reads only"
     ("--writes",)
 
-    speed: float = 1.0
-    "Wait the recorded gap between two transfers divided by this. Default: 1.0, the recorded pace"
-    ("--speed",)
-
-    max_delay: float = 5.0
-    "Longest single wait, in seconds, whatever the capture's times say"
-    ("--max-delay",)
-
-    limit: _ty.Optional[int] = None
-    "Replay at most this many transfers. Default: all"
-    ("--limit",)
-
     timeout: float = 1.0
     "Seconds before a client retransmits"
     ("--timeout", "-t")
@@ -63,49 +62,34 @@ class ReplayCmd(Base):
     "Retransmissions of an unanswered packet before a transfer fails"
     ("--retries", "-r")
 
-    def __call__(self) -> _ty.Optional[int]:
-        if self.source == "-":
-            source: _ty.Any = _sys.stdin.buffer
-        elif not _os.path.isfile(self.source):
-            raise ValueError("no such file: %s" % self.source)
-        else:
-            source = self.source
-        try:
-            done = replay_transfers(
-                source,
-                self.host,
-                self.port,
-                ports=self.request_port,
-                writes=self.writes,
-                speed=self.speed,
-                max_delay=self.max_delay,
-                limit=self.limit,
-                timeout=self.timeout,
-                retries=self.retries,
-            )
-        except OSError as exc:
-            error("error: %s" % exc)
-            return 1
+    def _replay(self, datagrams: _ty.Any, host: str, port: int) -> ReplayedTransfers:
+        return replay_transfers(
+            datagrams,
+            host,
+            port,
+            ports=self.request_port,
+            writes=self.writes,
+            speed=None if self.no_delay else self.speed,
+            max_delay=self.max_delay,
+            limit=self.limit,
+            timeout=self.timeout,
+            retries=self.retries,
+        )
+
+    def _report(self, result: ReplayedTransfers) -> _ty.Optional[int]:
         failed = 0
-        for result in done.results:
-            failed += result.error is not None
+        for item in result.results:
+            failed += item.error is not None
             if self.json_out:
-                write_line(_json.dumps(result.to_dict()))
-            elif result.error is None:
+                write_line(_json.dumps(item.to_dict()))
+            elif item.error is None:
                 write_line(
                     "ok %s %s: %d bytes in %.3fs, %d retransmits"
-                    % (
-                        result.operation,
-                        escape(result.filename),
-                        result.bytes,
-                        result.duration,
-                        result.retransmits,
-                    )
+                    % (item.operation, escape(item.filename), item.bytes, item.duration, item.retransmits)
                 )
             else:
                 write_line(
-                    "failed %s %s: %s"
-                    % (result.operation, escape(result.filename), escape(str(result.error)))
+                    "failed %s %s: %s" % (item.operation, escape(item.filename), escape(str(item.error)))
                 )
-        error("replayed %d transfers, %d failed, %d skipped" % (len(done.results), failed, done.skipped))
+        error("replayed %d transfers, %d failed, %d skipped" % (len(result.results), failed, result.skipped))
         return 1 if failed else None

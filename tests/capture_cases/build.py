@@ -5,7 +5,9 @@
 
 A capture is data: fixed times, loopback and documentation addresses only. The
 expected output is recorded by the command as it is when this runs, so a change
-to it is a change to a file under `expected/`, visible in the diff.
+to it is a change to a file under `expected/`, visible in the diff: what it wrote
+to standard output (`.out`), to standard error (`.err`) and its exit status
+(`.status`).
 """
 
 from __future__ import annotations
@@ -32,16 +34,16 @@ STRANGER = "192.0.2.77"
 V6_CLIENT = "2001:db8::5"
 V6_SERVER = "2001:db8::1"
 
-#: What each variant passes after ``capture FILE``.
+#: What each variant passes after ``capture --input FILE``.
 VARIANTS: Dict[str, List[str]] = {
     "text": [],
-    "json": ["--json", "--payload"],
+    "json": ["--format", "json"],
     "transfers": ["--no-packets", "--transfers"],
-    "json_transfers": ["--json", "--no-packets", "--transfers"],
     "filter_ops": ["--filter", "op=RRQ,WRQ,ERROR"],
-    "filter_hosts": ["--filter", "host=192.0.2.0/24,2001:db8::/32 and dst!=:69"],
-    "filter_endpoints": ["--filter", "src=[2001:db8::5]:1000,192.0.2.5:2000"],
+    "filter_hosts": ["--filter", "host=192.0.2.0/24,2001:db8::/32 and dport!=69"],
+    "filter_endpoints": ["--filter", "src=2001:db8::5,192.0.2.5 and sport=1000,2000"],
     "filter_file": ["--filter", "file=*.bin,*.txt"],
+    "filter_transfer": ["--filter", "op=DATA and tftp.session=c1"],
 }
 EXTRACT = "extract"
 
@@ -281,23 +283,28 @@ def write_captures(directory: Path = HERE) -> None:
 # -- the command's output -----------------------------------------------------------------
 
 
-def run_capture(capture: Path, extra: List[str]) -> Tuple[bytes, int]:
-    """``pytftp capture CAPTURE EXTRA`` as a process: stdout with line feeds, and the exit status."""
+def run_capture(capture: Path, extra: List[str]) -> Tuple[bytes, bytes, int]:
+    """``pytftp capture --input CAPTURE EXTRA`` as a process: stdout and stderr with line feeds, and the status."""
     env = dict(os.environ, TZ="UTC", PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     proc = subprocess.run(
-        [sys.executable, "-m", "tftp", "capture", str(capture), *extra],
+        [sys.executable, "-m", "tftp", "capture", "--input", str(capture), *extra],
         capture_output=True,
         env=env,
         timeout=120,
     )
-    return proc.stdout.replace(os.linesep.encode(), b"\n"), proc.returncode
+    newline = os.linesep.encode()
+    return proc.stdout.replace(newline, b"\n"), proc.stderr.replace(newline, b"\n"), proc.returncode
 
 
-def run_extract(capture: Path, directory: Path) -> Tuple[bytes, int, Dict[str, bytes]]:
-    """The same with ``--no-packets --extract``: stdout, exit status and the files written."""
-    out, status = run_capture(capture, ["--no-packets", "--extract", str(directory)])
+def run_extract(capture: Path, directory: Path) -> Tuple[bytes, bytes, int, Dict[str, bytes]]:
+    """The same with ``--no-packets --extract``: stdout, stderr, exit status and the files written.
+
+    The directory is in the lines ``wrote PATH`` on stderr; it is written as ``DIRECTORY`` there.
+    """
+    out, err, status = run_capture(capture, ["--no-packets", "--extract", str(directory)])
+    err = err.replace(str(directory).encode(), b"DIRECTORY").replace(b"DIRECTORY\\", b"DIRECTORY/")
     files = {p.name: p.read_bytes() for p in sorted(directory.glob("*"))} if directory.exists() else {}
-    return out, status, files
+    return out, err, status, files
 
 
 def record_expected(names: List[str]) -> None:
@@ -306,12 +313,14 @@ def record_expected(names: List[str]) -> None:
         shutil.rmtree(target, ignore_errors=True)
         target.mkdir(parents=True)
         for variant, extra in VARIANTS.items():
-            out, status = run_capture(HERE / name, extra)
+            out, err, status = run_capture(HERE / name, extra)
             (target / (variant + ".out")).write_bytes(out)
+            (target / (variant + ".err")).write_bytes(err)
             (target / (variant + ".status")).write_bytes(b"%d\n" % status)
         with tempfile.TemporaryDirectory() as scratch:
-            out, status, files = run_extract(HERE / name, Path(scratch) / "files")
+            out, err, status, files = run_extract(HERE / name, Path(scratch) / "files")
         (target / (EXTRACT + ".out")).write_bytes(out)
+        (target / (EXTRACT + ".err")).write_bytes(err)
         (target / (EXTRACT + ".status")).write_bytes(b"%d\n" % status)
         for file_name, content in files.items():
             (target / EXTRACT).mkdir(exist_ok=True)

@@ -67,8 +67,10 @@ def _arguments(line, root, port):
     points = {"192.0.2.1": "127.0.0.1", "/srv/tftp": str(root), "6969": "0"}
     arguments = [points.get(token, token) for token in shlex.split(text)]
     command = arguments[0]
-    if command in ("get", "put", "ls", "replay"):
+    if command in ("get", "put", "ls"):
         arguments += ["-p", str(port)]
+    elif command == "replay":
+        arguments[arguments.index("--to") + 1] += ":%d" % port
     elif command in ("serve", "relay") and "--port" not in arguments:
         arguments += ["-p", "0"]
     if command in ("serve", "relay"):
