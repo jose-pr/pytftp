@@ -17,6 +17,66 @@ one JSON document.
 
 `-v`, `-q` and `--loglevel [NAME:]LEVEL` adjust logging and go before or after the command.
 
+## The settings file
+
+A settings file keeps the options of a command out of the command line. The root takes it before the
+command's name (`pytftp -c FILE serve`; after the name it is the parser's own error): `--config`/`-c FILE`,
+else the variable `PYTFTP_CONFIG`, else the user's own `pytftp/pytftp.ini` under `$XDG_CONFIG_HOME` (else
+`~/.config`) on Linux, macOS and the BSDs and under `%APPDATA%` on Windows, which may be absent. It is
+duho's layout: top-level keys are the root's options (`verbose`, `quiet`, `loglevels`), and a table named
+for a command holds that command's options by their field names, which are the long option with `_` for
+`-` (`max_sessions` for `--max-sessions`, `json_out` for `--json`, `no_tsize` for `--no-tsize`). The
+positional arguments are fields too. In INI the keys of `[DEFAULT]` are the top level:
+
+```ini
+[DEFAULT]
+verbose = 1
+
+[serve]
+port = 6969
+write = true
+listing = true
+max_sessions = 100
+
+[capture]
+load = pydhcp.capture
+format = json
+```
+
+```console
+$ pytftp -c pytftp.ini serve /srv/tftp
+```
+
+- **Order**, nearest first: the argument, the variable the option declares (`PKTCAP_LOAD`, for `load` alone),
+  the file, the option's default. A nearer layer replaces a farther one for that option only, so lists do
+  not add up. An on/off option has its opposite, so that the command line can switch off what the file
+  switched on: `--no-X` for `--X`, and for an option that is already `--no-X` the plain `--X`.
+
+  | Command | The opposites |
+  | --- | --- |
+  | `get`, `put`, `ls` | `--no-json`, `--no-trace`, `--tsize` (of `--no-tsize`), `--options` (of `--no-options`) |
+  | `serve` | `--no-json`, `--no-trace`, `--no-write`, `--no-overwrite`, `--create` (of `--no-create`), `--no-listing`, `--no-fit-mtu`, `--no-per-client`, `--no-per-client-only`, `--no-ignore-case` |
+  | `relay` | `--no-json`, `--no-trace` |
+  | `capture` | `--no-append`, `--no-datagrams`, `--no-per-record`, `--no-hook-fail-fast`, `--no-transfers`, `--packets` (of `--no-packets`) |
+  | `replay` | `--no-json`, `--no-writes`, `--delay` (of `--no-delay`) |
+- **Formats**: INI (`.ini`, `.cfg`), JSON (`.json`), TOML (`.toml`; before Python 3.11 it needs duho's
+  `config` extra) and YAML (`.yaml`, `.yml`; duho's `yaml` extra). The ending picks the format and any other
+  ending is refused. duho's own reference, the `AGENTS.md` inside the installed `duho` package, describes
+  each, and the INI dialect in particular.
+- **Refused**, status 2, one line that names the file and the key and holds no text of the file: a key or a
+  table nobody has (a misspelling would otherwise be ignored in silence), a key a command does not have
+  (`max_sessions` in `[get]`), a `config` key, a table that is not a table, a document that is not valid, a
+  file over 65,536 octets. A named file that does not exist is status 2 from `--config` and 1 from the
+  variable. Without the `pktcap` extra a `[capture]` or `[replay]` table is refused with the line that names
+  the extra.
+- **The command's options only.** The file sets what an option already sets; the `capture` and `replay`
+  tables take pktcap's options too (`load`, `filter`, `format`, ...), and the plugin list may come from the
+  file.
+- **Trust.** The file found by default must be the user's own or root's and not writable by everyone
+  (POSIX); a file you name is read as it is, so as root name it: `sudo pytftp -c ~/.config/pytftp/pytftp.ini
+  serve`. The library reads no settings file; only the command does, and not in a program that calls the
+  library.
+
 ## Exit status and output
 
 - **0** success; **1** the transfer failed, the peer refused, the port could not be bound or a local

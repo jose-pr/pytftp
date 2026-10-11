@@ -72,6 +72,17 @@ differs and "Fixed" the defects corrected on the way.
   header per package (`tftp/client/AGENTS.md`, `server`, `options`, `backends`, `relay`, `capture`,
   `packet`, `path`, `transfer` and `cli`), with the environment variables and the loggers listed; a test
   checks every signature a header prints against the live object.
+- **A settings file for the `pytftp` command**: `--config`/`-c FILE` before the command's name, else
+  `PYTFTP_CONFIG`, else the user's own `pytftp/pytftp.ini` (under `$XDG_CONFIG_HOME`, else `~/.config`, or
+  `%APPDATA%`; absent is no error). INI, JSON, TOML and YAML as duho reads them: top-level keys are the root's
+  options and a table named for a command (`[serve]`, `[capture]`) sets that command's options by field name,
+  the argument over the file. A key or table nobody has, a key a command does not have, a `config` key, a
+  table that is not a table, an invalid document, a file over 65,536 octets and (POSIX) a default file that
+  is another user's or everyone may write are refused with status 2 and one line that names the file and
+  holds no text of it; without the `pktcap` extra a `[capture]` or `[replay]` table is refused with the line
+  that names the extra. The library reads no settings file. An on/off option now also has its opposite
+  (`--no-json`, `--no-trace`, `--no-write`, ... and `--tsize`, `--options`, `--create`, `--packets`,
+  `--delay` for the options that were `--no-X`), so the command line can switch off what a file switched on.
 
 ### Changed
 
@@ -118,8 +129,8 @@ differs and "Fixed" the defects corrected on the way.
   was `>=0.9.0,<0.10`. From 0.9.12 `copy(overwrite=True)` asks its target to
   `unlink(missing_ok=True)`, which a TFTP path answers by doing nothing, and 0.9.13 types the
   classes a path is built from so that they are checked without an exemption.
-- **The `cli` extra needs `duho` 0.7**: `duho>=0.7.0,<0.8`, where it was `>=0.6.0,<0.7`. The
-  `pytftp` command, its options and its output are the same.
+- **The `cli` extra needs `duho` 0.7.2**: `duho>=0.7.2,<0.8`, where it was `>=0.6.0,<0.7`. The
+  `pytftp` command, its options and its output are the same, but for the settings file above.
 - **`AsyncTFTPClient` reports an expired `deadline` in the first wait as `TFTPClient` does.** A
   `deadline` that passes before the server has answered raises `TransferTimeoutError("transfer
   exceeded its time limit")`, where `AsyncTFTPClient.get` and `.download` said "no response from

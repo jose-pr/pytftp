@@ -661,6 +661,19 @@ def no_name_leaves_the_host(monkeypatch, request):
     assert violations == [], "names resolved off the host: %r" % violations
 
 
+@pytest.fixture(autouse=True)
+def no_settings_file_of_the_user(monkeypatch, tmp_path_factory):
+    """Point the places the command's own settings file may be at an empty directory, and drop the variable.
+
+    The command reads ``pytftp/pytftp.ini`` under ``%APPDATA%`` or ``$XDG_CONFIG_HOME`` by default; a test
+    must neither read nor write the real user's.
+    """
+    nowhere = str(tmp_path_factory.mktemp("no-settings"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", nowhere)
+    monkeypatch.setenv("APPDATA", nowhere)
+    monkeypatch.delenv("PYTFTP_CONFIG", raising=False)
+
+
 def wait_until(predicate, timeout: float = 5.0) -> bool:
     """Poll ``predicate`` until it is true or ``timeout`` seconds pass; its last answer.
 
