@@ -109,8 +109,8 @@ transfer on stderr at the end; a machine reads the transfers from `FlowTracker` 
 `--extract DIR` writes each transfer's file. The summary line on stderr counts the frames read, written
 and skipped. Everything else pktcap's capture command takes is the same: `--output`, `--format`
 (`pcap`, `pcapng`, `json`, `yaml`, `toml`, `ini`, `text`), `--per-record`, `--max-files`, `--datagrams`,
-`--append`, `--count`, `--duration`, `--hook`, `--hook-fail-fast`, `--hook-timeout`, `--load` and
-`--config`; pktcap's header documents each, and its statuses are the command's: 0 done, 1 a file or
+`--append`, `--count`, `--duration`, `--hook`, `--hook-fail-fast`, `--hook-timeout` and
+`--load`; pktcap's header documents each, and its statuses are the command's: 0 done, 1 a file or
 an interface that cannot be opened, 2 a file that is no capture or a bad option.
 
 | Before | Now |

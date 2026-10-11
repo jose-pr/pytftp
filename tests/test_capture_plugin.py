@@ -305,7 +305,9 @@ def test_a_second_layer_with_an_op_key_makes_the_bare_key_ambiguous_and_the_dott
 
 def _pktcap(arguments, environment, cwd):
     env = {k: v for k, v in os.environ.items() if not k.startswith("PKTCAP_")}
-    env.update(environment, PKTCAP_CONFIG="none", PYTHONIOENCODING="utf-8")
+    # The user's own settings file is read by default: point both places it may be at an empty directory.
+    nowhere = str(cwd / "no-configuration")
+    env.update(environment, XDG_CONFIG_HOME=nowhere, APPDATA=nowhere, PYTHONIOENCODING="utf-8")
     return subprocess.run(
         [sys.executable, "-m", "pktcap", *arguments],
         capture_output=True,

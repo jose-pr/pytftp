@@ -130,7 +130,7 @@ pytftp replay --input boot.pcapng --to 192.0.2.1 --speed 10
 `capture` reads a pcap or pcapng file or a live pipe on stdin (`--input`/`-i`, `-` for stdin), or
 (Linux) an interface (`--interface`); the two exclude each other. It writes what pktcap's capture
 command writes (`--output`, `--format`, `--per-record`, `--max-files`, `--datagrams`, `--append`,
-`--count`, `--duration`, `--hook`, `--hook-fail-fast`, `--hook-timeout`, `--load` and `--config`: pktcap's
+`--count`, `--duration`, `--hook`, `--hook-fail-fast`, `--hook-timeout` and `--load`: pktcap's
 header lists them), filtered to the TFTP packets of the transfers it follows, and by default as one
 readable line a packet. `--format json` is pktcap's record, with the `tftp` layer, its `session` and a
 DATA's octets. `--transfers` prints a line per transfer on stderr at the end, `--no-packets` writes no
@@ -148,7 +148,7 @@ transfer the capture holds again: one line per transfer on stdout (`--json`: its
 reads only; `--writes` also uploads what the capture holds of each write, **which overwrites that file
 on the server**. `--input`/`-i` is the capture, `--request-port` the capture's request port; `--speed`
 divides the recorded gap between transfers, `--no-delay` removes the waits, `--max-delay` bounds one
-wait, `--limit` ends the replay after that many transfers, `--filter`, `--load` and `--config` are
+wait, `--limit` ends the replay after that many transfers, `--filter` and `--load` are
 pktcap's, and `-t` and `-r` are the clients' timeout and retries. No datagram of the capture is sent,
 so pktcap's `--source-port` and `--broadcast` are not offered. It exits 0 when every transfer run
 succeeded (none run is 0), 1 when one failed, when `HOST` does not resolve or the file cannot be opened,

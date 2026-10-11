@@ -95,14 +95,14 @@ differs and "Fixed" the defects corrected on the way.
   | `--transfers` on standard output (`--json`: an object each) | one readable line each on standard error; a machine reads the transfers from `FlowTracker` or `analyze` |
   | `--no-packets`, `--extract DIR`, `--port`/`-p` | unchanged |
   | `warning: N of M frames not read: ...`, status 2 when every frame was of an unsupported link type | the count in the summary line on stderr (`3 frames read, 0 written, 3 skipped, 3 of an unsupported link type (105)`), status 0; `-q` drops it |
-  | (new) | `--output`/`-o`, `--format`, `--per-record`, `--max-files`, `--datagrams`, `--append`, `--count`, `--duration`/`-d`, `--hook`, `--hook-fail-fast`, `--hook-timeout`, `--load`, `--config`/`-c` |
+  | (new) | `--output`/`-o`, `--format`, `--per-record`, `--max-files`, `--datagrams`, `--append`, `--count`, `--duration`/`-d`, `--hook`, `--hook-fail-fast`, `--hook-timeout`, `--load` |
   | (hidden, refused by the parser) | `--listen`: a socket on port 69 sees requests only, never a transfer's data, and takes the port a server needs |
 
   | `pytftp replay` before | Now |
   | --- | --- |
   | the positionals `SOURCE` and `HOST`, `--port`/`-p` | `--input`/`-i FILE` and `--to HOST[:PORT]` (port 69 when left out) |
   | `--request-port`, `--writes`, `--speed`, `--max-delay`, `--limit`, `--timeout`/`-t`, `--retries`/`-r`, `--json` | unchanged; `--limit` counts transfers |
-  | (new) | `--no-delay`, `--filter`/`-f` (which frames reach the tracker), `--load`, `--config`/`-c` |
+  | (new) | `--no-delay`, `--filter`/`-f` (which frames reach the tracker), `--load` |
   | (hidden, refused by the parser) | `--source-port` and `--broadcast`: no captured datagram is sent, a client asks again |
 
 - **pktcap is an optional dependency, the `pktcap` extra** (`pip install "tftp[pktcap]"`); `dependencies`

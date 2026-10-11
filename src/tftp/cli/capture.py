@@ -46,10 +46,6 @@ class CaptureCmd(Capture):
     "Read this pcap or pcapng file, or '-' for a live pipe on stdin (tcpdump -U -w -), instead of capturing. Excludes --interface"
     ("--input", "-i")
 
-    interface: _ty.Annotated[_ty.Optional[str], Meta(conflicts="source")] = None
-    "Capture live from this interface, by name, address or MAC (Linux, needs root or CAP_NET_RAW). Default: every interface. Excludes --input"
-    ("--interface",)
-
     listen: _ty.Annotated[_ty.Optional[_ty.List[str]], argparse.SUPPRESS] = None
 
     port: _ty.List[int] = [69]

@@ -37,9 +37,8 @@ pytftp relay [UPSTREAM] [--route-subnet CIDR=HOST[:PORT]]... [--route-prefix PRE
 pytftp capture [-i FILE|- | --interface NIC] [-p PORT]... [-f FILTER] [--no-packets] [--transfers]
              [--extract DIR] [-o TARGET] [--format FMT] [--per-record] [--max-files N] [--datagrams] [--append]
              [--count N] [-d SECONDS] [--hook COMMAND] [--hook-fail-fast] [--hook-timeout S] [--load PLUGIN]...
-             [-c FILE]
 pytftp replay -i FILE|- --to HOST[:PORT] [--request-port PORT]... [--writes] [--speed X | --no-delay]
-             [--max-delay S] [--limit N] [-f FILTER] [-t S] [-r N] [--json] [--load PLUGIN]... [-c FILE]
+             [--max-delay S] [--limit N] [-f FILTER] [-t S] [-r N] [--json] [--load PLUGIN]...
 ```
 
 `-v`, `-q` and `--loglevel` go before or after the subcommand. `pytftp --help`

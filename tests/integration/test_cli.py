@@ -251,8 +251,22 @@ def test_capture_errors_have_pktcaps_statuses(tmp_path, monkeypatch, capsys):
         ["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--payload"],
         ["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--listen", "127.0.0.1:69"],
         ["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--interface", "lo"],
+        ["capture", "--input", os.path.join(_CASES, "plain.pcap"), "--config", "x.ini"],
+        ["capture", "--input", os.path.join(_CASES, "plain.pcap"), "-c", "x.ini"],
+        ["replay", "--input", os.path.join(_CASES, "plain.pcap"), "--to", "127.0.0.1", "--config", "x.ini"],
+        ["replay", "--input", os.path.join(_CASES, "plain.pcap"), "--to", "127.0.0.1", "-c", "x.ini"],
     ],
-    ids=["positional-source", "json", "payload", "listen", "input-and-interface"],
+    ids=[
+        "positional-source",
+        "json",
+        "payload",
+        "listen",
+        "input-and-interface",
+        "capture-config",
+        "capture-c",
+        "replay-config",
+        "replay-c",
+    ],
 )
 def test_an_option_the_capture_command_no_longer_has_is_the_parsers_usage_error(arguments, capsys):
     with pytest.raises(SystemExit) as stop:
