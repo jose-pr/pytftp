@@ -461,7 +461,7 @@ def test_unconnected_udp_survives_port_unreachable():
     makers = {
         "client": lambda: client._socket(socket.AF_INET),
         "transfer": lambda: bind_transfer("127.0.0.1", socket.AF_INET),
-        "listener": lambda: listener.sock,
+        "listener": lambda: listener.endpoints[0].socket,
     }
     try:
         for make in makers.values():
@@ -472,7 +472,7 @@ def test_unconnected_udp_survives_port_unreachable():
                 with pytest.raises(socket.timeout):
                     sock.recvfrom(100)
             finally:
-                if sock is not listener.sock:
+                if sock is not listener.endpoints[0].socket:
                     sock.close()
     finally:
         listener.close()

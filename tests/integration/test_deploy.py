@@ -184,15 +184,12 @@ def test_relay_port_range(root, make_server):
     assert sent and all(e.local[1] in ports for e in sent)
 
 
-def test_v4_client_of_dual_stack_listener_without_pktinfo(root, make_server):
-    """No destination address: the reply must still reach a v4 client (netimps
-    answers it from a v4 socket, at Datagram.reply_address)."""
-    server = make_server(root, "::", reply_from_request_address=False)
-    if not server.is_dual_stack:
-        pytest.skip("no dual-stack listener here")
+def test_v4_client_of_the_default_listener_without_pktinfo(root, make_server):
+    """No destination address: the reply must still reach a v4 client."""
+    server = make_server(root, None, reply_from_request_address=False)
     assert not server.has_pktinfo
     client = tftp.TFTPClient("127.0.0.1", server.server_address[1], timeout=0.5, retries=1)
     assert client.get("one.bin") == b"x"
     ports = free_ports(2)
-    ranged = make_server(root, "::", reply_from_request_address=False, port_range=ports)
+    ranged = make_server(root, None, reply_from_request_address=False, port_range=ports)
     assert tftp.TFTPClient("127.0.0.1", ranged.server_address[1], timeout=0.5).get("one.bin") == b"x"

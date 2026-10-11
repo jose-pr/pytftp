@@ -178,12 +178,10 @@ def test_reply_comes_from_the_address_the_request_was_sent_to(root, make_server)
         client.sendto(encode_ack(1), source)
 
 
-def test_reply_address_on_dual_stack_listener(root, make_server):
+def test_reply_address_on_the_default_listener(root, make_server):
     if not _bindable("127.0.0.2"):
         pytest.skip("127.0.0.2 is not a local address here")
-    server = make_server(root, host="::")
-    if not server.is_dual_stack:
-        pytest.skip("no dual-stack sockets here")
+    server = make_server(root, host=None)
     with raw_socket() as client:
         client.sendto(encode_request(TFTPOpcode.RRQ, "one.bin"), ("127.0.0.2", server.server_address[1]))
         _, source = expect(client)

@@ -81,10 +81,8 @@ def test_upload_from_path_and_file(root, make_server, tmp_path_factory):
 
 @needs_ipv6
 @pytest.mark.parametrize("host", ["::1", "127.0.0.1"])
-def test_dual_stack_listener(root, make_server, host):
-    server = make_server(root, host="::")
-    if host == "127.0.0.1" and not server.is_dual_stack:
-        pytest.skip("this platform does not allow dual-stack sockets")
+def test_default_listener_answers_both_families(root, make_server, host):
+    server = make_server(root, host=None)
     result = client_for(server, host=host).download("513.bin", io.BytesIO())
     assert result.bytes == 513
     assert result.peer[0] == host

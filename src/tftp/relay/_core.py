@@ -38,6 +38,7 @@ from ..exceptions import TFTPDecodeError, TFTPError
 from ..packet._enums import TFTPErrorCode, TFTPOpcode
 from ..packet._codec import RequestPacket, decode
 from ..packet._codec import _encode_error
+from ..server._core import _listening
 from ..server._handler import TFTPRequestContext, is_coroutine_callable
 from ..server._listener import Arrival
 from ..server._policy import TFTPServerLimits
@@ -155,9 +156,10 @@ class RelayBase:
         self._ports = PortAllocator(self.port_range) if self.port_range is not None else None
         #: Counters since start (:class:`TFTPStats`).
         self.stats = TFTPStats(*RELAY_COUNTERS)
-        self._listen_on = (host, port, reply_from_request_address, interface)
+        self._listen_on = (_listening(host, port, interface), port, reply_from_request_address)
         self._listener: Any = None
         self._address: Optional[Tuple[Any, ...]] = None
+        self._addresses: Tuple[Tuple[Any, ...], ...] = ()
         self._sessions: Dict[Tuple[str, int], RelaySession] = {}
         #: Requests whose route is still being asked: the asyncio relay's, empty on the blocking one.
         self._waiting: Dict[Tuple[str, int], Any] = {}
@@ -169,6 +171,11 @@ class RelayBase:
     def server_address(self) -> Optional[Tuple[Any, ...]]:
         """The bound listening address, or ``None`` before :meth:`bind`."""
         return self._address
+
+    @property
+    def server_addresses(self) -> Tuple[Tuple[Any, ...], ...]:
+        """Every bound listening address, in the order of ``listen``; empty before :meth:`bind`."""
+        return self._addresses
 
     @property
     def has_pktinfo(self) -> Optional[bool]:
@@ -196,9 +203,9 @@ class RelayBase:
         """What ``max_sessions`` bounds: transfers running and requests still waiting for a route."""
         return len(self._sessions) + len(self._waiting)
 
-    def _refuse(self, sender: Tuple[Any, ...], code: int, message: str) -> None:
+    def _refuse(self, arrival: Arrival, code: int, message: str) -> None:
         self.stats.add("refused")
-        self._listener.reply_error(sender, code, message)
+        self._listener.reply_error(arrival, code, message)
 
     def _admit(
         self, arrival: Arrival, now: float
@@ -209,38 +216,36 @@ class RelayBase:
         caller routes it. A repeated request is passed to the upstream while
         that has not answered.
         """
-        from netimps import unmap
-
         data, sender, local, ifindex = arrival[:4]
         if len(data) < 2 or data[0] != 0 or data[1] not in (TFTPOpcode.RRQ, TFTPOpcode.WRQ):
             return None
         if self.ignore_broadcast and self._listener.is_broadcast(arrival):
             return None
-        key = (str(unmap(sender[0])), sender[1])
+        key = (sender[0], sender[1])
         existing = self._sessions.get(key)
         if existing is not None:
             if existing.upstream_tid is None:  # still unanswered: pass the retry on
-                self._emit(existing, self._listener.sock, data, sender, "in", "client")
+                self._emit(existing, self._listener.socket_of(arrival), data, sender, "in", "client")
                 self._send(existing, existing.driver.up, data, existing.upstream)
             return None
         if key in self._waiting:
             return None  # its route is still being asked
         self.stats.add("requests")
         if len(data) > self.limits.max_request_size:
-            self._refuse(sender, TFTPErrorCode.ILLEGAL_OPERATION, "request too large")
+            self._refuse(arrival, TFTPErrorCode.ILLEGAL_OPERATION, "request too large")
             return None
         try:
             request = decode(data)
             assert isinstance(request, RequestPacket)
             self.limits.check(request)
         except TFTPDecodeError as exc:
-            self._refuse(sender, TFTPErrorCode.ILLEGAL_OPERATION, str(exc))
+            self._refuse(arrival, TFTPErrorCode.ILLEGAL_OPERATION, str(exc))
             return None
         except TFTPError as exc:
-            self._refuse(sender, exc.code, exc.message)
+            self._refuse(arrival, exc.code, exc.message)
             return None
         if self.max_sessions is not None and self._held() >= self.max_sessions:
-            self._refuse(sender, TFTPErrorCode.NOT_DEFINED, "relay busy")
+            self._refuse(arrival, TFTPErrorCode.NOT_DEFINED, "relay busy")
             return None
         context = TFTPRequestContext(request, sender, local_address=local, interface_index=ifindex)
         context.interface = arrival.interface
@@ -253,14 +258,14 @@ class RelayBase:
             raise TFTPError(TFTPErrorCode.ACCESS_VIOLATION, "no route")
         return Upstream.parse(chosen)
 
-    def _refuse_route(self, context: TFTPRequestContext, sender: Tuple[Any, ...], exc: Exception) -> None:
+    def _refuse_route(self, context: TFTPRequestContext, arrival: Arrival, exc: Exception) -> None:
         """A route (or the lookup of its answer) gave no upstream: the client is told why."""
         if isinstance(exc, TFTPError):
             log.info("%r refused: %s", context, exc)
-            self._refuse(sender, exc.code, exc.message)
+            self._refuse(arrival, exc.code, exc.message)
         else:
             log.error("route failed for %r", context, exc_info=exc)
-            self._refuse(sender, TFTPErrorCode.NOT_DEFINED, "relay error")
+            self._refuse(arrival, TFTPErrorCode.NOT_DEFINED, "relay error")
 
     def _known(self, target: Upstream, now: float) -> Any:
         """The address a name was resolved to less than ``_RESOLVE_TTL`` ago, or ``None``."""
@@ -298,14 +303,14 @@ class RelayBase:
             down, client = self._listener.reply_socket(arrival, self._ports)
         except OSError as exc:
             log.warning("no transfer socket for %s: %s", sender[:2], exc)
-            self._refuse(sender, TFTPErrorCode.NOT_DEFINED, "relay busy")
+            self._refuse(arrival, TFTPErrorCode.NOT_DEFINED, "relay busy")
             return None
         try:
             source = self.upstream_src or ("::" if family == socket.AF_INET6 else "0.0.0.0")
             up = bind_transfer(source, family, self._ports)
         except OSError:
             down.close()
-            self._refuse(sender, TFTPErrorCode.NOT_DEFINED, "relay error")
+            self._refuse(arrival, TFTPErrorCode.NOT_DEFINED, "relay error")
             return None
         return down, client, up
 
@@ -338,7 +343,7 @@ class RelayBase:
             session.client[:2],
             session.upstream,
         )
-        self._emit(session, self._listener.sock, data, sender, "in", "client")
+        self._emit(session, self._listener.socket_of(arrival), data, sender, "in", "client")
         self._send(session, session.driver.up, data, session.upstream)
 
     # -- forwarding -------------------------------------------------------------------------

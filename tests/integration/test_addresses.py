@@ -164,25 +164,25 @@ def _loopback():
 def test_server_on_one_interface(root, form):
     iface = _loopback()
     spec = {"Interface": iface, "name": iface.name, "address": "127.0.0.1"}[form]
-    # IPv4 by default: the adapter's primary address, or the one named.
-    expected = "127.0.0.1" if form == "address" else str(iface.primary_ip(ipv6=False).ip)
+    # An adapter is its IPv4 wildcard socket, limited to it; an address is that address.
+    expected = "127.0.0.1" if form == "address" else "0.0.0.0"
     with tftp.TFTPServer(root, port=0, interface=spec, timeout=0.5).start() as server:
         host, port = server.server_address[:2]
         assert host == expected
-        assert tftp.TFTPClient(host, port, timeout=0.5).get("one.bin") == b"x"
+        assert tftp.TFTPClient("127.0.0.1", port, timeout=0.5).get("one.bin") == b"x"
 
 
 def test_interface_family_follows_a_wildcard_host(root):
     iface = _loopback()
     with tftp.TFTPServer(root, host="0.0.0.0", port=0, interface=iface).start() as server:
-        assert server.server_address[0] == str(iface.primary_ip(ipv6=False).ip)
+        assert server.server_address[0] == "0.0.0.0"
     v6 = iface.primary_ip(ipv6=True)
     if v6 is None:
         pytest.skip("loopback has no IPv6 address here")
     with tftp.TFTPServer(root, host="::", port=0, interface=iface, timeout=0.5).start() as server:
         host, port = server.server_address[:2]
-        assert ipaddress.ip_address(host.split("%")[0]) == v6.ip
-        assert tftp.TFTPClient(host, port, timeout=0.5).get("one.bin") == b"x"
+        assert ipaddress.ip_address(host.split("%")[0]) == ipaddress.ip_address("::")
+        assert tftp.TFTPClient("::1", port, timeout=0.5).get("one.bin") == b"x"
 
 
 def test_interface_errors(root):
@@ -196,7 +196,7 @@ def test_relay_on_one_interface(root, make_server):
     upstream_server = make_server(root)
     relay = TFTPRelay((LOOPBACK, upstream_server.server_address[1]), port=0, interface=_loopback()).start()
     try:
-        assert relay.server_address[0] == str(_loopback().primary_ip(ipv6=False).ip)
+        assert relay.server_address[0] == "0.0.0.0"
         assert client_for(relay).get("one.bin") == b"x"
     finally:
         relay.close()

@@ -38,10 +38,10 @@ _OPENING = object()
 class _Waiting:
     """A request whose route is being asked: who to answer, and the task asking."""
 
-    __slots__ = ("sender", "task")
+    __slots__ = ("arrival", "task")
 
-    def __init__(self, sender: Tuple[Any, ...], task: "asyncio.Future[None]") -> None:
-        self.sender = sender
+    def __init__(self, arrival: Arrival, task: "asyncio.Future[None]") -> None:
+        self.arrival = arrival
         self.task = task
 
 
@@ -127,10 +127,11 @@ class AsyncTFTPRelay(AsyncioService, RelayBase):
     # -- lifecycle --------------------------------------------------------------------
 
     def _acquire(self) -> None:
-        host, port, pktinfo, interface = self._listen_on
-        listener = Listener(host, port, pktinfo=pktinfo, interface=interface)
+        listen, port, pktinfo = self._listen_on
+        listener = Listener(listen, port, pktinfo=pktinfo)
         self._listener = listener
-        self._address = listener.sock.getsockname()
+        self._address = listener.addresses[0]
+        self._addresses = listener.addresses
 
     async def _free(self) -> None:
         if self._listener is not None:
@@ -154,7 +155,7 @@ class AsyncTFTPRelay(AsyncioService, RelayBase):
         """Serving stops: a request still waiting for its route is refused, every transfer is ended."""
         self._abandoning = True
         for waiting in list(self._waiting.values()):
-            self._refuse(waiting.sender, 0, "relay shutting down")
+            self._refuse(waiting.arrival, 0, "relay shutting down")
         self._waiting.clear()
         tasks = list(self._tasks)
         for task in tasks:
@@ -186,7 +187,7 @@ class AsyncTFTPRelay(AsyncioService, RelayBase):
             return
         key = admitted[0]
         task = asyncio.ensure_future(self._open(arrival, *admitted))
-        self._waiting[key] = _Waiting(arrival.sender, task)
+        self._waiting[key] = _Waiting(arrival, task)
         self._tasks.add(task)
         task.add_done_callback(self._opened)
 
@@ -221,7 +222,6 @@ class AsyncTFTPRelay(AsyncioService, RelayBase):
         context: TFTPRequestContext,
     ) -> None:
         """One request's route, lookup and transfer, ended when the transfer is watched or refused."""
-        sender = arrival.sender
         session: Optional[RelaySession] = None
         ending = "error"
         try:
@@ -229,10 +229,10 @@ class AsyncTFTPRelay(AsyncioService, RelayBase):
                 family, upstream = await asyncio.wait_for(self._lookup(request, context), self.idle_timeout)
             except asyncio.TimeoutError:
                 log.info("%r refused: no upstream within %s s", context, self.idle_timeout)
-                self._refuse(sender, 0, "relay error")
+                self._refuse(arrival, 0, "relay error")
                 return
             except Exception as exc:
-                self._refuse_route(context, sender, exc)
+                self._refuse_route(context, arrival, exc)
                 return
             if self._abandoning:
                 return
@@ -248,7 +248,7 @@ class AsyncTFTPRelay(AsyncioService, RelayBase):
             ending = "shutdown"
             raise
         except Exception:  # pragma: no cover - a bug, not a client error
-            log.exception("relaying a request from %s failed", sender[:2])
+            log.exception("relaying a request from %s failed", arrival.sender[:2])
         finally:
             self._waiting.pop(key, None)
             if session is not None and not session.closed and session.driver.watch is None:

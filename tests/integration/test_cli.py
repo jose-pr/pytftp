@@ -555,7 +555,7 @@ def test_serve_on_interface(root):
         pytest.skip("no loopback interface reported")
     proc, port = _serve_subprocess(["serve", str(root), "--interface", iface.name, "-p", "0"])
     try:
-        assert tftp.TFTPClient(str(iface.primary_ip(ipv6=False).ip), port).get("one.bin") == b"x"
+        assert tftp.TFTPClient("127.0.0.1", port).get("one.bin") == b"x"
     finally:
         _stop(proc)
 

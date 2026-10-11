@@ -246,9 +246,7 @@ class Session:
         self.timer_at: Optional[float] = None
         self.linger_until: Optional[float] = None
         self.closed = False
-        from netimps import unmap
-
-        self.key: Tuple[str, int] = (str(unmap(peer[0])), peer[1])
+        self.key: Tuple[str, int] = (peer[0], peer[1])
         self.local: Tuple[Any, ...] = sock.getsockname()
         #: Thread-safe "this transfer can make progress again" callback,
         #: handed to streams that support ``set_wakeup`` (see WouldBlock).

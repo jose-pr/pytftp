@@ -113,14 +113,10 @@ class Serve(Content, Negotiation, Traced):
             server.close()
             error("error: %s" % exc)
             return 1
-        address = server.server_address
-        assert address is not None  # bound above
         self._logger_.info(
-            "serving %s on %s port %d%s%s",
+            "serving %s on %s%s",
             self._described(),
-            address[0],
-            address[1],
-            " (dual-stack)" if server.is_dual_stack else "",
+            ", ".join("%s port %d" % address[:2] for address in server.server_addresses),
             "" if server.has_pktinfo else " (replies from the routing table's source address)",
         )
         try:

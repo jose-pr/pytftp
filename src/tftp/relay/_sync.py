@@ -114,8 +114,8 @@ class TFTPRelay(SelectorService, RelayBase):
 
     def _acquire(self) -> None:
         with contextlib.ExitStack() as stack:
-            host, port, pktinfo, interface = self._listen_on
-            listener = Listener(host, port, pktinfo=pktinfo, interface=interface)
+            listen, port, pktinfo = self._listen_on
+            listener = Listener(listen, port, pktinfo=pktinfo)
             stack.callback(listener.close)
             selector = selectors.DefaultSelector()
             stack.callback(selector.close)
@@ -124,11 +124,13 @@ class TFTPRelay(SelectorService, RelayBase):
             stack.callback(wake_w.close)
             wake_r.setblocking(False)
             wake_w.setblocking(False)
-            selector.register(listener.sock, selectors.EVENT_READ, None)
+            for endpoint in listener.endpoints:
+                selector.register(endpoint.socket, selectors.EVENT_READ, None)
             selector.register(wake_r, selectors.EVENT_READ, self)
             stack.pop_all()
         self._listener = listener
-        self._address = listener.sock.getsockname()
+        self._address = listener.addresses[0]
+        self._addresses = listener.addresses
         self._selector = selector
         self._wake_r, self._wake_w = wake_r, wake_w
 
@@ -212,7 +214,7 @@ class TFTPRelay(SelectorService, RelayBase):
             target = self._target(self.route(request, context))
             family, upstream = self._resolve(target, now)
         except Exception as exc:
-            self._refuse_route(context, arrival.sender, exc)
+            self._refuse_route(context, arrival, exc)
             return
         pair = self._bind_pair(arrival, family)
         if pair is None:

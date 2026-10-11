@@ -45,6 +45,27 @@ DEFAULT_MAX_SESSIONS = 500
 SELECT_SESSIONS = 510
 
 
+def _listening(host: Any, port: int, interface: Any) -> Any:
+    """The listen specification that ``host`` and ``interface`` name."""
+    import socket
+
+    from netimps import Host, is_wildcard, parse_listen, split_host
+
+    if interface is not None:
+        if not host:
+            return interface
+        wanted = Host(split_host(host)[0]).ip()
+        return parse_listen(
+            interface, port, family=socket.AF_INET6 if wanted and wanted.version == 6 else socket.AF_INET
+        )
+    if not host:
+        return None
+    address = Host(split_host(host)[0]).ip()
+    if address is None:
+        raise socket.gaierror("cannot resolve %r" % (host,))
+    return address
+
+
 class ServerBase:
     """Configuration and per-request decisions shared by the server front ends."""
 
@@ -111,16 +132,17 @@ class ServerBase:
         self._per_client: Dict[str, int] = {}
         #: Counters since start (:class:`TFTPStats`); ``stats_snapshot()`` adds ``active``.
         self.stats = TFTPStats(*SERVER_COUNTERS)
-        self._listen_on = (host, port, reply_from_request_address, interface)
+        self._listen_on = (_listening(host, port, interface), port, reply_from_request_address)
         self._listener: Any = None
         self._address: Optional[Tuple[Any, ...]] = None
+        self._addresses: Tuple[Tuple[Any, ...], ...] = ()
 
     # -- the listening socket -------------------------------------------------------
 
     def _bind_listener(self) -> Listener:
         """A bound listener; the caller owns it and closes it if a later step fails."""
-        host, port, pktinfo, interface = self._listen_on
-        return Listener(host, port, pktinfo=pktinfo, interface=interface)
+        listen, port, pktinfo = self._listen_on
+        return Listener(listen, port, pktinfo=pktinfo)
 
     # -- properties -----------------------------------------------------------------
 
@@ -133,14 +155,14 @@ class ServerBase:
         return self._address
 
     @property
+    def server_addresses(self) -> Tuple[Tuple[Any, ...], ...]:
+        """Every bound listening address, in the order of ``listen``; empty before :meth:`bind`."""
+        return self._addresses
+
+    @property
     def has_pktinfo(self) -> Optional[bool]:
         """Replies come from the request's own destination address; ``None`` before :meth:`bind`."""
         return None if self._listener is None else self._listener.has_pktinfo
-
-    @property
-    def is_dual_stack(self) -> Optional[bool]:
-        """The listening socket accepts IPv4 as well as IPv6; ``None`` before :meth:`bind`."""
-        return None if self._listener is None else self._listener.is_dual_stack
 
     @property
     def active_sessions(self) -> int:
@@ -169,32 +191,30 @@ class ServerBase:
         self.stats.add("requests")
         if len(data) > self.limits.max_request_size:
             self.stats.add("refused")
-            self._listener.reply_error(sender, TFTPErrorCode.ILLEGAL_OPERATION, "request too large")
+            self._listener.reply_error(arrival, TFTPErrorCode.ILLEGAL_OPERATION, "request too large")
             return None
-        from netimps import unmap
-
-        key = (str(unmap(sender[0])), sender[1])
+        key = (sender[0], sender[1])
         if key in self._sessions:
             return None  # a retransmitted request for a transfer already running
         try:
             request = decode(data)
         except TFTPDecodeError as exc:
             self.stats.add("refused")
-            self._listener.reply_error(sender, TFTPErrorCode.ILLEGAL_OPERATION, str(exc))
+            self._listener.reply_error(arrival, TFTPErrorCode.ILLEGAL_OPERATION, str(exc))
             return None
         assert isinstance(request, RequestPacket)
         try:
             self.limits.check(request)
         except TFTPError as exc:
             self.stats.add("refused")
-            self._listener.reply_error(sender, exc.code, exc.message)
+            self._listener.reply_error(arrival, exc.code, exc.message)
             return None
         per_client = self.limits.max_sessions_per_client
         if (self.max_sessions is not None and len(self._sessions) >= self.max_sessions) or (
             per_client is not None and self._per_client.get(key[0], 0) >= per_client
         ):
             self.stats.add("refused")
-            self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "server busy")
+            self._listener.reply_error(arrival, TFTPErrorCode.NOT_DEFINED, "server busy")
             return None
 
         try:
@@ -202,7 +222,7 @@ class ServerBase:
         except OSError as exc:
             log.warning("no transfer socket for %s: %s", sender[:2], exc)
             self.stats.add("refused")
-            self._listener.reply_error(sender, TFTPErrorCode.NOT_DEFINED, "server busy")
+            self._listener.reply_error(arrival, TFTPErrorCode.NOT_DEFINED, "server busy")
             return None
         context = TFTPRequestContext(request, peer, local_address=local, interface_index=ifindex)
         context.interface = arrival.interface
@@ -216,8 +236,8 @@ class ServerBase:
             self._trace_guard = guard(self.trace, log, self._trace_guard)
             session.trace = self._trace_guard
             # The request arrived at the listening port, not the transfer's.
-            address = self._address
-            assert address is not None  # a request arrives on a bound listener
+            assert arrival.endpoint is not None  # a request arrives on a listening endpoint
+            address = arrival.endpoint.socket.getsockname()
             arrived = (local, address[1]) if local is not None else address[:2]
             session.emit(data, "in", sender, arrived)
         # Registered at once, so a retransmitted request is recognised while

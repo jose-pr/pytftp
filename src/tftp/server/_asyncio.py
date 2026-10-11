@@ -30,7 +30,7 @@ from ..packet._codec import _encode_error
 from .._loggers import SERVER as log
 from ._core import DEFAULT_MAX_SESSIONS, ServerBase
 from ._handler import AsyncTFTPHandler, ThreadedHandler, has_coroutine_hooks
-from ._listener import _RECV_SIZE, Arrival
+from ._listener import Arrival
 from ._policy import TFTPServerLimits
 from ._session import PortRangeLike, Session
 
@@ -47,10 +47,6 @@ class _SessionProtocol(asyncio.DatagramProtocol):
 
     def error_received(self, exc: Exception) -> None:
         pass
-
-
-def _skippable(exc: BaseException) -> bool:
-    return isinstance(exc, OSError)
 
 
 class _Timer:
@@ -241,17 +237,7 @@ class AsyncioService:
         await self.aclose()
 
     async def _listen(self) -> None:
-        endpoint = self._listener.endpoint
-        # An ICMP error surfacing on the listener is skipped, as the
-        # synchronous server does; closing the endpoint ends the loop quietly.
-        async for datagram in endpoint.datagrams(_RECV_SIZE, on_error=_skippable):
-            self._arrived(self._listener.arrival(datagram))
-            # Whatever else is already queued, without another wait.
-            for _ in range(self._drain - 1):
-                arrival = self._listener.recv()
-                if arrival is None:
-                    break
-                self._arrived(arrival)
+        await self._listener.serve(self._arrived, self._drain)
 
 
 class AsyncTFTPServer(AsyncioService, ServerBase):
@@ -337,7 +323,8 @@ class AsyncTFTPServer(AsyncioService, ServerBase):
 
     def _acquire(self) -> None:
         self._listener = self._bind_listener()
-        self._address = self._listener.sock.getsockname()
+        self._address = self._listener.addresses[0]
+        self._addresses = self._listener.addresses
 
     async def _abandon_all(self) -> None:
         for session in list(self._sessions.values()):

@@ -357,11 +357,13 @@ class TFTPServer(SelectorService, ServerBase):
             stack.callback(wake_w.close)
             wake_r.setblocking(False)
             wake_w.setblocking(False)
-            selector.register(listener.sock, selectors.EVENT_READ, None)
+            for endpoint in listener.endpoints:
+                selector.register(endpoint.socket, selectors.EVENT_READ, None)
             selector.register(wake_r, selectors.EVENT_READ, self)
             stack.pop_all()
         self._listener = listener
-        self._address = listener.sock.getsockname()
+        self._address = listener.addresses[0]
+        self._addresses = listener.addresses
         self._workers = workers
         self._selector = selector
         self._wake_r, self._wake_w = wake_r, wake_w
