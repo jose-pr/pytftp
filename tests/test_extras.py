@@ -184,4 +184,4 @@ def test_the_manifest_requires_netimps_alone_and_pktcap_is_an_extra_dev_installs
     assert re.findall(r'"([A-Za-z][\w.-]*)', extras["pktcap"]) == ["pktcap"]
     assert "pktcap" in extras["dev"].replace("tftp[", "").split("]")[0].split(",")
     # The range of duho is the one pktcap's own `cli` extra declares, so the two commands build together.
-    assert "duho>=0.7.0,<0.8" in extras["cli"]
+    assert "duho>=0.7.2,<0.8" in extras["cli"]
