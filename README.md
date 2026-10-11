@@ -200,7 +200,10 @@ a client that has one and `ROOT` to the rest, other clients' directories
 included: it is not isolation, and `--per-client-only` refuses a client with no
 directory. `--max-upload BYTES` and `--max-duration SECONDS` bound an upload and
 a transfer. `pytftp --help` shows each option's default, and `AGENT_HELP=1
-pytftp --help` prints the command tree as JSON.
+pytftp --help` prints the command tree as JSON. A settings file keeps a command's options out of the
+command line: `pytftp -c FILE serve` (or `PYTFTP_CONFIG`, or the user's own `pytftp/pytftp.ini`) reads an
+INI, JSON, TOML or YAML file whose top-level keys are the root's options and whose table `[serve]` holds
+`serve`'s, the argument over the file; a key nothing has is refused, not ignored.
 
 ```bash
 pytftp serve --http https://images.example.com/pxe/ --compat pxe

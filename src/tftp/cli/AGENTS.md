@@ -41,7 +41,8 @@ pytftp replay -i FILE|- --to HOST[:PORT] [--request-port PORT]... [--writes] [--
              [--max-delay S] [--limit N] [-f FILTER] [-t S] [-r N] [--json] [--load PLUGIN]...
 ```
 
-`-v`, `-q` and `--loglevel` go before or after the subcommand. `pytftp --help`
+`-v`, `-q` and `--loglevel` go before or after the subcommand; `-c FILE`/`--config FILE` (the settings file,
+below) goes before it only. `pytftp --help`
 shows each option's default; `AGENT_HELP=1 pytftp --help` prints the whole
 command tree as one JSON document. `PYTFTP_MCP` is not read: the command is not
 served as a tool.
@@ -136,6 +137,49 @@ served as a tool.
   them, idle or not (the signal wakes the loop through its wake socket; there
   is no polling), with exit status 0 and the counters logged.
 
+## The settings file
+
+The root takes it before the command's name (`pytftp -c FILE serve /srv/tftp`; after the name it is the parser's
+own error): `--config`/`-c FILE`, else `PYTFTP_CONFIG`, else the user's own `pytftp/pytftp.ini` under
+`$XDG_CONFIG_HOME` (else `~/.config`) on Linux, macOS and the BSDs and `%APPDATA%` on Windows, which may be
+absent. It is duho's layout, read by `duho.config` in the format its name says: `.ini`/`.cfg`, `.json`,
+`.toml` (before Python 3.11 it needs duho's `config` extra) and `.yaml`/`.yml` (duho's `yaml` extra); any other
+name is refused, and the formats are described in duho's own `AGENTS.md`, inside the installed `duho` package
+(section "Config backends"). Top-level keys are the root's options (`verbose`, `quiet`, `loglevels`) and a
+table named for a command holds its options by field name (the long option with `_` for `-`: `max_sessions`,
+`json_out` for `--json`, `no_tsize` for `--no-tsize`; the positional arguments are fields too). In INI the
+keys of `[DEFAULT]` are the top level. This file, named by `pytftp -c pytftp.ini serve /srv/tftp`:
+
+```ini
+[DEFAULT]
+verbose = 1
+
+[serve]
+port = 6969
+write = true
+listing = true
+max_sessions = 100
+
+[capture]
+load = pydhcp.capture
+format = json
+```
+
+- **Order**, nearest first: the argument, the variable the option declares (`PKTCAP_LOAD`, for `load` alone),
+  the file, the default. A nearer layer replaces a farther one for that option only, so lists do not add up.
+  Every on/off option has its opposite for the argument to switch off what the file switched on: `--no-X` for
+  `--X`, and `--X` for an option that is `--no-X` (`--tsize`, `--options`, `--create`, `--packets`, `--delay`).
+- **Refused**, status 2, one line that names the file and the key and holds no text of the file: a key or table
+  nobody has, a key a command does not have, a `config` key, a table that is not a table, an invalid document,
+  a file over 65,536 octets, and without the `pktcap` extra a `[capture]` or `[replay]` table (the line names
+  the extra). A named file that does not exist is status 2 from `--config` and 1 from the variable.
+- **The tables of `capture` and `replay`** take pktcap's options too (`load`, `filter`, `format`, ...); the
+  plugin list may come from the file, the hook only from the command line. A tool call reads no file: the
+  command is not served.
+- **Trust.** The file found by default must be the user's own or root's and not writable by everyone (POSIX);
+  a file you name is read as it is, so as root name it: `sudo pytftp -c ~/.config/pytftp/pytftp.ini serve`.
+  The library reads no settings file.
+
 ## Environment variables
 
 The command reads these through its argument parser (`duho`) when it starts; the
@@ -150,4 +194,9 @@ library reads none of its own. `NETIMPS_SOCKET_PATCH` is the top header's.
 - **`FORCE_COLOR`** — `1`, `true`, `yes`, `on`, `y` or `t`, in any case, turns the colour
   of the help text on even when stdout is not a terminal; any other value is read as
   unset. Default: colour only on a terminal.
+- **`PYTFTP_CONFIG`** — the settings file (above); `--config` wins over it. A file that does not exist is
+  status 1. Default: unset, the user's own file if there is one.
+- **`XDG_CONFIG_HOME`** (POSIX) and **`APPDATA`** (Windows) — where the user's own settings file is, when
+  absolute; any other value is ignored.
+- **`PKTCAP_LOAD`** — the `--load` option of `capture` and `replay` (pktcap's variable).
 - **`PYTFTP_MCP`** — not read: the commands are not served as tools.
