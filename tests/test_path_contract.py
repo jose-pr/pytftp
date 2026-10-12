@@ -51,33 +51,9 @@ def served_root(tmp_path, make_server):
     return client_for(server, timeout=1), "tftp://127.0.0.1:%d/" % server.server_address[1]
 
 
-_NO_DIRECTORY = "TFTP has no request that creates a directory"
-_NO_DELETE = "TFTP has no request that deletes a file or a directory"
-_NO_MOVE = "a move is a copy and a delete, and TFTP cannot delete"
-
-#: Contract tests TFTP cannot pass, for the reason beside each. pathlib_next has no capability
-#: switch for them (mkdir, delete, move, and "reading a directory raises a directory error").
+#: Contract tests TFTP cannot pass, for the reason beside each, that no capability switch covers.
 GAPS = {
     "test_read_directory_raises": "a server answers ERROR 1 for a directory it will not send, so a read raises FileNotFoundError",
-    "test_mkdir_and_is_dir": _NO_DIRECTORY,
-    "test_mkdir_existing_raises_file_exists": _NO_DIRECTORY,
-    "test_mkdir_parents": _NO_DIRECTORY,
-    "test_copy_recursive": _NO_DIRECTORY,
-    "test_listing_reflects_writes": _NO_DIRECTORY,
-    "test_unlink": _NO_DELETE,
-    "test_unlink_missing_raises_then_missing_ok": _NO_DELETE,
-    "test_unlink_directory_raises": _NO_DELETE,
-    "test_rmdir_requires_empty": _NO_DELETE,
-    "test_rmdir_missing_raises_file_not_found": _NO_DELETE,
-    "test_rmdir_file_raises_not_a_directory": _NO_DELETE,
-    "test_rm_recursive": _NO_DELETE,
-    "test_rm_recursive_accepts_the_follow_policies": _NO_DIRECTORY,
-    "test_rm_rejects_a_policy_that_is_not_one": _NO_DIRECTORY,
-    "test_rm_non_recursive_directory_requires_empty": _NO_DELETE,
-    "test_names_with_url_characters_are_stored_and_listed_as_written": _NO_DELETE,
-    "test_move": _NO_MOVE,
-    "test_move_existing_target_raises_without_overwrite": _NO_MOVE,
-    "test_move_directory": _NO_MOVE,
 }
 
 
@@ -94,6 +70,9 @@ class _TFTPCannot:
     supports_rename = False  # no rename request exists
     supports_append = False  # a write replaces the file; there is no append
     enforces_directory_hierarchy = False  # a server may create nothing but a file: no mkdir exists
+    supports_mkdir = False  # no request creates a directory
+    supports_delete = False  # no request deletes a file or a directory
+    supports_move = False  # a move is a copy and a delete
 
 
 @with_gaps
