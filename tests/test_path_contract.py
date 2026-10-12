@@ -73,6 +73,7 @@ class _TFTPCannot:
     supports_mkdir = False  # no request creates a directory
     supports_delete = False  # no request deletes a file or a directory
     supports_move = False  # a move is a copy and a delete
+    supports_utime = False  # no request sets a file's time
 
 
 @with_gaps
