@@ -27,6 +27,9 @@ of this list.
   module (`tftp.client`, `tftp.server`, `tftp.relay`, `tftp.capture`, `tftp.options`, `tftp.packet`,
   `tftp.backends`, `tftp.path`, `tftp.exceptions`, `tftp.cli`) or one of the topic modules
   `tftp.transfer`, `tftp.listing` and `tftp.netascii`. The modules below them are private.
+- **Listening.** The servers and the relays take `listen=` (a netimps listen specification: an address, an
+  adapter name, `"*"`, or several) where they took `host=` and `interface=`, and `pytftp serve` and
+  `pytftp relay` read `--listen` in that grammar where they had `--interface`.
 - **Calls.** Options are keyword-only, constructors check their arguments and raise `TypeError` or
   `ValueError` (`TFTPValueError` for malformed text) instead of failing later, the client's
   whole-transfer limit is `deadline=`, and a server opens nothing in its constructor: `bind()`,
@@ -45,10 +48,39 @@ of this list.
   refuses flag combinations it used to ignore (exit 2), and `pytftp replay` is new. The command takes a
   settings file (`-c FILE` before the command's name, `PYTFTP_CONFIG`, or the user's own `pytftp/pytftp.ini`)
   with a table for each command; every on/off option gains its opposite (`--no-json`, ... and `--tsize`,
-  `--options`, `--create`, `--packets`, `--delay` for the options that were `--no-X`), which duho adds to
+  `--options`, `--create` and `--packets` for the options that were `--no-X`), which duho adds to
   any command that has a settings file.
 - **Defaults that bound a request.** A server ends a transfer silent for 60 seconds (`max_idle`),
   `MemoryBackend` takes uploads up to 16 MiB, and `max_sessions` is 500 on every platform.
+
+What to type or write differently, each left-hand entry checked against the `v0.0.0` tag (the changelog's
+"Renamed" table has the rest):
+
+| 0.0.0 had | This release has |
+| --- | --- |
+| `Client`, `Server`, `Relay`, `Handler`, `RequestContext` | `TFTPClient`, `TFTPServer`, `TFTPRelay`, `TFTPHandler`, `TFTPRequestContext` |
+| `tftp.aio.AsyncClient`, `tftp.aio.AsyncServer`, the package `tftp.aio` | `AsyncTFTPClient`, `AsyncTFTPServer`, from `tftp`, `tftp.client` and `tftp.server`; `tftp.aio` is gone |
+| `tftp.errors`, `TftpError`, `TransferTimeout`, `TransferAborted`, `MalformedPacket`, `UnknownTransferId` | `tftp.exceptions`, `TFTPError`, `TransferTimeoutError`, `TransferAbortedError`, `TFTPDecodeError`, `UnknownTransferID` |
+| `TftpURL`, `parse_url(url)`, `format_url(host, filename, port, mode)` | `TFTPURL`, `TFTPURL.parse(url)`, `str(TFTPURL(host, port, filename, mode))`; a `TFTPURL` is no longer a tuple |
+| `TftpPath`, `TftpUriPath` | `TFTPPath`, `TFTPURIPath` |
+| `FileSystemHandler`, `MemoryHandler`, `HttpHandler`, `UpstreamHandler` | `FilesystemBackend`, `MemoryBackend`, `HTTPBackend`, `UpstreamBackend`, in `tftp.backends` |
+| `Request`, `Data`, `Ack`, `OptionAck`, `Error`, `Packet` | `RequestPacket`, `DataPacket`, `AckPacket`, `OptionAckPacket`, `ErrorPacket`, `TFTPPacket`; frozen values, not named tuples |
+| `ServerOptions`, `ServerLimits`, `Stats` | `TFTPServerOptions`, `TFTPServerLimits`, `TFTPStats`; every field by keyword |
+| `tftp.DEFAULT`, `tftp.STRICT`, `tftp.PXE`, `tftp.HPA`, `tftp.LEGACY` | `Profile.DEFAULT`, `Profile.STRICT`, `Profile.PXE`, `Profile.HPA`, `Profile.LEGACY` |
+| `Server(root, host="::", interface="eth0")`, and the same on `AsyncServer` and `Relay` | `TFTPServer(root, listen="eth0")`, or `listen=["::", "eth0"]`; no `host=`, no `interface=` |
+| `pytftp serve --interface NAME`, `pytftp relay --interface NAME` | `--listen NAME` |
+| `Client(max_duration=)`, `Relay(max_lifetime=)`, `Client(local_address=)`, `Relay(upstream_source=)` | `deadline=`, `max_duration=`, `src=`, `upstream_src=` |
+| `download(host, filename, dest)`, `upload(host, filename, source)` and the methods of `Client` | the operands are `dst` and `src` |
+| `server.stop(timeout)`, `relay.stop(timeout)`, `await async_server.stop()`, `await async_server.close()` | `server.shutdown()` then `server.wait_closed(timeout)`; `await async_server.aclose()` |
+| `server.supports_pktinfo`, `server.dual_stack` | `server.has_pktinfo`; `dual_stack` is gone |
+| `result.ok`, `transfer.done`, `transfer.stalled`, `captured.complete` | `is_ok`, `is_done`, `is_stalled`, `is_complete` |
+| `_tftp_fast_open_`, `_tftp_copies_`, `_tftp_listing_` on a handler | `opens_fast`, `copies_writes`, `lists_directories` |
+| `from tftp import PortRange, OptionRegistry, encode_request, MODES, ...` | the role module: `tftp.server`, `tftp.options`, `tftp.packet`, `tftp.client` |
+| `tftp.uri`, `tftp.result` | `TFTPURL`, `download_url`, `upload_url` and `TransferResult` from `tftp` |
+| `tftp.cli.run`, `pytftp = "tftp.cli:run"` | `tftp.cli.main(argv)`, which returns the status; `pytftp = "tftp.cli:main"` |
+| `read_datagrams`, `read_frames`, `FrameDecoder`, `sniff`, `compile_filter`, `FilterError`, `CaptureFormatError`, `PcapWriter` in `tftp.capture` | pktcap's own (`pip install "tftp[pktcap]"`); a pcap of a run is `trace=trace_to(pktcap.PcapWriter(path))` |
+| `pytftp capture FILE`, `--json`, `--payload`, `--filter` over trace events | `pytftp capture --input FILE`, `--format json`, pktcap's filter over frames |
+| `netimps>=0.3.4,<0.4`, `duho>=0.6.0,<0.7`, `pathlib-next[uri]>=0.9.0,<0.10` | `netimps>=0.4.1,<0.5`, `duho>=0.7.3,<0.8`, `pathlib-next[uri]>=0.9.13,<0.10`, and the new `pktcap>=0.1.0,<0.2` extra |
 
 ### Real firmware
 
@@ -58,7 +90,30 @@ pve-edk2-firmware 4.2026.08), which asks for `tsize=0 blksize=1468 windowsize=4`
 request with ERROR 8 once the OACK has told it the size, and then downloads the boot file in blocks
 of 1468 octets and windows of four.
 
-The version in development is 0.1.0; the number of the release is chosen when it is cut.
+Both were run again after the server moved to listen specifications.
+
+### How it was checked
+
+Measured on 2026-10-12 at commit `f175991`, with netimps 0.4.1, pktcap 0.1.0 and duho 0.7.3.
+
+- **Windows on ARM64:** 3,363 passed, 80 skipped, 2 expected failures on Python 3.14; 3,332 passed, 111
+  skipped, 2 expected failures on Python 3.9.
+- **Linux** (Fedora 44 under WSL2), Python 3.14 and 3.9: 3,194 passed, 93 skipped, 2 expected failures,
+  with the real-peer tests against tftp-hpa, BusyBox and dnsmasq run and passing.
+- **Intel macOS 15.7**, Python 3.9: 3,167 passed, 120 skipped, 2 expected failures. **FreeBSD 16.0**,
+  Python 3.11, an unprivileged account: 3,163 passed, 124 skipped, 2 expected failures.
+- **The hosted matrix, 21 jobs, green:** lint and type-check (black, mypy for Linux, macOS and Windows, and
+  the typing contract as a consumer would check it); the suite on Ubuntu for Python 3.9 to 3.14 and on
+  Windows and macOS for 3.9 and 3.14 (10 jobs); the suite with every dependency at its declared floor on
+  3.9; the bare install imported and run on 3.9 and 3.14 (2 jobs); the built wheel installed bare and with
+  its extras on Linux, Windows and macOS for 3.9 and 3.14 (6 jobs); and a coverage report, which gates
+  nothing.
+- **Real firmware:** a UEFI client (OVMF) and iPXE each booted a file from the server over KVM, after the
+  server moved to listen specifications (see above).
+- The two expected failures are the one contract test of the path classes that TFTP cannot pass (a read of a
+  directory answers "file not found"), once for each path class. The skips on each system are what that
+  system lacks: behaviour of the other platforms, peers that are not installed, privileges the account does
+  not hold (`tests/AGENTS.md` lists them).
 
 ## [0.0.0] - 2026-10-03
 
