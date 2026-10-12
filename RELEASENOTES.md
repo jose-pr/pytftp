@@ -90,14 +90,15 @@ Both were run again after the server moved to listen specifications.
 
 ### How it was checked
 
-Measured on 2026-10-12 at commit `f175991`, with netimps 0.4.1, pktcap 0.1.0 and duho 0.7.3.
+Measured on 2026-10-12 at commit `e4bad96`, with netimps 0.4.1, pktcap 0.1.0, duho 0.7.3 and
+pathlib-next 0.9.14, each as published.
 
-- **Windows on ARM64:** 3,363 passed, 80 skipped, 2 expected failures on Python 3.14; 3,332 passed, 111
+- **Windows on ARM64:** 3,363 passed, 84 skipped, 2 expected failures on Python 3.14; 3,332 passed, 115
   skipped, 2 expected failures on Python 3.9.
-- **Linux** (Fedora 44 under WSL2), Python 3.14 and 3.9: 3,194 passed, 93 skipped, 2 expected failures,
+- **Linux** (Fedora 44 under WSL2), Python 3.14 and 3.9: 3,194 passed, 97 skipped, 2 expected failures,
   with the real-peer tests against tftp-hpa, BusyBox and dnsmasq run and passing.
-- **Intel macOS 15.7**, Python 3.9: 3,167 passed, 120 skipped, 2 expected failures. **FreeBSD 16.0**,
-  Python 3.11, an unprivileged account: 3,163 passed, 124 skipped, 2 expected failures.
+- **Intel macOS 15.7**, Python 3.9: 3,167 passed, 124 skipped, 2 expected failures. **FreeBSD 16.0**,
+  Python 3.11, an unprivileged account: 3,163 passed, 128 skipped, 2 expected failures.
 - **The hosted matrix, 21 jobs, green:** lint and type-check (black, mypy for Linux, macOS and Windows, and
   the typing contract as a consumer would check it); the suite on Ubuntu for Python 3.9 to 3.14 and on
   Windows and macOS for 3.9 and 3.14 (10 jobs); the suite with every dependency at its declared floor on
