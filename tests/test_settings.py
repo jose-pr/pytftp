@@ -17,7 +17,7 @@ import pytest
 pytest.importorskip("duho")
 
 from tftp.cli import main  # noqa: E402
-from tftp.cli._settings import MAX_OCTETS, scan_root_options  # noqa: E402
+from tftp.cli._settings import MAX_OCTETS, command_word, read_settings  # noqa: E402
 from tftp.cli.serve import Serve  # noqa: E402
 
 PKTCAP_LINE = "captures need the 'pktcap' extra: pip install \"tftp[pktcap]\""
@@ -65,9 +65,16 @@ def stopped(monkeypatch):
 
 
 def refused(capsys, *argv):
-    """The status, and the one line, of a run that must be refused as a usage error."""
+    """What a run refused as a usage error wrote: status 2, nothing on stdout, an error line last."""
     status, out, err = run(capsys, *argv)
-    assert status == 2 and out == ""
+    assert status == 2 and out == "", (status, out, err)
+    assert "error: " in err.splitlines()[-1], err
+    return err
+
+
+def refused_in_one_line(capsys, *argv):
+    """The one line of a run that the program itself refused, before duho's parser wrote anything."""
+    err = refused(capsys, *argv)
     lines = err.splitlines()
     assert len(lines) == 1 and lines[0].startswith("error: "), err
     return lines[0]
@@ -207,12 +214,38 @@ def test_a_file_the_user_names_makes_the_default_moot(capsys, tmp_path, monkeypa
     assert stopped[1].port == 3333
 
 
-def test_the_default_is_for_one_run_only(capsys, tmp_path, monkeypatch, stopped):
+def test_the_default_belongs_to_the_class_and_follows_the_environment_when_it_is_read(
+    capsys, tmp_path, monkeypatch, stopped
+):
     from tftp.cli._root import Pytftp
 
-    default_file(monkeypatch, tmp_path, SERVE_INI)
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    default_file(monkeypatch, first, "[serve]\nport = 1111\n")
     run(capsys, "serve", str(tmp_path))
-    assert Pytftp._config_ is None
+    assert Pytftp._config_ is not None and stopped[-1].port == 1111
+    default_file(monkeypatch, second, "[serve]\nport = 2222\n")
+    run(capsys, "serve", str(tmp_path))
+    assert Pytftp._config_ is not None and stopped[-1].port == 2222
+
+
+def test_an_empty_path_is_no_file_and_the_default_is_not_read_either(capsys, tmp_path, monkeypatch, stopped):
+    default_file(monkeypatch, tmp_path, "[serve]\nbogus = %s\n" % MARKER)
+    run(capsys, "--config", "", "serve", str(tmp_path))
+    run(capsys, "--config=", "serve", str(tmp_path))
+    run(capsys, "-c", "", "serve", str(tmp_path))
+    monkeypatch.setenv("PYTFTP_CONFIG", "")
+    run(capsys, "serve", str(tmp_path))
+    assert [built.port for built in stopped] == [69, 69, 69, 69]
+
+
+def test_an_empty_variable_gives_way_to_the_option_that_names_a_file(capsys, tmp_path, monkeypatch, stopped):
+    path = write(tmp_path, "a.ini", SERVE_INI)
+    monkeypatch.setenv("PYTFTP_CONFIG", "")
+    run(capsys, "-c", path, "serve", str(tmp_path))
+    assert stopped[0].port == 6969
 
 
 posix = pytest.mark.skipif(not hasattr(os, "geteuid"), reason="the owner and the mode are POSIX facts")
@@ -224,10 +257,35 @@ def test_a_default_file_everyone_may_write_is_refused_and_a_named_one_is_read(
 ):
     path = default_file(monkeypatch, tmp_path, SERVE_INI)
     os.chmod(path, 0o666)
-    line = refused(capsys, "serve", str(tmp_path))
+    line = refused_in_one_line(capsys, "serve", str(tmp_path))
     assert "everyone may write it" in line and path in line and stopped == []
     run(capsys, "-c", path, "serve", str(tmp_path))
     assert stopped[0].port == 6969
+
+
+@posix
+@pytest.mark.parametrize("source", ["argument", "field", "env"])
+def test_the_loader_reads_a_file_it_was_told_the_user_named_as_it_is(tmp_path, source):
+    path = pathlib.Path(write(tmp_path, "a.ini", SERVE_INI))
+    os.chmod(path, 0o666)
+    assert read_settings(path, source)["serve"]["port"] == "6969"
+
+
+@posix
+def test_the_loader_refuses_the_default_file_that_everyone_may_write(tmp_path):
+    path = pathlib.Path(write(tmp_path, "a.ini", SERVE_INI))
+    os.chmod(path, 0o666)
+    with pytest.raises(ValueError, match="everyone may write it"):
+        read_settings(path, "default")
+    os.chmod(path, 0o644)
+    assert read_settings(path, "default")["serve"]["port"] == "6969"
+
+
+def test_the_loader_applies_the_limit_whatever_the_source(tmp_path):
+    path = pathlib.Path(write(tmp_path, "a.ini", "[serve]\nport = 1\n" + "# x\n" * MAX_OCTETS))
+    for source in ("argument", "field", "env", "default"):
+        with pytest.raises(ValueError, match="over %d octets" % MAX_OCTETS):
+            read_settings(path, source)
 
 
 @posix
@@ -235,7 +293,7 @@ def test_a_default_that_is_not_a_regular_file_is_refused(capsys, tmp_path, monke
     folder = tmp_path / "pytftp"
     (folder / "pytftp.ini").mkdir(parents=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    assert "not a regular file" in refused(capsys, "serve", str(tmp_path))
+    assert "not a regular file" in refused_in_one_line(capsys, "serve", str(tmp_path))
 
 
 def test_no_tool_server_is_started_and_the_file_applies_as_everywhere(capsys, tmp_path, monkeypatch, stopped):
@@ -252,31 +310,41 @@ def test_no_tool_server_is_started_and_the_file_applies_as_everywhere(capsys, tm
 @pytest.mark.parametrize(
     "text, needle",
     [
-        ("[serve]\nbogus = %s\n" % MARKER, "unknown key 'bogus' in [serve]"),
-        ("[nosuch]\nport = 1\n", "unknown table 'nosuch'"),
-        ("[DEFAULT]\nport = %s\n" % MARKER, "unknown key 'port'"),
-        ("[DEFAULT]\nconfig = %s\n" % MARKER, "unknown key 'config'"),
-        ("[serve]\nlisten_on = %s\n" % MARKER, "unknown key 'listen_on' in [serve]"),
-        ("[get]\nmax_sessions = %s\n" % MARKER, "unknown key 'max_sessions' in [get]"),
-        ("[DEFAULT]\nserve = %s\n" % MARKER, "'serve' must be a table"),
+        ("[serve]\nbogus = %s\n" % MARKER, "'serve.bogus'"),
+        ("[nosuch]\nport = 1\n", "'nosuch'"),
+        ("[DEFAULT]\nbogus = %s\n" % MARKER, "'bogus'"),
+        ("[DEFAULT]\nport = %s\n" % MARKER, "'port'"),
+        ("[DEFAULT]\nconfig = %s\n" % MARKER, "'config'"),
+        ("[serve]\nlisten_on = %s\n" % MARKER, "'serve.listen_on'"),
+        ("[get]\nmax_sessions = %s\n" % MARKER, "'get.max_sessions'"),
+        ("[DEFAULT]\nserve = %s\n" % MARKER, "'serve'"),
     ],
-    ids=["key", "table", "key-for-a-command", "config", "typo", "key-of-another-command", "not-a-table"],
+    ids=[
+        "key-of-a-command",
+        "table",
+        "key",
+        "key-for-a-command",
+        "config",
+        "typo",
+        "other-command",
+        "not-a-table",
+    ],
 )
-def test_what_nothing_has_is_refused_with_one_line_that_holds_no_value(
+def test_what_nothing_has_is_status_2_with_the_key_named_and_no_value_of_the_file(
     capsys, tmp_path, stopped, text, needle
 ):
     path = write(tmp_path, "a.ini", text)
-    line = refused(capsys, "--loglevel", "TRACE", "-c", path, "serve", str(tmp_path))
-    assert needle in line and path in line and MARKER not in line
+    err = refused(capsys, "--loglevel", "TRACE", "-c", path, "serve", str(tmp_path))
+    assert needle in err and path in err and MARKER not in err
     assert stopped == []
 
 
 def test_an_option_the_command_hides_is_not_a_key_of_it(capsys, tmp_path, stopped):
     pytest.importorskip("pktcap")
     path = write(tmp_path, "a.ini", "[capture]\nlisten = 127.0.0.1:69\n")
-    assert "unknown key 'listen' in [capture]" in refused(capsys, "-c", path, "capture", "--input", "x.pcap")
+    assert "'capture.listen'" in refused(capsys, "-c", path, "capture", "--input", "x.pcap")
     path = write(tmp_path, "b.ini", "[replay]\nbroadcast = true\n")
-    assert "unknown key 'broadcast' in [replay]" in refused(
+    assert "'replay.broadcast'" in refused(
         capsys, "-c", path, "replay", "--input", "x.pcap", "--to", "127.0.0.1"
     )
 
@@ -295,26 +363,26 @@ def test_a_document_that_cannot_be_used_is_one_line_that_carries_none_of_its_tex
     capsys, tmp_path, stopped, name, text
 ):
     path = write(tmp_path, name, text.replace("%s", MARKER))
-    line = refused(capsys, "--loglevel", "TRACE", "-c", path, "serve", str(tmp_path))
-    assert MARKER not in line and stopped == []
+    err = refused(capsys, "--loglevel", "TRACE", "-c", path, "serve", str(tmp_path))
+    assert MARKER not in err and stopped == []
 
 
 @pytest.mark.skipif(not _toml_readable(), reason="no TOML reader (Python < 3.11 without tomli)")
 def test_a_malformed_toml_document_carries_none_of_its_text(capsys, tmp_path, stopped):
     path = write(tmp_path, "a.toml", "[serve]\nport = %s\n" % MARKER)
-    assert MARKER not in refused(capsys, "-c", path, "serve", str(tmp_path))
+    assert MARKER not in refused_in_one_line(capsys, "-c", path, "serve", str(tmp_path))
 
 
 def test_a_file_over_the_limit_is_refused_without_reading_it_all(capsys, tmp_path, stopped):
     path = write(tmp_path, "a.ini", "[serve]\nport = 1\n" + "# %s\n" % MARKER * (MAX_OCTETS // 8))
-    line = refused(capsys, "-c", path, "serve", str(tmp_path))
+    line = refused_in_one_line(capsys, "-c", path, "serve", str(tmp_path))
     assert "over %d octets" % MAX_OCTETS in line and MARKER not in line
 
 
 def test_the_file_a_default_run_found_is_refused_the_same_way(capsys, tmp_path, monkeypatch, stopped):
     default_file(monkeypatch, tmp_path, "[serve]\nbogus = %s\n" % MARKER)
-    line = refused(capsys, "serve", str(tmp_path))
-    assert "unknown key 'bogus'" in line and MARKER not in line
+    err = refused(capsys, "serve", str(tmp_path))
+    assert "'serve.bogus'" in err and MARKER not in err
 
 
 # -- the command word and the bare install -----------------------------------------------------------
@@ -323,30 +391,24 @@ def test_the_file_a_default_run_found_is_refused_the_same_way(capsys, tmp_path, 
 @pytest.mark.parametrize(
     "tokens, expected",
     [
-        ([], (False, None)),
-        (["serve", "x"], (False, "serve")),
-        (["-c", "f.ini", "capture"], (True, "capture")),
-        (["--config", "f.ini", "capture"], (True, "capture")),
-        (["--config=f.ini", "replay"], (True, "replay")),
-        (["--conf", "f.ini", "replay"], (True, "replay")),
-        (["-cf.ini", "capture"], (True, "capture")),
-        (["-vc", "f.ini", "capture"], (True, "capture")),
-        (["-vq", "capture"], (False, "capture")),
-        (["--loglevel", "capture:DEBUG", "serve"], (False, "serve")),
-        (["--log", "x", "-c", "f.ini", "get"], (True, "get")),
-        (["--verbose", "ls"], (False, "ls")),
-        (["--", "-c"], (False, None)),
+        ([], None),
+        (["serve", "x"], "serve"),
+        (["-c", "f.ini", "capture"], "capture"),
+        (["--config", "f.ini", "capture"], "capture"),
+        (["--config", "", "capture"], "capture"),
+        (["--config=f.ini", "replay"], "replay"),
+        (["--conf", "f.ini", "replay"], "replay"),
+        (["-cf.ini", "capture"], "capture"),
+        (["-vc", "f.ini", "capture"], "capture"),
+        (["-vq", "capture"], "capture"),
+        (["--loglevel", "capture:DEBUG", "serve"], "serve"),
+        (["--log", "x", "-c", "f.ini", "get"], "get"),
+        (["--verbose", "ls"], "ls"),
+        (["--", "-c"], None),
     ],
 )
-def test_the_words_before_the_command_say_whether_a_file_is_named_and_which_command(tokens, expected):
-    assert scan_root_options(tokens) == expected
-
-
-def test_the_variable_counts_as_naming_the_file(monkeypatch):
-    monkeypatch.setenv("PYTFTP_CONFIG", "/x/y.ini")
-    assert scan_root_options(["serve"]) == (True, "serve")
-    monkeypatch.setenv("PYTFTP_CONFIG", "  ")
-    assert scan_root_options(["serve"]) == (False, "serve")
+def test_the_words_before_the_command_say_which_command_it_is(tokens, expected):
+    assert command_word(tokens) == expected
 
 
 def _child(body, tmp_path):
@@ -355,33 +417,28 @@ def _child(body, tmp_path):
     )
 
 
-def test_importing_the_commands_and_running_one_without_a_file_loads_no_config_reader(tmp_path):
-    body = (
-        "import sys\n"
-        "import tftp.cli, tftp.cli._root\n"
-        "from tftp.cli import main\n"
-        "try:\n"
-        "    main(['get', '--help'])\n"
-        "except SystemExit:\n"
-        "    pass\n"
-        "print('duho.config' in sys.modules)\n"
-    )
-    done = _child(body, tmp_path)
-    assert done.stdout.strip().splitlines()[-1] == "False", done.stderr
+def _loaded(tmp_path, body):
+    """The names of ``duho.config``, ``tomllib``, ``tomli`` and ``yaml`` the child holds after ``body``."""
+    names = ("duho", "duho.config", "tomllib", "tomli", "yaml")
+    program = "import sys\n%s\nprint([name for name in %r if name in sys.modules])\n" % (body, names)
+    done = _child(program, tmp_path)
+    assert done.returncode == 0, done.stderr
+    return eval(done.stdout.strip().splitlines()[-1])
 
 
-def test_a_file_that_is_read_loads_it(tmp_path):
-    path = write(tmp_path, "a.ini", "[DEFAULT]\nverbose = 0\n")
-    body = (
-        "import sys\n"
-        "from tftp.cli import main\n"
-        "try:\n"
-        "    main(['-c', %r, 'get', '--help'])\n"
-        "except SystemExit:\n"
-        "    pass\n"
-        "print('duho.config' in sys.modules)\n" % path
-    )
-    assert _child(body, tmp_path).stdout.strip().splitlines()[-1] == "True"
+_RUN_GET = "from tftp.cli import main\ntry:\n    main(%r)\nexcept SystemExit:\n    pass\n"
+
+
+def test_importing_the_command_package_loads_no_duho_and_the_settings_reader_no_duho_config(tmp_path):
+    assert _loaded(tmp_path, "import tftp.cli") == []
+    assert _loaded(tmp_path, "import tftp.cli._settings") == []
+
+
+def test_the_root_holds_the_users_path_unresolved_and_a_run_without_a_file_loads_no_format_reader(tmp_path):
+    # `_config_` is duho's `user_path`, which is only a path to be resolved, so importing the root loads
+    # duho.config and no reader of a format: TOML and YAML are loaded when a file in them is read.
+    assert _loaded(tmp_path, "import tftp.cli._root") == ["duho", "duho.config"]
+    assert _loaded(tmp_path, _RUN_GET % ["get", "--help"]) == ["duho", "duho.config"]
 
 
 def _bare(argv, tmp_path):
