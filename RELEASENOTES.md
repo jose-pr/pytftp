@@ -3,11 +3,7 @@
 The detailed companion to [CHANGELOG.md](CHANGELOG.md): benchmark history,
 caveats and the evidence behind each release.
 
-## [Unreleased]
-
-Target: no metric of `benchmarks/run.py` is more than 10% slower than the
-`baseline-memory-backend` result of the same system and interpreter in
-`benchmarks/results/`, run on the median of the same number of samples.
+## [0.1.0] - 2026-10-12
 
 ### Upgrading from 0.0.0
 

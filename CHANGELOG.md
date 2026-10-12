@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] - 2026-10-12
+
 This release breaks the documented API: names, public module paths, constructor signatures and
 what malformed input raises. Old names are not kept as aliases. "Renamed" is the lookup from an old
 name to its new one, "Removed" lists what is gone, "Changed" has the detail of each behaviour that
@@ -1063,5 +1067,6 @@ Old names are not kept as aliases.
 - Loopback throughput benchmark (`benchmarks/run.py`).
 - Licensed under MIT.
 
-[Unreleased]: https://github.com/jose-pr/pytftp/compare/v0.0.0...HEAD
+[Unreleased]: https://github.com/jose-pr/pytftp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/jose-pr/pytftp/compare/v0.0.0...v0.1.0
 [0.0.0]: https://github.com/jose-pr/pytftp/releases/tag/v0.0.0
