@@ -86,6 +86,22 @@ differs and "Fixed" the defects corrected on the way.
 
 ### Changed
 
+- **The servers and the relays listen where a netimps listen specification says.** `TFTPServer`,
+  `AsyncTFTPServer`, `TFTPRelay` and `AsyncTFTPRelay` take `listen=` (`netimps.ListenLike`, bound by
+  `netimps.bind_listen`) in place of `host=` and `interface=`; `port=` stays and is the port an entry
+  without one gets. An entry is an address (`"192.0.2.10"`, `"[fe80::1%eth0]:6969"`), an adapter name,
+  `netimps.Interface` or MAC (the IPv4 wildcard socket limited to that adapter, which also hears its
+  broadcasts, as `interface=` did not on Linux), `"*"`, or several as a list or joined by commas, and each
+  is one socket. With no `listen` the server listens on every address of both families, as `"*"` and `"::"`:
+  two IPv6-only-clean sockets that share the port chosen for `port=0`, the IPv6 one left out on a host with no
+  IPv6, where there was one dual-stack socket. A request is answered, refused and traced on the socket it
+  arrived on, from the address it was sent to as before; `max_sessions` and the other limits count across
+  all the sockets; a datagram that reaches an adapter-limited socket from another adapter is dropped before it
+  is read as a request. A host name is no longer resolved for listening: `listen="localhost"` is an adapter
+  name and `bind()` refuses it. `server_address` is the first bound address; `server_addresses` lists them all.
+- **`pytftp serve` and `pytftp relay` read `--listen` in that grammar**, repeatable or comma-joined, with `-p`
+  the default port; a specification that names nothing bindable is one line and status 2. The settings file's
+  `listen` key is a list of texts.
 - **`pytftp capture` and `pytftp replay` are pktcap's commands, subclassed** (`CaptureCmd(pktcap.cli.Capture)` and
   `ReplayCmd(pktcap.cli.Replay)`, with the plugin `tftp.capture` always loaded), so reading a capture, the
   filter, the output and what a capture command takes are pktcap's, and `pytftp capture` follows each
@@ -159,9 +175,9 @@ differs and "Fixed" the defects corrected on the way.
 - **Options are keyword-only.** A callable takes its operands by position and
   every option after them by keyword. `TFTPServerOptions`, `TFTPServerLimits`
   and `Negotiated` take every field by keyword (`TFTPServerOptions(65464, 64)` is
-  a `TypeError`). `TFTPServer(root_or_handler, *, host=None, port=69, ...)`,
-  `AsyncTFTPServer(root_or_handler, *, host=None, port=69, ...)` and
-  `TFTPRelay(route, *, host=None, port=69, ...)` take the handler (or the
+  a `TypeError`). `TFTPServer(root_or_handler, *, listen=None, port=69, ...)`,
+  `AsyncTFTPServer(root_or_handler, *, listen=None, port=69, ...)` and
+  `TFTPRelay(route, *, listen=None, port=69, ...)` take the handler (or the
   route) alone. `encode_request(opcode, filename, *, mode, options)`,
   `TFTPRequestContext(request, peer, *, local_address, interface_index)`,
   `AtomicWriter(path, *, overwrite)`, `DirectoryListing(directory, *, root)`,
@@ -349,7 +365,7 @@ differs and "Fixed" the defects corrected on the way.
   arguments; `bind()` opens the sockets (idempotent, never a coroutine) and
   `start()`, `serve_forever()` and entering the context manager call it, so a
   caller can take a privileged port before dropping privileges. `server_address`
-  (and `has_pktinfo`, `is_dual_stack`) is `None` before `bind()`, and a bind
+  (and `has_pktinfo`) is `None` before `bind()`, and a bind
   failure (`OSError`, a `ValueError` for an adapter that does not resolve)
   comes from `bind()`, `start()` or `serve_forever()`, not from the
   constructor. `shutdown()` never blocks; `wait_closed(timeout=None)` replaces
@@ -438,9 +454,8 @@ differs and "Fixed" the defects corrected on the way.
   and Windows). Every public callable is annotated, and every public annotation resolves
   with `typing.get_type_hints` on Python 3.9, except the signatures that name a netimps
   type (netimps is imported lazily) and `TFTPClient.path`. Where an annotation said more
-  than the code did, it now says what is true: the servers' and the relay's `host=` is a
-  netimps `HostLike` (an `int` or `bytes` address was never accepted: it raised `TypeError`
-  from `bind()`); `by_interface` keys are `HostLike`, an `Interface` or an `int`;
+  than the code did, it now says what is true: the servers' and the relay's `listen=` is a
+  netimps `ListenLike` (an `int`, `bytes` or `Host` there is a `TypeError` from `bind()`); `by_interface` keys are `HostLike`, an `Interface` or an `int`;
   `AsyncTFTPServer`'s keywords are spelled out instead of `**kwargs`; `Sender`, `Receiver`
   and `Transfer` take `backoff`, `max_timeout`, `expires` and `max_idle` as keyword
   parameters; `TFTPRequestContext.options` is a read-only mapping and
@@ -593,7 +608,7 @@ Old names are not kept as aliases.
 | `Stats` | `TFTPStats` |
 | `Route` (`tftp.relay`, the callable's type) | `RouteFunction` |
 | `tftp.DEFAULT`, `tftp.STRICT`, `tftp.PXE`, `tftp.HPA`, `tftp.LEGACY` | `Profile.DEFAULT`, `Profile.STRICT`, `Profile.PXE`, `Profile.HPA`, `Profile.LEGACY` (`PROFILES[name]` is unchanged) |
-| `supports_pktinfo`, `dual_stack` (properties of the servers and the relay) | `has_pktinfo`, `is_dual_stack` |
+| `supports_pktinfo` (property of the servers and the relay) | `has_pktinfo` |
 | `TFTPServer.stop(timeout)`, `TFTPRelay.stop(timeout)`, `await AsyncTFTPServer.stop()` | `shutdown()`, then `wait_closed(timeout)` |
 | `await AsyncTFTPServer.close()` | `await AsyncTFTPServer.aclose()` |
 | `tftp.aio.AsyncTFTPServer` | `tftp.AsyncTFTPServer`, `tftp.server.AsyncTFTPServer` |
@@ -611,6 +626,10 @@ Old names are not kept as aliases.
 
 ### Removed
 
+- **`host=` and `interface=` of `TFTPServer`, `AsyncTFTPServer`, `TFTPRelay` and `AsyncTFTPRelay`, `--interface` of
+  `pytftp serve` and `pytftp relay`** (the parser refuses it; the settings file no longer takes `interface`), and
+  `TFTPServer.is_dual_stack`. `listen=` names an address (what `host=` was) or an adapter (what `interface=` was,
+  `listen="eth1"`); nothing is dual-stack any more. A host that listens on both families needs no argument.
 - **The capture filter of `tftp.capture`: `compile_filter`, `EventPredicate`, `FILTER_KEYS` and the
   `filter=` argument of `analyze`.** What a filter does is pktcap's:
   `pktcap.compile_capture_filter(text, pktcap.frame_filter_for(registry))` over the frames of
