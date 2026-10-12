@@ -86,7 +86,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `integration/test_host_inputs.py` | what the library does with host, port and timeout arguments it is given |
 | `integration/test_deploy.py` | transfer port ranges |
 | `integration/test_cli.py` | the `pytftp` command, as a process and through its parser |
-| `test_settings.py` | the command's settings file: its places and order, the formats, what is refused with a line that holds no text of the file, the bare install |
+| `test_settings.py` | the command's settings file: its places and order, the formats, what is refused with no value of the file in what is written, the loader by the source of its path, the bare install |
 | `integration/test_live_capture.py` | `pytftp capture -i` on Linux with `CAP_NET_RAW` |
 | `integration/test_interop.py` | curl's TFTP client against the server |
 | `integration/test_interop_peers.py` | tftp-hpa, BusyBox and dnsmasq, wherever they are found |

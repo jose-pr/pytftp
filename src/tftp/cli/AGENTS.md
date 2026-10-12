@@ -145,7 +145,8 @@ served as a tool.
 The root takes it before the command's name (`pytftp -c FILE serve /srv/tftp`; after the name it is the parser's
 own error): `--config`/`-c FILE`, else `PYTFTP_CONFIG`, else the user's own `pytftp/pytftp.ini` under
 `$XDG_CONFIG_HOME` (else `~/.config`) on Linux, macOS and the BSDs and `%APPDATA%` on Windows, which may be
-absent. It is duho's layout, read by `duho.config` in the format its name says: `.ini`/`.cfg`, `.json`,
+absent; an empty path (`--config ""`, `PYTFTP_CONFIG` set to nothing) means no file at all, the user's own
+included. It is duho's layout, read by `duho.config` in the format its name says: `.ini`/`.cfg`, `.json`,
 `.toml` (before Python 3.11 it needs duho's `config` extra) and `.yaml`/`.yml` (duho's `yaml` extra); any other
 name is refused, and the formats are described in duho's own `AGENTS.md`, inside the installed `duho` package
 (section "Config backends"). Top-level keys are the root's options (`verbose`, `quiet`, `loglevels`) and a
@@ -172,10 +173,11 @@ format = json
   the file, the default. A nearer layer replaces a farther one for that option only, so lists do not add up.
   Every on/off option has its opposite for the argument to switch off what the file switched on: `--no-X` for
   `--X`, and `--X` for an option that is `--no-X` (`--tsize`, `--options`, `--create`, `--packets`, `--delay`).
-- **Refused**, status 2, one line that names the file and the key and holds no text of the file: a key or table
-  nobody has, a key a command does not have, a `config` key, a table that is not a table, an invalid document,
-  a file over 65,536 octets, and without the `pktcap` extra a `[capture]` or `[replay]` table (the line names
-  the extra). A named file that does not exist is status 2 from `--config` and 1 from the variable.
+- **Refused**, status 2, with a line that names the file and holds no value of it: a key or table nobody has
+  and a key a command does not have (duho's check: the usage lines, then the key by its dotted path, as
+  `serve.bogus`), a `config` key, an invalid document, a file over 65,536 octets, and without the `pktcap`
+  extra a `[capture]` or `[replay]` table (the line names the extra). A named file that does not exist is
+  status 2 from `--config` and 1 from the variable.
 - **The tables of `capture` and `replay`** take pktcap's options too (`load`, `filter`, `format`, ...); the
   plugin list may come from the file, the hook only from the command line. A tool call reads no file: the
   command is not served.
@@ -198,7 +200,7 @@ library reads none of its own. `NETIMPS_SOCKET_PATCH` is the top header's.
   of the help text on even when stdout is not a terminal; any other value is read as
   unset. Default: colour only on a terminal.
 - **`PYTFTP_CONFIG`** — the settings file (above); `--config` wins over it. A file that does not exist is
-  status 1. Default: unset, the user's own file if there is one.
+  status 1, and set to nothing it is no file. Default: unset, the user's own file if there is one.
 - **`XDG_CONFIG_HOME`** (POSIX) and **`APPDATA`** (Windows) — where the user's own settings file is, when
   absolute; any other value is ignored.
 - **`PKTCAP_LOAD`** — the `--load` option of `capture` and `replay` (pktcap's variable).

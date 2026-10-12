@@ -17,7 +17,7 @@ kept as an alias and there is no deprecation period, so an upgrade is a search a
 of this list.
 
 - **Dependencies.** `netimps>=0.4.1,<0.5` (0.3 is no longer supported) is the one required dependency; the
-  `cli` extra is `duho>=0.7.2,<0.8`, the `path` extra `pathlib-next[uri]>=0.9.13,<0.10` and the `pktcap`
+  `cli` extra is `duho>=0.7.3,<0.8`, the `path` extra `pathlib-next[uri]>=0.9.13,<0.10` and the `pktcap`
   extra `pktcap>=0.1.0,<0.2`, which `pytftp capture`, `pytftp replay`, `--pcap` and reading a capture
   need (`pip install "tftp[cli,pktcap]"`); without it they say so and nothing else changes.
 - **Names.** Acronyms are upper case and every role is named for what it is: `TFTPClient`,

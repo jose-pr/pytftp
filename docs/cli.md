@@ -22,7 +22,8 @@ one JSON document.
 A settings file keeps the options of a command out of the command line. The root takes it before the
 command's name (`pytftp -c FILE serve`; after the name it is the parser's own error): `--config`/`-c FILE`,
 else the variable `PYTFTP_CONFIG`, else the user's own `pytftp/pytftp.ini` under `$XDG_CONFIG_HOME` (else
-`~/.config`) on Linux, macOS and the BSDs and under `%APPDATA%` on Windows, which may be absent. It is
+`~/.config`) on Linux, macOS and the BSDs and under `%APPDATA%` on Windows, which may be absent. An empty path
+(`--config ""`, or `PYTFTP_CONFIG` set to nothing) means no file, the user's own included. It is
 duho's layout: top-level keys are the root's options (`verbose`, `quiet`, `loglevels`), and a table named
 for a command holds that command's options by their field names, which are the long option with `_` for
 `-` (`max_sessions` for `--max-sessions`, `json_out` for `--json`, `no_tsize` for `--no-tsize`). The
@@ -63,10 +64,10 @@ $ pytftp -c pytftp.ini serve /srv/tftp
   `config` extra) and YAML (`.yaml`, `.yml`; duho's `yaml` extra). The ending picks the format and any other
   ending is refused. duho's own reference, the `AGENTS.md` inside the installed `duho` package, describes
   each, and the INI dialect in particular.
-- **Refused**, status 2, one line that names the file and the key and holds no text of the file: a key or a
-  table nobody has (a misspelling would otherwise be ignored in silence), a key a command does not have
-  (`max_sessions` in `[get]`), a `config` key, a table that is not a table, a document that is not valid, a
-  file over 65,536 octets. A named file that does not exist is status 2 from `--config` and 1 from the
+- **Refused**, status 2, with a line that names the file and holds no value of it: a key or a table nobody
+  has (a misspelling would otherwise be ignored in silence), a key a command does not have (`get.max_sessions`
+  for `max_sessions` in `[get]`), a `config` key, a document that is not valid, a file over 65,536 octets. The
+  usage lines come before the line of a key. A named file that does not exist is status 2 from `--config` and 1 from the
   variable. Without the `pktcap` extra a `[capture]` or `[replay]` table is refused with the line that names
   the extra.
 - **The command's options only.** The file sets what an option already sets; the `capture` and `replay`
