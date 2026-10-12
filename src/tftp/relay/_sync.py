@@ -9,7 +9,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    from netimps import HostLike, InterfaceLike
+    from netimps import HostLike, ListenLike
 
 from ..capture._events import PacketEvent
 from ..packet._codec import RequestPacket
@@ -37,7 +37,7 @@ class TFTPRelay(SelectorService, RelayBase):
         :mod:`tftp.relay`). ``None`` refuses with ERROR 2. The callable is a
         plain function: a coroutine function is a ``TypeError``, which
         :class:`AsyncTFTPRelay` takes.
-    :param host, port: where to listen for requests (as for ``TFTPServer``).
+    :param listen, port: where to listen for requests (as for ``TFTPServer``).
     :param idle_timeout: end a transfer after this long without traffic.
         Keep it above the largest timeout a peer may negotiate times its
         retries.
@@ -58,7 +58,6 @@ class TFTPRelay(SelectorService, RelayBase):
         transfer ends.
     :param port_range: ports for both sockets of each relayed transfer (the
         client side and the upstream side), as for ``TFTPServer``.
-    :param interface: listen on one network adapter, as for ``TFTPServer``.
 
     The constructor opens nothing: :meth:`bind` does, and :meth:`start`,
     :meth:`serve_forever` and ``with`` call it. The lifecycle is
@@ -72,7 +71,7 @@ class TFTPRelay(SelectorService, RelayBase):
         self,
         route: Union[RouteFunction, UpstreamLike],
         *,
-        host: Optional[HostLike] = None,
+        listen: ListenLike = None,
         port: int = 69,
         idle_timeout: float = IDLE_TIMEOUT,
         max_duration: float = MAX_DURATION,
@@ -85,11 +84,10 @@ class TFTPRelay(SelectorService, RelayBase):
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         on_session_end: Optional[Callable[[RelaySummary], Any]] = None,
         port_range: Optional[PortRangeLike] = None,
-        interface: InterfaceLike = None,
     ) -> None:
         super().__init__(
             route,
-            host=host,
+            listen=listen,
             port=port,
             idle_timeout=idle_timeout,
             max_duration=max_duration,
@@ -102,7 +100,6 @@ class TFTPRelay(SelectorService, RelayBase):
             trace=trace,
             on_session_end=on_session_end,
             port_range=port_range,
-            interface=interface,
         )
         self._selector: Any = None
         self._wake_r: Any = None

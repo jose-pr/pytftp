@@ -100,8 +100,7 @@ directory then reads as "file not found". `TFTPClient.stat()`, `TFTPClient.listd
 
 ## Addresses
 
-The server listens on `::` with a dual-stack socket by default. Each transfer
+The server listens on `0.0.0.0` and `::` by default, two sockets on one port. Each transfer
 gets its own socket bound to the address the request was sent to, read from
 pktinfo, so on a multi-homed host or a virtual IP the client hears back from
-the address it used. A v4 client of the dual-stack listener is served from a
-plain IPv4 socket.
+the address it used.

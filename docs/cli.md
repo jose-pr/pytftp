@@ -139,7 +139,7 @@ pytftp serve --upstream 10.0.0.20 --write
 | --- | --- |
 | `ROOT` | the directory to serve (default `.`); not used with `--http` or `--upstream` |
 | `--http URL`, `--upstream HOST[:PORT]` | serve from an HTTP(S) base URL, or as a terminating proxy to another TFTP server |
-| `-l`, `--listen ADDRESS`, `--interface NIC` | the address to listen on (default `::`, IPv6 and IPv4 where the host can), or one network adapter (its IPv4 address; `-l ::` for its IPv6 one) |
+| `-l`, `--listen SPEC` | where to listen: `HOST:PORT`, `[V6]:PORT`, `*:PORT`, an adapter name (a wildcard socket limited to it) or a MAC; repeat the option or separate by commas. A host name is never resolved. Default: every address, IPv4 and IPv6, on `--port` |
 | `-p`, `--port` | the UDP port (default 69) |
 | `-W`, `--write`, `--overwrite`, `--no-create` | accept uploads; let them replace a file; let them only replace |
 | `--max-upload BYTES`, `--max-duration SECONDS` | refuse an upload announced above, or growing past, BYTES (ERROR 3; a directory only); end a transfer that runs longer. No limit by default |
@@ -168,7 +168,7 @@ pytftp relay --route-subnet 10.1.0.0/16=10.1.0.5 --route-subnet 10.2.0.0/16=10.2
 `UPSTREAM` is the default route for a request no route matches; without one an unmatched request is
 refused. `--route-subnet CIDR=HOST[:PORT]` sends the clients in a network to a host (the longest prefix
 wins) and `--route-prefix PREFIX=HOST[:PORT]` the files whose name starts with PREFIX; prefix routes are
-tried before subnet routes. `--listen`, `--interface`, `--port`, `--port-range`, `--max-sessions` (0 for
+tried before subnet routes. `--listen`, `--port`, `--port-range`, `--max-sessions` (0 for
 no limit), `--idle-timeout` (seconds without traffic before a relayed transfer ends, 30 by default),
 `--json`, `--trace` and `--pcap` work as for `serve`.
 

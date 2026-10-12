@@ -103,7 +103,7 @@ def test_a_failing_trace_hook_does_not_break_transfers(root, make_server):
 def test_pcap_roundtrip_reconstructs_transfers(root, make_server, tmp_path_factory, host):
     path = tmp_path_factory.mktemp("cap") / "trace.pcap"
     with pktcap.PcapWriter(path) as writer:
-        server = make_server(root, host=host, trace=trace_to(writer), writable=True)
+        server = make_server(root, listen=host, trace=trace_to(writer), writable=True)
         client = client_for(server, host=host, blksize=1024, windowsize=4)
         client.get("big.bin")
         client.put("uploaded.bin", b"u" * 3000)
@@ -413,7 +413,7 @@ def test_the_clients_events_name_the_address_it_uses_towards_the_server(root, ma
     import asyncio
 
     events = []
-    server = make_server(root, host=host)
+    server = make_server(root, listen=host)
     client_for(server, host=host, trace=events.append).get("one.bin")
     aevents = []
     client = tftp.AsyncTFTPClient(host, server.server_address[1], timeout=0.5, trace=aevents.append)

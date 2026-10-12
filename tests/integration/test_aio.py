@@ -192,7 +192,7 @@ def serve(handler, coro_factory, loop_factory=None, **kwargs):
 
     async def main():
         kwargs.setdefault("timeout", 0.5)
-        async with AsyncTFTPServer(handler, host="127.0.0.1", port=0, **kwargs) as server:
+        async with AsyncTFTPServer(handler, listen="127.0.0.1", port=0, **kwargs) as server:
             await server.start()
             await coro_factory(server)
 
@@ -375,7 +375,7 @@ def test_async_client_hears_a_server_named_by_a_link_local_address_with_its_zone
 ):
     async def main():
         async with AsyncTFTPServer(
-            ThreadedHandler(MemoryBackend({"f": b"link-local"})), host=link_local, port=0, timeout=0.5
+            ThreadedHandler(MemoryBackend({"f": b"link-local"})), listen=link_local, port=0, timeout=0.5
         ) as server:
             await server.start()
             client = AsyncTFTPClient(

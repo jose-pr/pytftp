@@ -15,7 +15,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Set, Tuple, Union
 
 if TYPE_CHECKING:
-    from netimps import HostLike, InterfaceLike
+    from netimps import HostLike, ListenLike
 
 from ..capture._events import PacketEvent
 from ..packet._codec import RequestPacket
@@ -86,7 +86,7 @@ class AsyncTFTPRelay(AsyncioService, RelayBase):
         self,
         route: Union[AsyncRouteFunction, UpstreamLike],
         *,
-        host: Optional[HostLike] = None,
+        listen: ListenLike = None,
         port: int = 69,
         idle_timeout: float = IDLE_TIMEOUT,
         max_duration: float = MAX_DURATION,
@@ -99,11 +99,10 @@ class AsyncTFTPRelay(AsyncioService, RelayBase):
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         on_session_end: Optional[Callable[[RelaySummary], Any]] = None,
         port_range: Optional[PortRangeLike] = None,
-        interface: InterfaceLike = None,
     ) -> None:
         super().__init__(
             route,
-            host=host,
+            listen=listen,
             port=port,
             idle_timeout=idle_timeout,
             max_duration=max_duration,
@@ -116,7 +115,6 @@ class AsyncTFTPRelay(AsyncioService, RelayBase):
             trace=trace,
             on_session_end=on_session_end,
             port_range=port_range,
-            interface=interface,
         )
         self._tasks: Set["asyncio.Future[None]"] = set()
         self._timer: Optional[asyncio.TimerHandle] = None

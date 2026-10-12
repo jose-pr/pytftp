@@ -16,10 +16,10 @@ differences stated once.
 
 ```python
 TFTPServer(
-    root_or_handler, *, host=None, port=69, writable=False, create=True, overwrite=False,
+    root_or_handler, *, listen=None, port=69, writable=False, create=True, overwrite=False,
     timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True,
     dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0,
-    max_timeout=None, trace=None, open_in_thread=None, workers=8, port_range=None, interface=None
+    max_timeout=None, trace=None, open_in_thread=None, workers=8, port_range=None
 )
 TFTPServer.bind()
 TFTPServer.serve_forever()
@@ -31,11 +31,16 @@ TFTPServer.close()
 
 - `root_or_handler` — a directory (wrapped in `FilesystemBackend` with
   `writable`, `create`, `overwrite`) or any handler object (see below).
-- `host` — `None` (default) or `"::"` listens on IPv6 **and IPv4** with a dual-stack
-  socket, falling back to `"0.0.0.0"` on a host without IPv6. `"0.0.0.0"` is
-  IPv4 only; a specific address (`"192.0.2.10"`, `"[fe80::1%eth0]"`) listens
-  there alone. An `ipaddress` address or `netimps.Host` works too.
-- `port` — `0` picks a free port; read it from `server_address` after `bind()`.
+- `listen` — where to listen, in netimps' grammar (`netimps.ListenLike`, bound by
+  `netimps.bind_listen`): an address (`"192.0.2.10"`, `"[fe80::1%eth0]:6969"`), an adapter
+  name, `netimps.Interface` or MAC (the IPv4 wildcard socket limited to that adapter, which
+  hears its broadcasts), `"*"`, or several as a list or joined by commas: one socket each.
+  `None` (default) is `("*", "::")`: both families on one port, the IPv6 socket left out on
+  a host with no IPv6. A host name is never resolved (`"localhost"` is an adapter name);
+  a specification naming nothing bindable is a `ValueError` from `bind()`. A datagram that
+  reaches an adapter-limited socket from another adapter is dropped, counted, logged at debug.
+- `port` — the port an entry that names none gets; `0` picks a free one (with
+  `listen=None` both sockets share it). Read them from `server_addresses` after `bind()`.
 - `timeout`, `retries` — per transfer, unless the client negotiates `timeout`.
 - `options` — a `TFTPServerOptions` policy.
 - `max_sessions` — concurrent transfers; beyond it a request gets ERROR 0
@@ -66,13 +71,6 @@ TFTPServer.close()
   with `opens_fast = True` (`FilesystemBackend`, `MemoryBackend`)
   opens inline on the loop, anything else in a worker. A retransmitted
   request is still recognised while its open is pending.
-- `interface` — listen on one network adapter: a name (`"eth0"`), a
-  `netimps.Interface`, its MAC, or one of its addresses. The listener binds
-  **one address** of it: the one named, else the adapter's primary IPv4
-  address (non-loopback preferred), else its IPv6 one; `host="0.0.0.0"` or
-  `"::"` picks the family. Another `host` is a `ValueError` at construction,
-  and an adapter netimps cannot resolve is one from `bind()`. Requests to the adapter's other addresses are
-  not received; run one server per family or address as needed.
 - `port_range` — a `PortRangeLike`: a `PortRange`, a `(low, high)` pair
   (inclusive), a `range` or `"LOW:HIGH"` text. Transfer sockets take their
   ports from it (round-robin from a position this server owns, so a
@@ -116,9 +114,11 @@ and `server busy`), `started`, `completed`, `failed`, `bytes_sent`,
 `active`. Thread-safe; meant for a metrics exporter. A `TFTPRelay` has the same,
 with `bytes_to_clients`/`bytes_from_clients`.
 
-Properties: `server_address` (the bound `(host, port, ...)`, `None` before
-`bind()`, kept after close), `has_pktinfo` and `is_dual_stack` (`None` before
-`bind()`), `active_sessions`.
+Properties: `server_address` (the first bound `(host, port, ...)`, `None` before
+`bind()`, kept after close), `server_addresses` (all, in the order of `listen`; `()`
+before), `has_pktinfo` (every socket reports a destination; `None` before `bind()`),
+`active_sessions`. The limits count across all the sockets together; a request is
+answered, refused and traced on the socket it arrived on.
 
 Behaviour worth knowing:
 
@@ -128,8 +128,8 @@ Behaviour worth knowing:
   is running is ignored (it is a retransmission).
 - Datagrams on the listening port that are not RRQ/WRQ are **dropped without
   reply** (no reflection). A malformed RRQ/WRQ gets ERROR 4.
-- A v4 client of a dual-stack listener is served from a plain IPv4 socket, so
-  `result.peer` shows `"192.0.2.7"`, never `"::ffff:192.0.2.7"`.
+- An IPv6 listening socket is IPv6 only, so `result.peer` shows `"192.0.2.7"`
+  for a v4 client (its own socket), never `"::ffff:192.0.2.7"`.
 - Socket buffers are grown to hold two windows of the negotiated `blksize`
   (Windows defaults to 64 KiB, which a large window overflows; FreeBSD and
   macOS refuse a datagram above the sender's `SO_SNDBUF`, 57344 and 9216 by
@@ -254,10 +254,10 @@ indexer holds the file just written for a moment; after that the error is raised
 
 ```python
 AsyncTFTPServer(
-    root_or_handler, *, host=None, port=69, writable=False, create=True, overwrite=False,
+    root_or_handler, *, listen=None, port=69, writable=False, create=True, overwrite=False,
     timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True,
     dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0,
-    max_timeout=None, trace=None, port_range=None, interface=None
+    max_timeout=None, trace=None, port_range=None
 )
 ThreadedHandler(handler, *, executor=None)
 ```
@@ -285,7 +285,7 @@ an error is seen by `wait_closed()` and `aclose()`. Handlers:
   `async close()`, optionally `size`. `AsyncTFTPWriter` requires
   `async write(data)` (`data` is `bytes`) and `async close()`; it is closed
   after the last block, and the final ACK waits until everything is written.
-- pktinfo is kept on every loop: the listener is read with netimps'
+- pktinfo is kept on every loop: each listening socket is read with netimps'
   `UDPEndpoint.arecv` (`add_reader`, or a readiness thread where the loop
   has none — Windows' Proactor loop).
 

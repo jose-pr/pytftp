@@ -95,7 +95,9 @@ def test_the_async_server_ends_a_transfer_whose_send_the_host_refuses(root, capl
     results = []
 
     async def main():
-        server = AsyncTFTPServer(str(root), host="127.0.0.1", port=0, timeout=0.5, on_complete=results.append)
+        server = AsyncTFTPServer(
+            str(root), listen="127.0.0.1", port=0, timeout=0.5, on_complete=results.append
+        )
         async with server:
             await server.start()
             _wrap_first_reply_socket(server, allowed=1)

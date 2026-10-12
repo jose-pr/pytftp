@@ -40,7 +40,7 @@ CASES = [
 
 def serve(payload: bytes, host: str, ports) -> None:
     backend = MemoryBackend({"bench.bin": payload}, writable=True, max_upload=None)
-    with tftp.TFTPServer(backend, host=host, port=0) as server:
+    with tftp.TFTPServer(backend, listen=host, port=0) as server:
         ports.put(server.server_address[1])
         server.serve_forever()
 

@@ -165,7 +165,7 @@ def _bindable(address: str) -> bool:
 def test_reply_comes_from_the_address_the_request_was_sent_to(root, make_server):
     if not _bindable("127.0.0.2"):
         pytest.skip("127.0.0.2 is not a local address here (macOS configures only 127.0.0.1)")
-    server = make_server(root, host="0.0.0.0")
+    server = make_server(root, listen="0.0.0.0")
     if sys.platform in ("linux", "win32"):
         assert server.has_pktinfo
     elif not server.has_pktinfo:
@@ -181,7 +181,7 @@ def test_reply_comes_from_the_address_the_request_was_sent_to(root, make_server)
 def test_reply_address_on_the_default_listener(root, make_server):
     if not _bindable("127.0.0.2"):
         pytest.skip("127.0.0.2 is not a local address here")
-    server = make_server(root, host=None)
+    server = make_server(root, listen=None)
     with raw_socket() as client:
         client.sendto(encode_request(TFTPOpcode.RRQ, "one.bin"), ("127.0.0.2", server.server_address[1]))
         _, source = expect(client)
@@ -402,7 +402,7 @@ def test_a_max_sessions_the_selector_cannot_hold_is_refused_at_construction():
     if sys.platform != "win32":
         pytest.skip("select() has a descriptor limit on Windows only")
     with pytest.raises(ValueError, match="510"):
-        tftp.TFTPServer(".", host="127.0.0.1", port=0, max_sessions=600)
+        tftp.TFTPServer(".", listen="127.0.0.1", port=0, max_sessions=600)
 
 
 # -- a receiver that follows RFC 7440 to the letter ---------------------------------------------
@@ -535,7 +535,7 @@ def test_a_server_named_by_a_link_local_address_with_its_zone_is_heard(link_loca
     from tftp.backends import MemoryBackend
 
     with tftp.TFTPServer(
-        MemoryBackend({"f": b"link-local"}), host=link_local, port=0, timeout=0.5
+        MemoryBackend({"f": b"link-local"}), listen=link_local, port=0, timeout=0.5
     ).start() as server:
         client = tftp.TFTPClient(
             link_local, server.server_address[1], timeout=0.5, retries=2, strict_source=True

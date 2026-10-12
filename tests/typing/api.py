@@ -171,7 +171,7 @@ class Blocking:
 def servers() -> None:
     handler: TFTPHandler = Menu()
     assert_type(TFTPServer("/srv/tftp"), TFTPServer)
-    TFTPServer(Menu(), host="127.0.0.1", port=0)
+    TFTPServer(Menu(), listen="127.0.0.1", port=0)
     TFTPServer(
         handler,
         writable=True,
@@ -182,7 +182,7 @@ def servers() -> None:
     )
     TFTPServer("/srv/tftp", port_range=PortRange(40000, 40100))
     TFTPServer(Blocking())  # type: ignore[arg-type]
-    TFTPServer("/srv/tftp", host=2130706433)  # type: ignore[arg-type]
+    TFTPServer("/srv/tftp", listen=2130706433)  # type: ignore[arg-type]
     TFTPServer("/srv/tftp", ".", 69)  # type: ignore  # options are keyword-only
 
     with TFTPServer("/srv/tftp", port=6969) as server:
@@ -226,7 +226,7 @@ async def asyncio_twins() -> None:
     async_handler: AsyncTFTPHandler = AsyncMenu()
     async with AsyncTFTPServer(async_handler, port=0) as server:
         await server.serve_forever()
-    AsyncTFTPServer(ThreadedHandler(Menu()), host="::", port=0, timeout=2.0)
+    AsyncTFTPServer(ThreadedHandler(Menu()), listen="::", port=0, timeout=2.0)
     AsyncTFTPServer("/srv/tftp", port_range=(40000, 40100))
     AsyncTFTPServer(Menu())  # type: ignore[arg-type]  # a bare synchronous handler needs ThreadedHandler
     AsyncTFTPServer("/srv/tftp", nonsense=1)  # type: ignore[call-arg]
@@ -239,7 +239,7 @@ async def asyncio_twins() -> None:
 def relay() -> None:
     target: UpstreamLike = "10.0.0.5:70"
     assert_type(Upstream.parse(target), Upstream)
-    TFTPRelay(by_subnet({"10.1.0.0/16": "10.1.0.5"}), host="::", port=69)
+    TFTPRelay(by_subnet({"10.1.0.0/16": "10.1.0.5"}), listen="::", port=69)
     TFTPRelay(by_prefix({"windows/": "wds.lan", "": ("default.lan", 69)}))
     TFTPRelay(by_prefix(["windows/=wds.lan", ("", "default.lan")]))
     TFTPRelay("upstream.lan")
@@ -257,7 +257,7 @@ async def route_for_a_coroutine(
 
 async def async_relay() -> None:
     chosen: AsyncRouteFunction = route_for_a_coroutine
-    async with AsyncTFTPRelay(chosen, host="::", port=0, idle_timeout=5.0) as relay:
+    async with AsyncTFTPRelay(chosen, listen="::", port=0, idle_timeout=5.0) as relay:
         assert_type(relay.server_address, Optional[Tuple[Any, ...]])
         assert_type(relay.stats_snapshot(), Dict[str, int])
         assert_type(await relay.start(), AsyncTFTPRelay)

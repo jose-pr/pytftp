@@ -11,10 +11,9 @@ ships inside the package and is self-contained; the top header is
 
 ```python
 TFTPRelay(
-    route, *, host=None, port=69, idle_timeout=30.0, max_duration=3600.0, linger=2.0,
+    route, *, listen=None, port=69, idle_timeout=30.0, max_duration=3600.0, linger=2.0,
     upstream_src=None, limits=None, max_sessions=250, ignore_broadcast=True,
-    reply_from_request_address=True, trace=None, on_session_end=None, port_range=None,
-    interface=None
+    reply_from_request_address=True, trace=None, on_session_end=None, port_range=None
 )
 ```
 
@@ -29,7 +28,7 @@ library does not know work end to end. Each side negotiates nothing with the
 relay — the client sees the upstream's OACK. For different settings per side
 use `UpstreamBackend` (a terminating proxy) instead.
 
-- `interface` — listen on one adapter, as for `TFTPServer`.
+- `listen`, `port` — as for `TFTPServer`.
 - `port_range` — as for `TFTPServer`, for both sockets of each relayed transfer
   (client side and upstream side).
 - `route` — an upstream (`"host"`, `"host:port"`, `"[v6]:port"`, an address
@@ -56,17 +55,16 @@ use `UpstreamBackend` (a terminating proxy) instead.
   message)` of an ERROR that passed through, or `None`).
 - Lifecycle and properties as for `TFTPServer`: `bind`, `serve_forever`,
   `shutdown`, `start`, `wait_closed`, `close`, context manager;
-  `server_address` (`None` before `bind()`), `has_pktinfo`, `active_sessions`.
+  `server_address`, `server_addresses` (`None`/`()` before `bind()`), `has_pktinfo`, `active_sessions`.
 
 
 ## Asyncio relay (`tftp.relay`)
 
 ```python
 AsyncTFTPRelay(
-    route, *, host=None, port=69, idle_timeout=30.0, max_duration=3600.0, linger=2.0,
+    route, *, listen=None, port=69, idle_timeout=30.0, max_duration=3600.0, linger=2.0,
     upstream_src=None, limits=None, max_sessions=250, ignore_broadcast=True,
-    reply_from_request_address=True, trace=None, on_session_end=None, port_range=None,
-    interface=None
+    reply_from_request_address=True, trace=None, on_session_end=None, port_range=None
 )
 ```
 

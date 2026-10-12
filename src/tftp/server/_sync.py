@@ -26,7 +26,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, TypeVar, Union
 
 if TYPE_CHECKING:
-    from netimps import HostLike, InterfaceLike
+    from netimps import ListenLike
 
 from ..capture._events import PacketEvent
 from ..options._policy import TFTPServerOptions
@@ -211,12 +211,15 @@ class TFTPServer(SelectorService, ServerBase):
     :param root_or_handler: a directory to serve (wrapped in
         :class:`FilesystemBackend` with ``writable``, ``create`` and
         ``overwrite``), or a handler object.
-    :param host: address to listen on: a string, an ``ipaddress`` address or a
-        ``netimps.Host``. ``None`` (the default) or ``"::"`` listens on IPv6
-        and IPv4 at once where the platform allows dual-stack sockets, else
-        falls back to ``"0.0.0.0"``. ``"0.0.0.0"`` is IPv4 only.
-    :param port: UDP port; ``0`` picks a free one (see :attr:`server_address`,
-        valid after :meth:`bind`).
+    :param listen: where to listen, as netimps reads it (``netimps.ListenLike``):
+        an address, ``"host:port"``, ``"[v6]:port"``, an adapter name or MAC (a
+        wildcard socket limited to that adapter), several of them in a list or
+        joined by commas. ``None`` (the default) is every address of both
+        families: ``"*"`` and ``"::"``, two sockets, the IPv6 one left out on a
+        host with no IPv6. A host name is never resolved.
+    :param port: the port a ``listen`` entry that names none gets; ``0`` picks a
+        free one (with ``listen=None`` both sockets share it; see
+        :attr:`server_address` and :attr:`server_addresses`, valid after :meth:`bind`).
     :param timeout: retransmission timeout, unless a client negotiates its own.
     :param retries: retransmissions of one packet before abandoning a transfer.
     :param options: what the server negotiates (:class:`TFTPServerOptions`).
@@ -257,19 +260,13 @@ class TFTPServer(SelectorService, ServerBase):
         their ports from it, round-robin from a position this server owns, so a
         firewall can allow them. A request arriving while every port is in
         use gets ERROR 0 "server busy". ``None`` lets the OS choose.
-    :param interface: listen on one network adapter: a name (``"eth0"``), a
-        ``netimps.Interface``, its MAC or one of its addresses. The listener
-        binds that adapter's IPv4 address when it has one, else its IPv6
-        address; ``host="0.0.0.0"`` or ``"::"`` picks the family instead. Any
-        other ``host`` with an interface is a ``ValueError``. One family per
-        server: run two servers to serve both on one adapter.
     """
 
     def __init__(
         self,
         root_or_handler: Union[str, "os.PathLike[str]", TFTPHandler],
         *,
-        host: Optional[HostLike] = None,
+        listen: ListenLike = None,
         port: int = 69,
         writable: bool = False,
         create: bool = True,
@@ -289,7 +286,6 @@ class TFTPServer(SelectorService, ServerBase):
         open_in_thread: Optional[bool] = None,
         workers: int = 8,
         port_range: Optional[PortRangeLike] = None,
-        interface: InterfaceLike = None,
     ) -> None:
         if has_coroutine_hooks(root_or_handler):
             raise TypeError(
@@ -303,7 +299,7 @@ class TFTPServer(SelectorService, ServerBase):
             )
         super().__init__(
             root_or_handler,
-            host=host,
+            listen=listen,
             port=port,
             writable=writable,
             create=create,
@@ -321,7 +317,6 @@ class TFTPServer(SelectorService, ServerBase):
             max_timeout=max_timeout,
             trace=trace,
             port_range=port_range,
-            interface=interface,
         )
         self._init_service()
         self._ready: "collections.deque[Session]" = collections.deque()

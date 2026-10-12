@@ -74,7 +74,7 @@ class AsyncRelayThread:
         route, host, kwargs = self.args
         self.loop = asyncio.get_running_loop()
         self.stop = asyncio.Event()
-        async with AsyncTFTPRelay(route, host=host, port=0, **kwargs) as relay:
+        async with AsyncTFTPRelay(route, listen=host, port=0, **kwargs) as relay:
             await relay.start()
             self.relay = relay
             self.ready.set()
@@ -105,7 +105,7 @@ def _build(driver, route, host, kwargs):
     """A started relay of one driver: what the tests read is ``server_address``,
     ``active_sessions``, ``stats`` and ``stats_snapshot()``, and ``close()`` ends it."""
     if driver == "blocking":
-        return TFTPRelay(route, host=host, port=0, **kwargs).start()
+        return TFTPRelay(route, listen=host, port=0, **kwargs).start()
     return AsyncRelayThread(loop_of(driver), route, host, kwargs)
 
 
@@ -113,8 +113,8 @@ def _build(driver, route, host, kwargs):
 def make_relay(request):
     relays = []
 
-    def make(route, host="127.0.0.1", **kwargs):
-        relay = _build(request.param, route, host, kwargs)
+    def make(route, listen="127.0.0.1", **kwargs):
+        relay = _build(request.param, route, listen, kwargs)
         relays.append(relay)
         return relay
 
@@ -333,7 +333,7 @@ def test_trace_sees_both_legs(root, make_server, make_relay):
 @needs_ipv6
 def test_ipv6_client_ipv4_upstream(root, make_server, make_relay):
     server = make_server(root)
-    relay = make_relay(upstream_of(server), host="::1")
+    relay = make_relay(upstream_of(server), listen="::1")
     assert client_for(relay, host="::1").get("513.bin") == (root / "513.bin").read_bytes()
 
 
@@ -360,9 +360,7 @@ def test_relay_stats(root, make_server, make_relay):
 def test_relay_hears_an_upstream_named_by_a_link_local_address_with_its_zone(link_local, make_relay):
     from tftp.backends import MemoryBackend
 
-    with tftp.TFTPServer(
-        MemoryBackend({"f": b"through the relay"}), host="::", port=0, timeout=0.5
-    ).start() as upstream:
+    with tftp.TFTPServer(MemoryBackend({"f": b"through the relay"}), port=0, timeout=0.5).start() as upstream:
         relay = make_relay("[%s]:%d" % (link_local, upstream.server_address[1]))
         client = tftp.TFTPClient("127.0.0.1", relay.server_address[1], timeout=0.5, retries=2)
         assert client.get("f") == b"through the relay"
@@ -387,7 +385,7 @@ def test_upstream_src_is_the_address_the_upstream_sees(root, make_server, make_r
         except OSError:
             pytest.skip("127.0.0.2 is not a local address here (macOS configures only 127.0.0.1)")
     seen = []
-    server = make_server(root, host="0.0.0.0", on_complete=seen.append)
+    server = make_server(root, listen="0.0.0.0", on_complete=seen.append)
     relay = make_relay(upstream_of(server), upstream_src="127.0.0.2", linger=0.1)
     assert client_for(relay).get("one.bin") == (root / "one.bin").read_bytes()
     assert wait_for(lambda: seen)

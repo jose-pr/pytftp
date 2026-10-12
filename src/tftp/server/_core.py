@@ -15,7 +15,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    from netimps import HostLike, InterfaceLike
+    from netimps import ListenLike
 
 from .._text import Escaped
 from ..capture._hook import HookGuard, guard
@@ -45,27 +45,6 @@ DEFAULT_MAX_SESSIONS = 500
 SELECT_SESSIONS = 510
 
 
-def _listening(host: Any, port: int, interface: Any) -> Any:
-    """The listen specification that ``host`` and ``interface`` name."""
-    import socket
-
-    from netimps import Host, is_wildcard, parse_listen, split_host
-
-    if interface is not None:
-        if not host:
-            return interface
-        wanted = Host(split_host(host)[0]).ip()
-        return parse_listen(
-            interface, port, family=socket.AF_INET6 if wanted and wanted.version == 6 else socket.AF_INET
-        )
-    if not host:
-        return None
-    address = Host(split_host(host)[0]).ip()
-    if address is None:
-        raise socket.gaierror("cannot resolve %r" % (host,))
-    return address
-
-
 class ServerBase:
     """Configuration and per-request decisions shared by the server front ends."""
 
@@ -73,7 +52,7 @@ class ServerBase:
         self,
         root_or_handler: Union[str, "os.PathLike[str]", TFTPHandler, AsyncTFTPHandler, ThreadedHandler],
         *,
-        host: Optional[HostLike] = None,
+        listen: ListenLike = None,
         port: int = 69,
         writable: bool = False,
         create: bool = True,
@@ -91,15 +70,7 @@ class ServerBase:
         max_timeout: Optional[float] = None,
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         port_range: Optional[PortRangeLike] = None,
-        interface: InterfaceLike = None,
     ) -> None:
-        if interface is not None and host:
-            from netimps import is_wildcard
-
-            if not is_wildcard(host):
-                raise ValueError(
-                    "give host or interface, not both (host may be '0.0.0.0' or '::' to pick the family)"
-                )
         if isinstance(root_or_handler, (str, os.PathLike)):
             from ..backends._filesystem import FilesystemBackend
 
@@ -132,7 +103,7 @@ class ServerBase:
         self._per_client: Dict[str, int] = {}
         #: Counters since start (:class:`TFTPStats`); ``stats_snapshot()`` adds ``active``.
         self.stats = TFTPStats(*SERVER_COUNTERS)
-        self._listen_on = (_listening(host, port, interface), port, reply_from_request_address)
+        self._listen_on = (listen, port, reply_from_request_address)
         self._listener: Any = None
         self._address: Optional[Tuple[Any, ...]] = None
         self._addresses: Tuple[Tuple[Any, ...], ...] = ()

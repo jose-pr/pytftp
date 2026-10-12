@@ -115,16 +115,16 @@ AsyncTFTPClient(
     utimeout=False, extra_options=None, registry=None, on_negotiated=None, trace=None
 )
 TFTPServer(
-    root_or_handler, *, host=None, port=69, writable=False, create=True, overwrite=False,
+    root_or_handler, *, listen=None, port=69, writable=False, create=True, overwrite=False,
     timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True,
     dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0,
-    max_timeout=None, trace=None, open_in_thread=None, workers=8, port_range=None, interface=None
+    max_timeout=None, trace=None, open_in_thread=None, workers=8, port_range=None
 )
 AsyncTFTPServer(
-    root_or_handler, *, host=None, port=69, writable=False, create=True, overwrite=False,
+    root_or_handler, *, listen=None, port=69, writable=False, create=True, overwrite=False,
     timeout=1.0, retries=5, options=None, max_sessions=500, reply_from_request_address=True,
     dally=True, on_complete=None, limits=None, ignore_broadcast=True, backoff=2.0,
-    max_timeout=None, trace=None, port_range=None, interface=None
+    max_timeout=None, trace=None, port_range=None
 )
 download(host, filename, dst, /, *, port=69, mode="octet", progress=None, **client_options)
 upload(host, filename, src, /, *, port=69, mode="octet", progress=None, **client_options)
@@ -310,9 +310,9 @@ the others in `tftp/cli/AGENTS.md`, through its argument parser.
   `Interface`) cannot be resolved by `typing.get_type_hints` at run time, because
   `netimps` is imported lazily; so are the signatures of `dissect_tftp`,
   `register_tftp_dissector` and `pktcap_plugin`, which name the `pktcap` module. Every other public
-  annotation resolves on every supported Python. `host=` of the servers and the
-  relay is a netimps `HostLike`: text, an `ipaddress` address or interface, a
-  `netimps.Host` or `FQDN`; an `int` or `bytes` address is a `TypeError`.
+  annotation resolves on every supported Python. `listen=` of the servers and the
+  relay is a netimps `ListenLike` (grammar in `server/AGENTS.md`); a `netimps.Host`, an
+  `int` or `bytes` there is a `TypeError`.
 - **`deadline` means two things.** The client's `deadline=` is a number of seconds
   a whole transfer may take; an engine's `deadline` attribute is the instant, in
   its caller's clock, at which it next wants `on_timeout`.

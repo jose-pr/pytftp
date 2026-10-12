@@ -46,7 +46,7 @@ class AsyncServerThread:
         self.loop = asyncio.get_running_loop()
         self.stop = asyncio.Event()
         async with tftp.AsyncTFTPServer(
-            str(self.directory), host="127.0.0.1", port=0, writable=True, overwrite=True, timeout=0.5
+            str(self.directory), listen="127.0.0.1", port=0, writable=True, overwrite=True, timeout=0.5
         ) as server:
             await server.start()
             self.server = server

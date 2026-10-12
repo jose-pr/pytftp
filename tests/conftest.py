@@ -59,9 +59,9 @@ def make_server():
     """Start servers on a free port; every one is closed after the test."""
     servers = []
 
-    def make(root_or_handler, host="127.0.0.1", **kwargs):
+    def make(root_or_handler, listen="127.0.0.1", **kwargs):
         kwargs.setdefault("timeout", 0.5)
-        server = tftp.TFTPServer(root_or_handler, host=host, port=0, **kwargs).start()
+        server = tftp.TFTPServer(root_or_handler, listen=listen, port=0, **kwargs).start()
         servers.append(server)
         return server
 
@@ -333,7 +333,7 @@ def served(tmp_path, monkeypatch):
         original = cls.__init__
 
         def init(self, *args, **kwargs):
-            kwargs.setdefault("host", "127.0.0.1")
+            kwargs.setdefault("listen", "127.0.0.1")
             kwargs.setdefault("port", 0)
             original(self, *args, **kwargs)
             created.append(self)
@@ -360,7 +360,6 @@ def substitute(code, server, root):
         ('"192.0.2.1"', '"127.0.0.1", ' + port),
         ("tftp://192.0.2.1/", "tftp://127.0.0.1/"),
         ('"/srv/tftp"', repr(str(root))),
-        ('host="::"', 'host="127.0.0.1"'),
         ("port=69", "port=0"),
         ('default="10.0.0.20"', 'default="127.0.0.1:%s"' % port),
         ('"10.0.0.20"', '"127.0.0.1"'),

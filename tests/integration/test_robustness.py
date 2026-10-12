@@ -599,7 +599,7 @@ def test_the_default_bounds_are_finite():
     with pytest.raises(ValueError):
         tftp.TFTPServerLimits(max_idle=0)
     assert tftp.TFTPServerLimits(max_idle=None).max_idle is None
-    server = tftp.TFTPServer(".", host="127.0.0.1", port=0)
+    server = tftp.TFTPServer(".", listen="127.0.0.1", port=0)
     try:
         assert server.max_sessions == 500
     finally:

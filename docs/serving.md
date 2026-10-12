@@ -5,7 +5,7 @@
 ```python
 import tftp
 
-server = tftp.TFTPServer("/srv/tftp", host="::", port=69, writable=True, overwrite=False)
+server = tftp.TFTPServer("/srv/tftp", port=69, writable=True, overwrite=False)
 server.serve_forever()
 ```
 
@@ -81,17 +81,26 @@ tftp.TFTPServer("/srv/tftp", port_range=(50000, 50100))
 (`pytftp serve --port-range 50000:50100`; the relay takes the same.) A
 request arriving with every port in use is answered "server busy".
 
-## One network adapter
+## Where to listen
+
+`listen` says which sockets the server opens, in the grammar every netimps
+listener reads. With none, the server listens on every address of both families
+(`"*"` and `"::"`: two sockets, the IPv6 one left out on a host with no IPv6),
+on `port`. A host name is never resolved: `"localhost"` is an adapter name.
 
 <!-- not run: it needs a network interface named eth0 -->
 ```python
-tftp.TFTPServer("/srv/tftp", interface="eth0")   # eth0's IPv4 address
+tftp.TFTPServer("/srv/tftp", listen="eth0")                    # eth0's IPv4 wildcard socket, limited to eth0
+tftp.TFTPServer("/srv/tftp", listen=["10.0.0.5", "[fd00::5]:6969"])   # two addresses, the second on its own port
 ```
 
-`interface` takes a name, a `netimps.Interface`, a MAC or one of the
-adapter's addresses (`pytftp serve --interface eth0`). It binds one address
-of that adapter, IPv4 unless `host="::"`; requests to its other addresses are
-not received.
+An entry is an address (`"10.0.0.5"`, `"[fd00::5]:6969"`), an adapter name, a
+`netimps.Interface` or a MAC (a wildcard socket limited to that adapter, which
+also hears its broadcasts), or `"*"`; several are a list or joined by commas
+(`pytftp serve --listen eth0 --listen 10.0.0.5:6969`, repeatable or comma-joined). `port` is
+the port an entry without one gets. Every socket answers its own requests from
+the address they were sent to; `max_sessions` and the other limits count across
+all of them, and `server_addresses` lists where each is bound.
 
 ## Directory listings
 

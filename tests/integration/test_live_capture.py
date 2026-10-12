@@ -36,7 +36,7 @@ pytestmark = pytest.mark.skipif(bool(_WHY_NOT), reason=_WHY_NOT)
 
 def test_a_transfer_on_loopback_is_followed_live(tmp_path):
     (tmp_path / "live.bin").write_bytes(b"live" * 600)
-    server = tftp.TFTPServer(str(tmp_path), host="127.0.0.1", port=0, timeout=1.0).start()
+    server = tftp.TFTPServer(str(tmp_path), listen="127.0.0.1", port=0, timeout=1.0).start()
     port = server.server_address[1]
     proc = subprocess.Popen(
         [sys.executable, "-m", "tftp", "capture", "--interface", "lo", "-p", str(port), "--format", "json"],

@@ -782,7 +782,7 @@ def test_one_file_is_reachable_under_one_name_through_a_server(root, make_server
 
 def test_a_name_that_is_not_utf8_reaches_the_backend_as_the_octets_the_client_sent():
     name = b"caf\xe9-\xff".decode("utf-8", "surrogateescape")
-    server = tftp.TFTPServer(MemoryBackend({name: b"latin"}), host="127.0.0.1", port=0, timeout=0.5).start()
+    server = tftp.TFTPServer(MemoryBackend({name: b"latin"}), listen="127.0.0.1", port=0, timeout=0.5).start()
     try:
         assert client_for(server).get(name) == b"latin"
         with pytest.raises(tftp.FileNotFound):

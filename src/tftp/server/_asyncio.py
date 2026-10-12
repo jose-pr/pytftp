@@ -19,7 +19,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, TypeVar, Union
 
 if TYPE_CHECKING:
-    from netimps import HostLike, InterfaceLike
+    from netimps import ListenLike
 
 from .._bridge import AsyncReaderBridge, AsyncWriterBridge
 from .._result import TransferResult
@@ -261,7 +261,7 @@ class AsyncTFTPServer(AsyncioService, ServerBase):
         self,
         root_or_handler: Union[str, "os.PathLike[str]", AsyncTFTPHandler, ThreadedHandler],
         *,
-        host: Optional[HostLike] = None,
+        listen: ListenLike = None,
         port: int = 69,
         writable: bool = False,
         create: bool = True,
@@ -279,7 +279,6 @@ class AsyncTFTPServer(AsyncioService, ServerBase):
         max_timeout: Optional[float] = None,
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         port_range: Optional[PortRangeLike] = None,
-        interface: InterfaceLike = None,
     ) -> None:
         is_root = isinstance(root_or_handler, (str, os.PathLike))
         if (
@@ -293,7 +292,7 @@ class AsyncTFTPServer(AsyncioService, ServerBase):
             )
         super().__init__(
             root_or_handler,
-            host=host,
+            listen=listen,
             port=port,
             writable=writable,
             create=create,
@@ -311,7 +310,6 @@ class AsyncTFTPServer(AsyncioService, ServerBase):
             max_timeout=max_timeout,
             trace=trace,
             port_range=port_range,
-            interface=interface,
         )
         if is_root:
             self.handler = ThreadedHandler(self.handler)

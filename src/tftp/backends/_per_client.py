@@ -23,8 +23,8 @@ class PerClient:
     stays inside that directory, as :class:`FilesystemBackend` keeps it).
 
     The directory name is the client's address with each ``:`` written ``-``
-    (``fe80--1``, valid on Windows), and an IPv4 client seen through a
-    dual-stack socket is named by its IPv4 address (see :meth:`directory`).
+    (``fe80--1``, valid on Windows), and a v4-mapped IPv6 address is named by
+    its IPv4 address (see :meth:`directory`).
 
     :param root: the directory holding one directory per client.
     :param make: ``make(directory)`` returns the handler for a directory, for

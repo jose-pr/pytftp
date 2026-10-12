@@ -25,14 +25,14 @@ pytftp get tftp://HOST[:PORT]/FILE [LOCAL|-]      [-t TIMEOUT] [-r RETRIES] [--n
                                        [--compat PROFILE] [-4|-6] [--json] [--trace] [--pcap FILE]
 pytftp put HOST LOCAL|- [REMOTE]       (same options; or put tftp://HOST/FILE LOCAL|-)
 pytftp ls HOST [DIR] | tftp://HOST/DIR (same options) [--json]
-pytftp serve [ROOT] [--http URL | --upstream HOST[:PORT]] [-l ADDRESS | --interface NIC] [-p PORT] [-W/--write]
+pytftp serve [ROOT] [--http URL | --upstream HOST[:PORT]] [-l SPEC]... [-p PORT] [-W/--write]
              [--overwrite] [--no-create] [--max-upload BYTES] [--max-duration SECONDS]
              [--compat PROFILE | --max-blksize N --max-windowsize N --allow OPTION... --refuse OPTION... --fit-mtu]
              [--listing] [--max-sessions N] [--max-per-client N] [--port-range LOW:HIGH]
              [--per-client | --per-client-only] [--ignore-case] [--remap REGEX=REPLACEMENT]...
              [--json] [--trace] [--pcap FILE]
 pytftp relay [UPSTREAM] [--route-subnet CIDR=HOST[:PORT]]... [--route-prefix PREFIX=HOST[:PORT]]...
-             [-l ADDRESS | --interface NIC] [-p PORT] [--idle-timeout S] [--max-sessions N] [--port-range LOW:HIGH]
+             [-l SPEC]... [-p PORT] [--idle-timeout S] [--max-sessions N] [--port-range LOW:HIGH]
              [--json] [--trace] [--pcap FILE]
 pytftp capture [-i FILE|- | --interface NIC] [-p PORT]... [-f FILTER] [--no-packets] [--transfers]
              [--extract DIR] [-o TARGET] [--format FMT] [--per-record] [--max-files N] [--datagrams] [--append]
@@ -94,8 +94,11 @@ served as a tool.
   that long; both default to no limit, and `--max-upload` serves a directory
   only. `--max-sessions N` defaults to 500, 0 is unlimited (510 at most on
   Windows); `--max-per-client N` bounds one address.
-- `--interface NIC` (serve, relay) listens on that adapter's IPv4 address
-  (`-l ::` for its IPv6 one).
+- `-l`/`--listen SPEC` (serve, relay; repeatable or comma-joined) is netimps' listen
+  specification as for `TFTPServer(listen=)`: `HOST:PORT`, `[V6]:PORT`, `*:PORT`, an
+  adapter name or a MAC. With none the command listens on every address, IPv4 and
+  IPv6, on `-p`. `--interface` is gone (`-l eth0`); a specification that names
+  nothing bindable is one line and status 2.
 - `serve --listing` allows `x-list`/`x-mtime` (with `--compat` too), which
   `pytftp ls` and `TFTPPath.iterdir()` need. `--port-range` pins transfer
   ports. Directory serving only: `--per-client` serves `ROOT/<client

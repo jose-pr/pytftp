@@ -1,7 +1,7 @@
 """Every public annotation resolves with ``typing.get_type_hints``, except the ones that
 name a netimps or pktcap type (or the optional ``pathlib_next``'s path class).
 
-``netimps`` and ``pktcap`` are imported lazily, so the names ``HostLike``, ``IPAddressLike``,
+``netimps`` and ``pktcap`` are imported lazily, so the names ``HostLike``, ``IPAddressLike``, ``ListenLike``,
 ``IPNetworkLike``, ``Interface`` and the module ``pktcap`` exist only under ``TYPE_CHECKING``; a
 signature that names one raises ``NameError`` from ``get_type_hints`` on every Python. The list below is the whole of that exception, with the
 name each one cannot resolve: a new signature that names a netimps type, or any other annotation
@@ -27,8 +27,8 @@ LAZILY_IMPORTED = {
     "tftp.AsyncTFTPClient": "HostLike",
     "tftp.download": "HostLike",
     "tftp.upload": "HostLike",
-    "tftp.TFTPServer": "HostLike",
-    "tftp.AsyncTFTPServer": "HostLike",
+    "tftp.TFTPServer": "ListenLike",
+    "tftp.AsyncTFTPServer": "ListenLike",
     "tftp.backends.UpstreamBackend": "HostLike",
     "tftp.relay.TFTPRelay": "HostLike",
     "tftp.relay.AsyncTFTPRelay": "HostLike",

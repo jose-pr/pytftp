@@ -36,12 +36,8 @@ class RelayCmd(Traced):
     "PREFIX=HOST[:PORT]: filenames starting with PREFIX go to HOST; repeatable"
     ("--route-prefix",)
 
-    interface: _ty.Optional[str] = None
-    "Listen on this network adapter (name, MAC or address); IPv4 unless --listen is '::'. Default: the --listen address"
-    ("--interface",)
-
-    listen: _ty.Optional[str] = None
-    "Address to listen on. Default: '::', IPv6 and IPv4 where dual-stack works"
+    listen: _ty.Optional[_ty.List[str]] = None
+    "Where to listen: HOST:PORT, [V6]:PORT, *:PORT, an adapter name or a MAC; repeat the option or separate by commas. A name is never resolved. Default: every address, IPv4 and IPv6"
     ("--listen", "-l")
 
     port: int = 69
@@ -85,17 +81,19 @@ class RelayCmd(Traced):
         try:
             relay = TFTPRelay(
                 route,
-                host=self.listen,
+                listen=self.listen,
                 port=self.port,
                 idle_timeout=self.idle_timeout,
                 max_sessions=self.max_sessions or None,
                 on_session_end=on_end,
                 port_range=ports,
-                interface=self.interface,
             )
             relay.bind()
+        except ValueError as exc:  # a listen specification that names nothing bindable
+            error("error: %s" % exc)
+            return 2
         except OSError as exc:
-            return bind_failure(exc, self.listen or self.interface or "::", self.port)
+            return bind_failure(exc, ", ".join(self.listen or ["*", "::"]), self.port)
         try:
             relay.trace = self._tracer()  # last: the capture file is created once the relay can run
         except OSError as exc:
@@ -103,9 +101,9 @@ class RelayCmd(Traced):
             error("error: %s" % exc)
             return 1
         logger = self._logger_
-        address = relay.server_address
-        assert address is not None  # bound above
-        logger.info("relaying on %s port %d", address[0], address[1])
+        logger.info(
+            "relaying on %s", ", ".join("%s port %d" % address[:2] for address in relay.server_addresses)
+        )
         try:
             with shutdown_on_signal(relay):
                 relay.serve_forever()

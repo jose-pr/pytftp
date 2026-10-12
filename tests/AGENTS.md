@@ -81,7 +81,8 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `integration/test_relay.py` | the relay end to end, each test once per relay driver (`DRIVERS`), and the bounds on what a request can hold |
 | `integration/test_replay.py` | `replay_transfers` and `pytftp replay`, judged by what the server received |
 | `integration/test_listener.py` | the listening sockets: one endpoint and several, the socket a reply leaves from, turns between endpoints, what a limited endpoint refuses, the default's two families, closing every socket |
-| `integration/test_addresses.py` | hosts, networks and interfaces given as objects, not only strings |
+| `integration/test_listen.py` | `listen=` on the servers and the relays: a transfer on each of two addresses and the address the reply came from, limits across sockets, every socket closed on each exit, the asyncio relay's tasks, an endpoint's limit, the broadcast request |
+| `integration/test_addresses.py` | hosts, networks and interfaces given as objects, not only strings; `listen=` an adapter |
 | `integration/test_host_inputs.py` | what the library does with host, port and timeout arguments it is given |
 | `integration/test_deploy.py` | transfer port ranges |
 | `integration/test_cli.py` | the `pytftp` command, as a process and through its parser |

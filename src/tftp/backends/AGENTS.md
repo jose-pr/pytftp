@@ -65,7 +65,7 @@ The listing flag and the arrival interface of the request are kept.
 without `=` or a regex that does not compile is `TFTPValueError`.
 
 **`PerClient`** — serves `root/<client
-address>/` (`:` written `-`: `fe80--1`; an IPv4 client of a dual-stack socket
+address>/` (`:` written `-`: `fe80--1`; a v4-mapped IPv6 address
 by its IPv4 address) from `make(directory)`, one handler per directory. A
 client with no directory is served `root` itself, **including every other
 client's directory, so this is a convenience and not isolation**; with

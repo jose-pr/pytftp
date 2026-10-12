@@ -29,7 +29,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    from netimps import HostLike, InterfaceLike
+    from netimps import HostLike, ListenLike
 
 from .._sockets import local_towards, same_host, sockaddr
 from ..capture._hook import HookGuard, guard
@@ -38,7 +38,6 @@ from ..exceptions import TFTPDecodeError, TFTPError
 from ..packet._enums import TFTPErrorCode, TFTPOpcode
 from ..packet._codec import RequestPacket, decode
 from ..packet._codec import _encode_error
-from ..server._core import _listening
 from ..server._handler import TFTPRequestContext, is_coroutine_callable
 from ..server._listener import Arrival
 from ..server._policy import TFTPServerLimits
@@ -94,7 +93,7 @@ class RelayBase:
         self,
         route: Any,
         *,
-        host: Optional[HostLike] = None,
+        listen: ListenLike = None,
         port: int = 69,
         idle_timeout: float = IDLE_TIMEOUT,
         max_duration: float = MAX_DURATION,
@@ -107,7 +106,6 @@ class RelayBase:
         trace: Optional[Callable[[PacketEvent], Any]] = None,
         on_session_end: Optional[Callable[[RelaySummary], Any]] = None,
         port_range: Optional[PortRangeLike] = None,
-        interface: InterfaceLike = None,
     ) -> None:
         self.route: Any
         if callable(route):
@@ -156,7 +154,7 @@ class RelayBase:
         self._ports = PortAllocator(self.port_range) if self.port_range is not None else None
         #: Counters since start (:class:`TFTPStats`).
         self.stats = TFTPStats(*RELAY_COUNTERS)
-        self._listen_on = (_listening(host, port, interface), port, reply_from_request_address)
+        self._listen_on = (listen, port, reply_from_request_address)
         self._listener: Any = None
         self._address: Optional[Tuple[Any, ...]] = None
         self._addresses: Tuple[Tuple[Any, ...], ...] = ()

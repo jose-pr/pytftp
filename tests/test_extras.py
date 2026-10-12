@@ -55,7 +55,7 @@ def test_without_pathlib_next_the_rest_of_the_library_works():
     body = (
         "import tftp\n"
         "from tftp.backends import MemoryBackend\n"
-        "server = tftp.TFTPServer(MemoryBackend({'f': b'abc'}), host='127.0.0.1', port=0, timeout=0.5).start()\n"
+        "server = tftp.TFTPServer(MemoryBackend({'f': b'abc'}), listen='127.0.0.1', port=0, timeout=0.5).start()\n"
         "client = tftp.TFTPClient('127.0.0.1', server.server_address[1], timeout=0.5)\n"
         "print(client.get('f'))\n"
         "server.close()\n"
@@ -153,7 +153,7 @@ def test_the_other_commands_run_without_pktcap(tmp_path):
         "import tftp, tftp.relay\n"
         "from tftp.options import LISTING_OPTIONS, STANDARD_OPTIONS, TFTPServerOptions\n"
         "listing = TFTPServerOptions(allowed=STANDARD_OPTIONS | LISTING_OPTIONS)\n"
-        "server = tftp.TFTPServer('.', host='127.0.0.1', port=0, writable=True, timeout=0.5, options=listing)\n"
+        "server = tftp.TFTPServer('.', listen='127.0.0.1', port=0, writable=True, timeout=0.5, options=listing)\n"
         "socket.socket.bind = socket.socket.__mro__[1].bind\n"
         "server.start()\n"
         "port = str(server.server_address[1])\n"

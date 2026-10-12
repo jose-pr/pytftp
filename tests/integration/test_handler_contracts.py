@@ -117,7 +117,7 @@ class CoroutineHandler:
 def serve_async(handler, scenario, **kwargs):
     async def main():
         kwargs.setdefault("timeout", 0.5)
-        async with AsyncTFTPServer(handler, host="127.0.0.1", port=0, **kwargs) as server:
+        async with AsyncTFTPServer(handler, listen="127.0.0.1", port=0, **kwargs) as server:
             await server.start()
             await scenario(server)
 
@@ -147,7 +147,7 @@ def test_a_handler_without_opens_fast_is_opened_in_a_worker_thread(make_server):
 
 def test_coroutine_hooks_are_refused_by_the_synchronous_server():
     with pytest.raises(TypeError, match="AsyncTFTPServer"):
-        TFTPServer(CoroutineHandler(), host="127.0.0.1", port=0)
+        TFTPServer(CoroutineHandler(), listen="127.0.0.1", port=0)
 
 
 # -- AsyncTFTPServer: coroutine hooks and asynchronous streams ----------------------------------
@@ -232,12 +232,12 @@ def test_a_root_directory_needs_no_adapter(tmp_path):
 )
 def test_a_synchronous_handler_without_the_adapter_is_refused_at_construction(handler):
     with pytest.raises(TypeError, match="ThreadedHandler"):
-        AsyncTFTPServer(handler, host="127.0.0.1", port=0)
+        AsyncTFTPServer(handler, listen="127.0.0.1", port=0)
 
 
 def test_a_backend_is_refused_by_the_asyncio_server_with_the_class_named(tmp_path):
     with pytest.raises(TypeError, match="FilesystemBackend"):
-        AsyncTFTPServer(FilesystemBackend(tmp_path), host="127.0.0.1", port=0)
+        AsyncTFTPServer(FilesystemBackend(tmp_path), listen="127.0.0.1", port=0)
 
 
 # -- the optional members ----------------------------------------------------------------------
@@ -273,7 +273,7 @@ def test_a_reader_with_read_only_and_no_optional_member_serves():
         def open_write(self, context, size):
             raise tftp.TFTPError(tftp.TFTPErrorCode.ACCESS_VIOLATION)
 
-    server = TFTPServer(Handler(), host="127.0.0.1", port=0, timeout=0.5).start()
+    server = TFTPServer(Handler(), listen="127.0.0.1", port=0, timeout=0.5).start()
     try:
         assert client_for(server).get("x") == PAYLOAD
     finally:
@@ -337,7 +337,7 @@ def test_a_transfer_through_the_relay_logs_nothing_alarming(server_records, make
     logger = logging.getLogger("tftp.relay")
     collector = Collect(level=logging.WARNING)
     logger.addHandler(collector)
-    relay = TFTPRelay(("127.0.0.1", server.server_address[1]), host="127.0.0.1", port=0).start()
+    relay = TFTPRelay(("127.0.0.1", server.server_address[1]), listen="127.0.0.1", port=0).start()
     try:
         client = client_for(relay)
         assert client.get("x") == PAYLOAD

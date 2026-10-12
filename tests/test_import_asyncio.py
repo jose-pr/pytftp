@@ -45,7 +45,7 @@ def test_importing_the_command_line_adds_no_asyncio_import_of_its_own():
 
 def test_a_blocking_download_leaves_asyncio_alone(tmp_path):
     (tmp_path / "f").write_bytes(b"x" * 5000)
-    server = tftp.TFTPServer(str(tmp_path), host="127.0.0.1", port=0, timeout=0.5).start()
+    server = tftp.TFTPServer(str(tmp_path), listen="127.0.0.1", port=0, timeout=0.5).start()
     try:
         out = run(
             """
@@ -64,7 +64,7 @@ def test_a_blocking_download_leaves_asyncio_alone(tmp_path):
 def test_a_blocking_relay_leaves_asyncio_alone():
     out = run("""
         import sys, tftp.relay
-        with tftp.relay.TFTPRelay("127.0.0.1", host="127.0.0.1", port=0) as relay:
+        with tftp.relay.TFTPRelay("127.0.0.1", listen="127.0.0.1", port=0) as relay:
             relay.start()
         print('asyncio' in sys.modules)
         """)
@@ -75,7 +75,7 @@ def test_a_blocking_server_leaves_asyncio_alone(tmp_path):
     out = run(
         """
         import sys, tftp
-        with tftp.TFTPServer(sys.argv[1], host="127.0.0.1", port=0) as server:
+        with tftp.TFTPServer(sys.argv[1], listen="127.0.0.1", port=0) as server:
             server.start()
         print('asyncio' in sys.modules)
         """,

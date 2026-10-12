@@ -545,7 +545,7 @@ def test_ls_against_serve_listing(root, capsys):
         _stop(proc)
 
 
-def test_serve_on_interface(root):
+def test_serve_listens_on_an_adapter_named_by_listen(root):
     import netimps
 
     import tftp
@@ -553,11 +553,44 @@ def test_serve_on_interface(root):
     iface = netimps.get_interface("127.0.0.1")
     if iface is None:
         pytest.skip("no loopback interface reported")
-    proc, port = _serve_subprocess(["serve", str(root), "--interface", iface.name, "-p", "0"])
+    proc, port = _serve_subprocess(["serve", str(root), "--listen", iface.name, "-p", "0"])
     try:
         assert tftp.TFTPClient("127.0.0.1", port).get("one.bin") == b"x"
     finally:
         _stop(proc)
+
+
+def test_serve_listens_on_every_address_the_repeated_and_joined_listen_options_name(root):
+    import tftp
+
+    first, second = free_ports(2)
+    proc, port = _serve_subprocess(
+        ["serve", str(root), "-l", "127.0.0.1:%d" % first, "-l", "127.0.0.1:%d,127.0.0.1" % second, "-p", "0"]
+    )
+    try:
+        for target in (first, second):
+            assert tftp.TFTPClient("127.0.0.1", target).get("one.bin") == b"x"
+    finally:
+        _stop(proc)
+
+
+@pytest.mark.parametrize("command", ["serve", "relay"])
+def test_the_removed_interface_option_is_the_parsers_usage_error(command, capsys):
+    arguments = [command, "--interface", "eth0"] + (["10.0.0.1"] if command == "relay" else [])
+    with pytest.raises(SystemExit) as stop:
+        main(arguments)
+    assert stop.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == "" and "error:" in captured.err and "--interface" in captured.err
+
+
+@pytest.mark.parametrize("command", ["serve", "relay"])
+def test_an_unbindable_listen_is_one_line_and_status_2(command, capsys):
+    arguments = [command, "--listen", "no-such-adapter-xyz", "-p", "0"]
+    arguments += ["10.0.0.1"] if command == "relay" else []
+    assert main(arguments) == 2
+    err = capsys.readouterr().err
+    assert "no interface matches" in err and "Traceback" not in err
 
 
 # -- every deployment flag on its own --------------------------------------------------------------

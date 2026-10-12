@@ -208,7 +208,7 @@ def test_our_client_sees_peer_errors(served):
 def our_server(served):
     root, data = served
     with tftp.TFTPServer(
-        str(root), host="127.0.0.1", port=0, writable=True, overwrite=True, timeout=1.0
+        str(root), listen="127.0.0.1", port=0, writable=True, overwrite=True, timeout=1.0
     ) as server:
         server.start()
         yield server, root, data

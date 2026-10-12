@@ -101,7 +101,7 @@ def test_async_client(root, server):
 
 def test_async_server_lists(root):
     async def main():
-        async with tftp.AsyncTFTPServer(root, host="127.0.0.1", port=0, options=LISTING) as server:
+        async with tftp.AsyncTFTPServer(root, listen="127.0.0.1", port=0, options=LISTING) as server:
             await server.start()
             client = tftp.AsyncTFTPClient("127.0.0.1", server.server_address[1], timeout=0.5)
             return [e.name for e in await client.listdir("sub")]

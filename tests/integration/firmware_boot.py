@@ -98,7 +98,7 @@ class Lab:
         )
         self.server = tftp.TFTPServer(
             self.workdir,
-            host="0.0.0.0",
+            listen="0.0.0.0",
             port=69,
             on_complete=self.results.append,
             trace=self.events.append,

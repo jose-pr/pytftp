@@ -31,7 +31,7 @@ def transfer(tftp) -> int:
     with tempfile.TemporaryDirectory() as root:
         with open(os.path.join(root, "f.bin"), "wb") as handle:
             handle.write(payload)
-        with tftp.TFTPServer(root, host="127.0.0.1", port=0, writable=True) as server:
+        with tftp.TFTPServer(root, listen="127.0.0.1", port=0, writable=True) as server:
             server.start()
             client = tftp.TFTPClient("127.0.0.1", server.server_address[1], windowsize=8)
             assert client.get("f.bin") == payload

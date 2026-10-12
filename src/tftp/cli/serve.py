@@ -29,12 +29,8 @@ class Serve(Content, Negotiation, Traced):
     _parsername_ = "serve"
     _parseraliases_ = ["server"]
 
-    interface: _ty.Optional[str] = None
-    "Listen on this network adapter (name, MAC or address); IPv4 unless --listen is '::'. Default: the --listen address"
-    ("--interface",)
-
-    listen: _ty.Optional[str] = None
-    "Address to listen on. Default: '::', IPv6 and IPv4 where dual-stack works"
+    listen: _ty.Optional[_ty.List[str]] = None
+    "Where to listen: HOST:PORT, [V6]:PORT, *:PORT, an adapter name or a MAC; repeat the option or separate by commas. A name is never resolved. Default: every address, IPv4 and IPv6"
     ("--listen", "-l")
 
     port: int = 69
@@ -77,7 +73,7 @@ class Serve(Content, Negotiation, Traced):
                 ports = PortRange.parse(self.port_range)
         return TFTPServer(
             handler,
-            host=self.listen,
+            listen=self.listen,
             port=self.port,
             writable=self.write,
             create=not self.no_create,
@@ -91,7 +87,6 @@ class Serve(Content, Negotiation, Traced):
             ),
             on_complete=_print_json if self.json_out else None,
             port_range=ports,
-            interface=self.interface,
         )
 
     def __call__(self) -> _ty.Optional[int]:
@@ -104,9 +99,13 @@ class Serve(Content, Negotiation, Traced):
             return 2
         try:
             server.bind()
+        except ValueError as exc:  # a listen specification that names nothing bindable
+            server.close()
+            error("error: %s" % exc)
+            return 2
         except OSError as exc:
             server.close()
-            return bind_failure(exc, self.listen or self.interface or "::", self.port)
+            return bind_failure(exc, ", ".join(self.listen or ["*", "::"]), self.port)
         try:
             server.trace = self._tracer()  # last: the capture file is created once the server can run
         except OSError as exc:

@@ -111,7 +111,7 @@ def test_a_readme_command_line_runs_as_written(line, served):
 
             capture = tmp_path / "wire.pcap"
             with PcapWriter(capture) as writer:
-                other = tftp.TFTPServer(root, host="127.0.0.1", port=0, trace=trace_to(writer)).start()
+                other = tftp.TFTPServer(root, listen="127.0.0.1", port=0, trace=trace_to(writer)).start()
                 try:
                     tftp.TFTPClient("127.0.0.1", other.server_address[1], timeout=0.5).get("pxelinux.0")
                 finally:

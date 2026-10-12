@@ -82,7 +82,7 @@ def test_upload_from_path_and_file(root, make_server, tmp_path_factory):
 @needs_ipv6
 @pytest.mark.parametrize("host", ["::1", "127.0.0.1"])
 def test_default_listener_answers_both_families(root, make_server, host):
-    server = make_server(root, host=None)
+    server = make_server(root, listen=None)
     result = client_for(server, host=host).download("513.bin", io.BytesIO())
     assert result.bytes == 513
     assert result.peer[0] == host
@@ -90,12 +90,12 @@ def test_default_listener_answers_both_families(root, make_server, host):
 
 @needs_ipv6
 def test_ipv6_only_listener(root, make_server):
-    server = make_server(root, host="::1")
+    server = make_server(root, listen="::1")
     assert client_for(server, host="::1").get("one.bin") == b"x"
 
 
 def test_ipv4_listener_and_v6_client_family(root, make_server):
-    server = make_server(root, host="127.0.0.1")
+    server = make_server(root, listen="127.0.0.1")
     import socket
 
     assert client_for(server, family=socket.AF_INET).get("one.bin") == b"x"
@@ -305,7 +305,7 @@ def test_many_concurrent_clients(root, make_server):
 
 
 def test_server_lifecycle(root):
-    server = tftp.TFTPServer(root, host="127.0.0.1", port=0)
+    server = tftp.TFTPServer(root, listen="127.0.0.1", port=0)
     with server:
         server.start()
         with pytest.raises(RuntimeError):

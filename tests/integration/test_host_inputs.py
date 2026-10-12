@@ -14,29 +14,16 @@ from tftp._sockets import fit_window  # internal: no public name
 from tftp import AsyncTFTPClient
 from tftp.relay import TFTPRelay, Upstream
 
-# -- a host name as the listen address -----------------------------------------
+# -- a host name is never a listen address ---------------------------------------
 
 
-@pytest.mark.parametrize("host", ["localhost", netimps.Host("localhost")], ids=["str", "Host"])
-def test_server_listens_on_a_host_name(root, host):
-    with tftp.TFTPServer(root, host=host, port=0, timeout=0.5).start() as server:
-        address, port = server.server_address[:2]
-        assert socket.getaddrinfo("localhost", port, type=socket.SOCK_DGRAM)  # the name resolves
-        assert tftp.TFTPClient(address, port, timeout=0.5).get("one.bin") == b"x"
-
-
-def test_relay_listens_on_a_host_name(root, make_server):
-    behind = make_server(root)
-    relay = TFTPRelay(("127.0.0.1", behind.server_address[1]), host="localhost", port=0).start()
-    try:
-        assert client_for(relay).get("one.bin") == b"x"
-    finally:
-        relay.close()
-
-
-def test_a_host_name_and_an_interface_are_refused_together(root):
-    with pytest.raises(ValueError, match="host or interface"):
-        tftp.TFTPServer(root, host="localhost", port=0, interface=netimps.get_interface("127.0.0.1"))
+def test_a_host_name_is_not_resolved_for_listening(root):
+    with pytest.raises(ValueError, match="never resolved"):
+        tftp.TFTPServer(root, listen="localhost", port=0).bind()
+    with pytest.raises(ValueError, match="never resolved"):
+        TFTPRelay(("127.0.0.1", 9), listen="localhost", port=0).bind()
+    with pytest.raises(TypeError):  # a Host is something to connect to, not a binding
+        tftp.TFTPServer(root, listen=netimps.Host("127.0.0.1"), port=0).bind()
 
 
 # -- max_timeout ----------------------------------------------------------------
@@ -92,7 +79,7 @@ def test_client_refuses_malformed_host_port_text_before_sending():
 
 def test_server_refuses_a_bracketed_ipv4_address(root):
     with pytest.raises(ValueError):
-        tftp.TFTPServer(root, host="[10.0.0.5]", port=0).start()
+        tftp.TFTPServer(root, listen="[10.0.0.5]", port=0).start()
 
 
 def test_a_host_that_is_not_a_host_is_a_type_error():

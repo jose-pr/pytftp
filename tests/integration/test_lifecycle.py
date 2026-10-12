@@ -81,11 +81,11 @@ def free_port():
 
 def _server(port=0, **kwargs):
     kwargs.setdefault("timeout", 0.5)
-    return TFTPServer(MemoryBackend({"f": b"data"}), host="127.0.0.1", port=port, **kwargs)
+    return TFTPServer(MemoryBackend({"f": b"data"}), listen="127.0.0.1", port=port, **kwargs)
 
 
 def _relay(port=0, **kwargs):
-    return TFTPRelay(("127.0.0.1", 9), host="127.0.0.1", port=port, **kwargs)
+    return TFTPRelay(("127.0.0.1", 9), listen="127.0.0.1", port=port, **kwargs)
 
 
 @pytest.fixture(params=[_server, _relay], ids=["server", "relay"])
@@ -243,7 +243,7 @@ class _Closer:
 
 def test_a_handler_shuts_down_with_shutdown_and_cannot_close():
     handler = _Closer()
-    server = TFTPServer(handler, host="127.0.0.1", port=0, timeout=0.5)
+    server = TFTPServer(handler, listen="127.0.0.1", port=0, timeout=0.5)
     handler.server = server
     try:
         server.start()
@@ -329,9 +329,11 @@ def test_a_failure_part_way_through_start_leaves_nothing_open(monkeypatch, kind)
     selectors_made, pools, pairs = _fail_after_building(monkeypatch)
     port = free_port()
     if kind == "server":
-        service = TFTPServer(MemoryBackend({"f": b"data"}), host="127.0.0.1", port=port, open_in_thread=True)
+        service = TFTPServer(
+            MemoryBackend({"f": b"data"}), listen="127.0.0.1", port=port, open_in_thread=True
+        )
     else:
-        service = TFTPRelay(("127.0.0.1", 9), host="127.0.0.1", port=port)
+        service = TFTPRelay(("127.0.0.1", 9), listen="127.0.0.1", port=port)
     with pytest.raises(OSError, match="register refused"):
         service.start()
     (selector,) = selectors_made
@@ -400,7 +402,7 @@ async def waits(awaitable, what, seconds=WAIT):
 def _async_server(port=0, **kwargs):
     kwargs.setdefault("timeout", 0.5)
     return AsyncTFTPServer(
-        ThreadedHandler(MemoryBackend({"f": b"data"})), host="127.0.0.1", port=port, **kwargs
+        ThreadedHandler(MemoryBackend({"f": b"data"})), listen="127.0.0.1", port=port, **kwargs
     )
 
 
@@ -409,7 +411,7 @@ async def _no_route(request, context):
 
 
 def _async_relay(port=0, **kwargs):
-    return AsyncTFTPRelay(_no_route, host="127.0.0.1", port=port, **kwargs)
+    return AsyncTFTPRelay(_no_route, listen="127.0.0.1", port=port, **kwargs)
 
 
 @pytest.fixture(params=[_async_server, _async_relay], ids=["server", "relay"])
@@ -645,7 +647,7 @@ def test_cancelling_serve_forever_ends_each_transfer_in_flight(loop_factory):
     async def main():
         ends = []
         upstream, client = await _Peer.open(), await _Peer.open()
-        relay = AsyncTFTPRelay(upstream.address, host="127.0.0.1", port=0, on_session_end=ends.append)
+        relay = AsyncTFTPRelay(upstream.address, listen="127.0.0.1", port=0, on_session_end=ends.append)
         relay.bind()
         serving = asyncio.ensure_future(relay.serve_forever())
         try:
@@ -672,7 +674,7 @@ def test_aclose_with_a_transfer_in_flight_ends_it_and_frees_the_port(loop_factor
     async def main():
         ends = []
         upstream, client = await _Peer.open(), await _Peer.open()
-        relay = AsyncTFTPRelay(upstream.address, host="127.0.0.1", port=0, on_session_end=ends.append)
+        relay = AsyncTFTPRelay(upstream.address, listen="127.0.0.1", port=0, on_session_end=ends.append)
         await waits(relay.start(), "start")
         port = relay.server_address[1]
         await _in_flight(relay, upstream, client)
@@ -696,7 +698,7 @@ def test_a_relayed_transfer_starts_no_thread_but_the_proactor_loops_notifier(loo
     async def main():
         upstream, client = await _Peer.open(), await _Peer.open()
         before = {t.name for t in threading.enumerate()}
-        relay = AsyncTFTPRelay(upstream.address, host="127.0.0.1", port=0, linger=0.1)
+        relay = AsyncTFTPRelay(upstream.address, listen="127.0.0.1", port=0, linger=0.1)
         await waits(relay.start(), "start")
         await _in_flight(relay, upstream, client)
         seen["during"] = sorted({t.name for t in threading.enumerate()} - before)
@@ -712,7 +714,7 @@ def test_a_relayed_transfer_starts_no_thread_but_the_proactor_loops_notifier(loo
 
 
 async def _started_relay(route, **kwargs):
-    relay = AsyncTFTPRelay(route, host="127.0.0.1", port=0, **kwargs)
+    relay = AsyncTFTPRelay(route, listen="127.0.0.1", port=0, **kwargs)
     await waits(relay.start(), "start")
     return relay
 

@@ -171,7 +171,7 @@ def test_relay_port_range(root, make_server):
     events = []
     relay = TFTPRelay(
         ("127.0.0.1", upstream.server_address[1]),
-        host="127.0.0.1",
+        listen="127.0.0.1",
         port=0,
         port_range=ports,
         trace=events.append,

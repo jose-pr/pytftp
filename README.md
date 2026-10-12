@@ -38,8 +38,8 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
   window after it), exponential backoff, gap detection inside a window, repeated OACKs tolerated, ERROR 5 for stray
   packets without disturbing the transfer, dallying on the last ACK. The
   engine is tested over a simulated lossy link and fuzzed.
-- **IPv4 and IPv6** — dual-stack listening by default; v4 clients are served
-  from plain v4 sockets.
+- **IPv4 and IPv6** — listens on every address of both families by default; `listen=` names
+  addresses, adapters or MACs instead.
 - **Replies from the request's address** — on a multi-homed host or a VIP,
   each transfer answers from the address the request was sent to (pktinfo,
   via [netimps](https://github.com/jose-pr/netimps)); tested on Linux and
@@ -127,7 +127,6 @@ import tftp
 
 server = tftp.TFTPServer(
     "/srv/tftp",
-    host="::",
     port=69,
     writable=True,
     options=tftp.TFTPServerOptions(max_blksize=8192, max_windowsize=32),
