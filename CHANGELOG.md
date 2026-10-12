@@ -55,6 +55,24 @@ differs and "Fixed" the defects corrected on the way.
   address in the capture. Reads only by default; `writes=True` / `--writes` also uploads what the
   capture holds of each write, which overwrites a file on the server, and a write the capture
   holds only partly is never replayed. It returns `ReplayedTransfers(results, skipped)`.
+  `pytftp replay` is pktcap's `Replay` command subclassed (`ReplayCmd(pktcap.cli.Replay)`, with the plugin
+  `tftp.capture` always loaded): `--input`/`-i FILE` and `--to HOST[:PORT]` (port 69 when left out),
+  `--request-port`, `--writes`, `--speed`, `--max-delay`, `--limit` (counts transfers), `--timeout`/`-t`,
+  `--retries`/`-r`, `--json`, `--no-delay`, `--filter`/`-f` (which frames reach the tracker) and `--load`.
+  `--source-port` and `--broadcast` are refused by the parser: no captured datagram is sent, a client asks
+  again.
+- **pktcap is an optional dependency, the `pktcap` extra** (`pip install "tftp[pktcap]"`); `dependencies`
+  names `netimps` alone. Importing `tftp`, `tftp.capture` and `tftp.cli`, transferring, serving and
+  relaying need no pktcap. A function that reads, dissects, replays or writes a capture (`analyze` of a
+  path or a stream, `replay_transfers`, `dissect_tftp`, `register_tftp_dissector`, `pktcap_plugin`,
+  `trace_to`) raises `ImportError` with the line `captures need the 'pktcap' extra: pip install
+  "tftp[pktcap]"` when it is missing; `analyze` of datagrams needs none. `pytftp capture`,
+  `pytftp replay` and `--pcap` on `get`, `put`, `serve` and `relay` print that line on standard error
+  and end with status 1 before a socket is bound or a file created; `pytftp --help` still lists
+  `capture` and `replay`. `dev` installs `tftp[cli,path,pktcap]`.
+- `CapturedTransfer.write_to(directory)` writes a transfer's file under `directory`
+  whatever the capture called it, replacing the example in the capture guide that opened
+  the peer's file name and the command's own private copy.
 - `by_prefix` and `by_subnet` take `"KEY=HOST[:PORT]"` text in a sequence, in place of
   a pair.
 - `pytftp serve --max-duration SECONDS` (the longest a transfer may run),
@@ -82,8 +100,8 @@ differs and "Fixed" the defects corrected on the way.
   and (POSIX) a default file that is another user's or everyone may write are refused with status 2 and a line
   that names the file and holds no text of it; without the `pktcap` extra a `[capture]` or `[replay]` table is
   refused with the line that names the extra. The library reads no settings file. An on/off option now also has its opposite
-  (`--no-json`, `--no-trace`, `--no-write`, ... and `--tsize`, `--options`, `--create`, `--packets`,
-  `--delay` for the options that were `--no-X`), so the command line can switch off what a file switched on.
+  (`--no-json`, `--no-trace`, `--no-write`, ... and `--tsize`, `--options`, `--create` and
+  `--packets` for the options that were `--no-X`), so the command line can switch off what a file switched on.
 
 ### Changed
 
@@ -103,12 +121,11 @@ differs and "Fixed" the defects corrected on the way.
 - **`pytftp serve` and `pytftp relay` read `--listen` in that grammar**, repeatable or comma-joined, with `-p`
   the default port; a specification that names nothing bindable is one line and status 2. The settings file's
   `listen` key is a list of texts.
-- **`pytftp capture` and `pytftp replay` are pktcap's commands, subclassed** (`CaptureCmd(pktcap.cli.Capture)` and
-  `ReplayCmd(pktcap.cli.Replay)`, with the plugin `tftp.capture` always loaded), so reading a capture, the
-  filter, the output and what a capture command takes are pktcap's, and `pytftp capture` follows each
-  transfer across its ports with `follow_transfers`. A listing is pktcap's `text` output with
-  `TFTPLayer.summary()` after the addresses (`2023-11-14T22:13:20.512345Z 192.0.2.5:2000 > 192.0.2.1:69 tftp: [c1]
-  RRQ 'boot/ipxe.efi' octet`), the default of both. The exit statuses are pktcap's: a capture file that
+- **`pytftp capture` is pktcap's command, subclassed** (`CaptureCmd(pktcap.cli.Capture)`, with the plugin
+  `tftp.capture` always loaded), so reading a capture, the filter, the output and what a capture command takes
+  are pktcap's, and it follows each transfer across its ports with `follow_transfers`. A listing is pktcap's
+  `text` output with `TFTPLayer.summary()` after the addresses (`2023-11-14T22:13:20.512345Z 192.0.2.5:2000 >
+  192.0.2.1:69 tftp: [c1] RRQ 'boot/ipxe.efi' octet`), the default. The exit statuses are pktcap's: a capture file that
   cannot be opened or a destination that does not resolve is status 1, a file that is no capture or a
   value out of range 2, and a capture of a link type nothing dissects is status 0 with the count in the
   summary line on stderr. What moved:
@@ -122,26 +139,9 @@ differs and "Fixed" the defects corrected on the way.
   | `--json` and `--payload` | `--format json`: pktcap's record, with the `tftp` layer and its `session`, and a DATA's octets always |
   | `--transfers` on standard output (`--json`: an object each) | one readable line each on standard error; a machine reads the transfers from `FlowTracker` or `analyze` |
   | `--no-packets`, `--extract DIR`, `--port`/`-p` | unchanged |
-  | `warning: N of M frames not read: ...`, status 2 when every frame was of an unsupported link type | the count in the summary line on stderr (`3 frames read, 0 written, 3 skipped, 3 of an unsupported link type (105)`), status 0; `-q` drops it |
+  | nothing printed for a capture of a link type nothing dissects, status 0 | the count in the summary line on stderr (`3 frames read, 0 written, 3 skipped, 3 of an unsupported link type (105)`), status 0; `-q` drops it |
   | (new) | `--output`/`-o`, `--format`, `--per-record`, `--max-files`, `--datagrams`, `--append`, `--count`, `--duration`/`-d`, `--hook`, `--hook-fail-fast`, `--hook-timeout`, `--load` |
-  | (hidden, refused by the parser) | `--listen`: a socket on port 69 sees requests only, never a transfer's data, and takes the port a server needs |
 
-  | `pytftp replay` before | Now |
-  | --- | --- |
-  | the positionals `SOURCE` and `HOST`, `--port`/`-p` | `--input`/`-i FILE` and `--to HOST[:PORT]` (port 69 when left out) |
-  | `--request-port`, `--writes`, `--speed`, `--max-delay`, `--limit`, `--timeout`/`-t`, `--retries`/`-r`, `--json` | unchanged; `--limit` counts transfers |
-  | (new) | `--no-delay`, `--filter`/`-f` (which frames reach the tracker), `--load` |
-  | (hidden, refused by the parser) | `--source-port` and `--broadcast`: no captured datagram is sent, a client asks again |
-
-- **pktcap is an optional dependency, the `pktcap` extra** (`pip install "tftp[pktcap]"`); `dependencies`
-  names `netimps` alone. Importing `tftp`, `tftp.capture` and `tftp.cli`, transferring, serving and
-  relaying need no pktcap. A function that reads, dissects, replays or writes a capture (`analyze` of a
-  path or a stream, `replay_transfers`, `dissect_tftp`, `register_tftp_dissector`, `pktcap_plugin`,
-  `trace_to`) raises `ImportError` with the line `captures need the 'pktcap' extra: pip install
-  "tftp[pktcap]"` when it is missing; `analyze` of datagrams needs none. `pytftp capture`,
-  `pytftp replay` and `--pcap` on `get`, `put`, `serve` and `relay` print that line on standard error
-  and end with status 1 before a socket is bound or a file created; `pytftp --help` still lists
-  `capture` and `replay`. `dev` installs `tftp[cli,path,pktcap]`.
 - **The `path` extra needs pathlib-next 0.9.13**: `pathlib-next[uri]>=0.9.13,<0.10`, where it
   was `>=0.9.0,<0.10`. From 0.9.12 `copy(overwrite=True)` asks its target to
   `unlink(missing_ok=True)`, which a TFTP path answers by doing nothing, and 0.9.13 types the
@@ -278,7 +278,7 @@ differs and "Fixed" the defects corrected on the way.
   `netimps._sockets`; `tftp` no longer logs it at `DEBUG`.
 - On Windows an address the system marks tentative or duplicate (the
   169.254.x.x of a media-disconnected adapter) is no longer one of an
-  adapter's addresses, so `TFTPServer(interface=...)` does not consider it.
+  adapter's addresses, so `listen=` with an adapter name does not consider it.
 - Every exception the library raises on its own account is defined in
   `tftp.exceptions` and is a `TFTPError`: `TFTPDecodeError` (bytes that are not
   a packet) was a plain `ValueError` subclass and is now a `TFTPError` as well,
@@ -351,8 +351,8 @@ differs and "Fixed" the defects corrected on the way.
 - **`AsyncTFTPClient` is a sibling of `TFTPClient`, not a subclass.** Both derive
   from a private base that holds the arguments, the request options and the
   answer to the first packet, and neither has the other's methods:
-  `issubclass(AsyncTFTPClient, TFTPClient)` is false, and `AsyncTFTPClient` no
-  longer has a `path()` that raises `TypeError` (a `TFTPPath` is synchronous;
+  `issubclass(AsyncTFTPClient, TFTPClient)` is false, and `AsyncTFTPClient` has
+  no `path()` (a `TFTPPath` is synchronous;
   use `TFTPClient(...).path(...)`). The twin is exported from `tftp` and
   `tftp.client`, beside `TFTPClient`, and no longer from `tftp.aio`, which
   keeps `AsyncTFTPServer` alone. `AsyncReaderBridge`, `AsyncWriterBridge`,
@@ -441,9 +441,6 @@ differs and "Fixed" the defects corrected on the way.
   saw: past `max_tracked`, the finished transfer quiet for longest (else the quietest) is
   handed to `on_complete` and dropped. `analyze()` and `max_tracked=None` keep everything.
   `pytftp capture` summarises and writes a transfer when the tracker lets it go.
-- **`CapturedTransfer.write_to(directory)`** writes a transfer's file under `directory`
-  whatever the capture called it, replacing the example in the capture guide that opened
-  the peer's file name and the command's own private copy.
 - **The implementation modules are private.** Inside `tftp.packet`, `tftp.options`,
   `tftp.transfer`, `tftp.relay`, `tftp.backends`, `tftp.path`, `tftp.capture` (events, filters,
   flows) and `tftp.server`, every module starts with an underscore
@@ -455,8 +452,7 @@ differs and "Fixed" the defects corrected on the way.
   and Windows). Every public callable is annotated, and every public annotation resolves
   with `typing.get_type_hints` on Python 3.9, except the signatures that name a netimps
   type (netimps is imported lazily) and `TFTPClient.path`. Where an annotation said more
-  than the code did, it now says what is true: the servers' and the relay's `listen=` is a
-  netimps `ListenLike` (an `int`, `bytes` or `Host` there is a `TypeError` from `bind()`); `by_interface` keys are `HostLike`, an `Interface` or an `int`;
+  than the code did, it now says what is true: `by_interface` keys are `HostLike`, an `Interface` or an `int`;
   `AsyncTFTPServer`'s keywords are spelled out instead of `**kwargs`; `Sender`, `Receiver`
   and `Transfer` take `backoff`, `max_timeout`, `expires` and `max_idle` as keyword
   parameters; `TFTPRequestContext.options` is a read-only mapping and
@@ -501,28 +497,26 @@ differs and "Fixed" the defects corrected on the way.
   what omitting a value means, and the `--port-range`, `--remap`, `--route-subnet` and
   `--route-prefix` errors name their flag.
 
-- **Reading a capture is pktcap's.** `pktcap>=0.1.0,<0.2` is the `pktcap` extra
-  (`pip install "tftp[pktcap]"`), imported inside the functions that use it, so importing `tftp`
-  or `tftp.capture` loads none of it. The reader, the frame decoder and live capture leave `tftp.capture`; where
-  each lives now (every one is imported from `pktcap`, and `tftp.capture` re-exports none):
+- **Reading a capture is pktcap's.** The reader, the frame decoder and live capture leave `tftp.capture` for
+  pktcap (the `pktcap` extra, above); where each lives now (every one is imported from `pktcap`, and
+  `tftp.capture` re-exports none):
 
   | Left | Now |
   | --- | --- |
   | `read_datagrams(source)` | `pktcap.read_datagrams(source, *, dissector=None, max_frame_size=262144)` |
   | `read_frames(source)`, which yielded `(time, linktype, frame)` | `pktcap.read_frames(source)`, which yields `pktcap.CapturedFrame(time, linktype, data, interface)` |
   | `FrameDecoder(linktype).decode(time, frame)` | `pktcap.FrameDissector().dissect(frame)`, which reads any link type |
-  | `UDPDatagram` (`UdpDatagram` in 0.0.0) | `pktcap.CapturedDatagram`, which adds `fragmented` and `truncated` |
+  | `UdpDatagram` | `pktcap.CapturedDatagram`, which adds `fragmented` and `truncated` |
   | `LINKTYPES` | `pktcap.LINKTYPES` |
   | `sniff(interface, *, stop)` | `pktcap.sniff(interface, *, stop, dissector)` |
   | `live_capture_supported()` | `pktcap.has_live_capture()` |
   | the modules `tftp.capture.frames` and `tftp.capture.live` | gone |
-  | `CaptureFormatError` (`tftp.capture`, `tftp.exceptions`) | `pktcap.CaptureFormatError` |
-  | `CaptureFilterError` (`tftp.capture`, `tftp.exceptions`) | `pktcap.CaptureFilterError` |
+  | `CaptureFormatError` (`tftp.capture`) | `pktcap.CaptureFormatError` |
+  | `FilterError` (`tftp.capture`) | `pktcap.CaptureFilterError` |
   | `PcapWriter`, itself a trace hook; the module `tftp.capture.pcap` | `pktcap.PcapWriter(target)` (or `pktcap.PcapngWriter`) in `trace=trace_to(writer)`; the module is gone |
 
-  `CaptureFormatError` is no longer a `TFTPError`: `analyze()` and `pytftp capture` let
-  pktcap's through, a `ValueError`, so `except TFTPError` does not catch an unreadable
-  capture and `except ValueError` does. `FlowTracker.feed(datagram)` and `feed_all` take
+  `analyze()` and `pytftp capture` let pktcap's `CaptureFormatError` through; it is a `ValueError`, as
+  it was. `FlowTracker.feed(datagram)` and `feed_all` take
   anything with `time`, `source`, `destination` and `payload` (`tftp.capture.DatagramLike`,
   new), and `analyze(source)` a path, a stream or an iterable of those.
   The filter grammar is pktcap's (`pktcap.parse_capture_filter`, `compile_capture_filter`), and this
@@ -610,18 +604,18 @@ Old names are not kept as aliases.
 | `Route` (`tftp.relay`, the callable's type) | `RouteFunction` |
 | `tftp.DEFAULT`, `tftp.STRICT`, `tftp.PXE`, `tftp.HPA`, `tftp.LEGACY` | `Profile.DEFAULT`, `Profile.STRICT`, `Profile.PXE`, `Profile.HPA`, `Profile.LEGACY` (`PROFILES[name]` is unchanged) |
 | `supports_pktinfo` (property of the servers and the relay) | `has_pktinfo` |
-| `TFTPServer.stop(timeout)`, `TFTPRelay.stop(timeout)`, `await AsyncTFTPServer.stop()` | `shutdown()`, then `wait_closed(timeout)` |
-| `await AsyncTFTPServer.close()` | `await AsyncTFTPServer.aclose()` |
-| `tftp.aio.AsyncTFTPServer` | `tftp.AsyncTFTPServer`, `tftp.server.AsyncTFTPServer` |
+| `Server.stop(timeout)`, `Relay.stop(timeout)`, `await AsyncServer.stop()` | `shutdown()`, then `wait_closed(timeout)` |
+| `await AsyncServer.close()` | `await AsyncTFTPServer.aclose()` |
+| `tftp.aio.AsyncServer` | `tftp.AsyncTFTPServer`, `tftp.server.AsyncTFTPServer` |
 | `TransferResult.ok`, `CapturedTransfer.complete`, `Transfer.done`, `Transfer.stalled` | `is_ok`, `is_complete`, `is_done`, `is_stalled` (the `"ok"` and `"complete"` keys of the command line's and `CapturedTransfer`'s dictionaries are unchanged) |
-| `TFTPClient(max_duration=)` | `deadline=` |
-| `TFTPRelay(max_lifetime=)` | `max_duration=` |
-| `download(host, filename, dest)`, `download_url(url, dest)`, `TFTPClient.download(filename, dest)` | `dst` |
-| `upload(host, filename, source)`, `TFTPClient.upload(filename, source)` | `src` |
-| `TFTPRelay(upstream_source=)` | `upstream_src=` |
-| `TFTPClient(local_address=)` (`client.local_address`) | `src=` (`client.src`) |
+| `Client(max_duration=)`, `AsyncClient(max_duration=)` | `deadline=` |
+| `Relay(max_lifetime=)` | `max_duration=` |
+| `download(host, filename, dest)`, `download_url(url, dest)`, `Client.download(filename, dest)` | `dst` |
+| `upload(host, filename, source)`, `Client.upload(filename, source)` | `src` |
+| `Relay(upstream_source=)` | `upstream_src=` |
+| `Client(local_address=)` (`client.local_address`) | `src=` (`client.src`) |
 | the type aliases `PathOrFile`, `Progress` (`tftp.client`), `SendFn` (`tftp.transfer`), `Predicate` (`tftp.capture`) | `SinkLike` and `SourceLike`, `ProgressFunction`, `SendFunction`; `Predicate` goes with the filter (see "Removed") |
-| `read_datagrams`, `read_frames`, `FrameDecoder`, `UDPDatagram`, `LINKTYPES`, `sniff`, `live_capture_supported`, `CaptureFormatError`, `CaptureFilterError`, `PcapWriter` (`tftp.capture`) | pktcap's own, each named in the table under "Reading a capture is pktcap's" |
+| `read_datagrams`, `read_frames`, `FrameDecoder`, `LINKTYPES`, `sniff`, `live_capture_supported`, `CaptureFormatError`, `PcapWriter` (`tftp.capture`) | pktcap's own, each named in the table under "Reading a capture is pktcap's" |
 | `_tftp_fast_open_`, `_tftp_copies_`, `_tftp_listing_` (marker attributes of a handler or stream) | `opens_fast`, `copies_writes`, `lists_directories` |
 | entry point `pytftp = "tftp.cli:run"` | `pytftp = "tftp.cli:main"` |
 
@@ -629,9 +623,9 @@ Old names are not kept as aliases.
 
 - **`host=` and `interface=` of `TFTPServer`, `AsyncTFTPServer`, `TFTPRelay` and `AsyncTFTPRelay`, `--interface` of
   `pytftp serve` and `pytftp relay`** (the parser refuses it; the settings file no longer takes `interface`), and
-  `TFTPServer.is_dual_stack`. `listen=` names an address (what `host=` was) or an adapter (what `interface=` was,
+  `dual_stack` (the property of the servers). `listen=` names an address (what `host=` was) or an adapter (what `interface=` was,
   `listen="eth1"`); nothing is dual-stack any more. A host that listens on both families needs no argument.
-- **The capture filter of `tftp.capture`: `compile_filter`, `EventPredicate`, `FILTER_KEYS` and the
+- **The capture filter of `tftp.capture`: `compile_filter`, `Predicate`, `FILTER_KEYS` and the
   `filter=` argument of `analyze`.** What a filter does is pktcap's:
   `pktcap.compile_capture_filter(text, pktcap.frame_filter_for(registry))` over the frames of
   `pktcap.read_dissected`, with the keys of `pktcap_plugin` (`op`, `file`, `block`, `code`, `session`) once
@@ -652,7 +646,7 @@ Old names are not kept as aliases.
   as importable names: `tftp.cli` exports `main` and nothing else.
 - The capture reader, the frame decoder and live capture, and the modules `tftp.capture.pcap`,
   `tftp.capture.frames` and `tftp.capture.live`: they are pktcap's (the table under "Reading a capture is
-  pktcap's"). `CaptureFormatError` and `CaptureFilterError` leave `tftp.exceptions` with them.
+  pktcap's").
 - `PacketEvent.format()` (use `str(event)`), `CapturedTransfer.bytes` (use `size`), `PortRange.of`,
   `PortRange.ordered()` and `PortRange.taken()`.
 
@@ -672,22 +666,21 @@ Old names are not kept as aliases.
   `struct.error` and `pytftp capture` printed a traceback and exited 1; it prints one
   `error:` line and exits 2.
 - **`pytftp capture` says when it could not read a frame.** A capture of a link type nothing
-  dissects (802.11, link type 105) printed nothing and exited 0, as an empty capture does; it
-  prints one `warning: N of M frames not read: ...` line on stderr with the count and the
-  link-type numbers (and the count of frames too short for their headers), and exits 2 when
-  every frame was of an unsupported link type. A capture with a few such frames among
-  readable ones prints the line and keeps its status.
+  dissects (802.11, link type 105) printed nothing and exited 0, as an empty capture does; the
+  summary line on stderr now holds the count and the link-type numbers (`3 frames read, 0 written,
+  3 skipped, 3 of an unsupported link type (105)`), and the status stays 0; `-q` drops the line.
 - **A datagram a capture's snap length cut is no longer read as a short final DATA.**
   A cut DATA shorter than the block size ended its transfer as complete and `--extract`
   wrote a short file under the full name. `FlowTracker` counts a datagram whose `truncated`
   is true as a packet and does not place it: the transfer is incomplete, its block is in
   `missing_blocks`, and the file is written with `.partial`. `DatagramLike` has `truncated`
   as an optional member (absent means whole). `missing_blocks` also names a cut block that
-  is the highest one seen.- **IP fragments cost time in proportion to their number.** Once the last fragment of a
+  is the highest one seen.
+- **IP fragments cost time in proportion to their number.** Once the last fragment of a
   datagram was seen, each later one re-sorted and re-copied every piece (8,000 fragments of
   one datagram took 3.7 s); a reassembly is also bounded in octets, in fragments and in
   capture time.
-- **`pytftp capture -i NAME` for an interface that does not exist is one `error:` line and
+- **`pytftp capture --interface NAME` for an interface that does not exist is one `error:` line and
   status 2**, where it was a traceback.
 - **On Windows a finished download or upload no longer fails when a virus scanner holds the
   new file.** The rename of the temporary file into place was refused with "access denied"
@@ -803,9 +796,6 @@ Old names are not kept as aliases.
   returned at once after serving before, or never returned when it had not. A
   second `start()` raises `RuntimeError`, where the asynchronous one started a
   second serving task and made `close()` wait for ever.
-- `await server.aclose()` from another task ends a running
-  `AsyncTFTPServer.serve_forever()` without an exception: it raised
-  `RuntimeError: endpoint is closed` from netimps.
 - A server or relay whose startup fails part-way (a selector registration, a
   socket pair, a worker pool) closes what it had opened: the constructor used to
   leave the listening socket, the selector, the socket pair and the pool behind.
@@ -832,7 +822,7 @@ Old names are not kept as aliases.
 - A `TFTPPath` bound to an `AsyncTFTPClient` returned wrong results without
   raising (`read_bytes()` gave `b""`, `write_bytes()` reported success, and
   nothing was sent: the client's coroutines were never awaited).
-  `AsyncTFTPClient.path()` raises `TypeError`, and `TFTPPath`, `TFTPURIPath`
+  `AsyncTFTPClient` has no `path()`, and `TFTPPath`, `TFTPURIPath`
   (through `with_client()` and `with_backend()`) refuse an asyncio client with
   `TypeError`.
 - A server named by a link-local IPv6 address with a zone (`fe80::1%7`) was
