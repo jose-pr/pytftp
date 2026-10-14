@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The `cli` extra requires `duho>=0.7.4,<0.8`.** With it every error of the settings file is one
+  line and status 2: a key or a table nobody has, and a key a command does not have, no longer print the
+  usage lines before the line that names the file and the key. A `config` key in the file is refused by
+  duho's own check, in its words (`pytftp: error: duho: config file <file>: unknown key 'config'`).
 
 ## [0.1.0] - 2026-10-12
 

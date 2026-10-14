@@ -335,6 +335,7 @@ def test_what_nothing_has_is_status_2_with_the_key_named_and_no_value_of_the_fil
 ):
     path = write(tmp_path, "a.ini", text)
     err = refused(capsys, "--loglevel", "TRACE", "-c", path, "serve", str(tmp_path))
+    assert len(err.splitlines()) == 1, err  # duho's check: no usage lines before it
     assert needle in err and path in err and MARKER not in err
     assert stopped == []
 

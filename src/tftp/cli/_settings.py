@@ -79,11 +79,10 @@ def read_settings(path: _pathlib.Path, source: str) -> _ty.Any:
     """The settings ``path`` holds, for duho's layout: top-level keys for the root, a table for each command.
 
     ``source`` is where duho got the path: ``"default"`` is the user's own file, which is checked first; any
-    other is a file the user named, read as it is. Duho's ``_config_validate_`` refuses what nothing has. This
-    refuses a ``config`` key, which names the file and is no setting, and a table for a command whose extra is
-    missing.
+    other is a file the user named, read as it is. Duho's ``_config_validate_`` refuses what nothing has, a
+    ``config`` key among it. This refuses a table for a command whose extra is missing.
 
-    :raises ValueError: a file that is not trusted or over :data:`MAX_OCTETS`, or a key as above, each with one
+    :raises ValueError: a file that is not trusted or over :data:`MAX_OCTETS`, or a table as above, each with one
         line that names the file and holds no value of it. A document that is not valid is duho's
         ``ConfigError``, a ``ValueError`` whose message holds the position and never a value.
     """
@@ -92,11 +91,8 @@ def read_settings(path: _pathlib.Path, source: str) -> _ty.Any:
     stream = _io.BytesIO(_octets(path, source == "default"))
     stream.name = str(path)  # the file is read once, here, and named for duho's backend
     data = backend_for(path).load(stream)
-    if hasattr(data, "keys"):
-        if "config" in data:
-            raise ValueError("%s: unknown key 'config'" % path)
-        if not have_pktcap():
-            for name in _NEEDS_PKTCAP:
-                if name in data:
-                    raise ValueError("%s: the table [%s]: %s" % (path, name, PKTCAP_LINE))
+    if hasattr(data, "keys") and not have_pktcap():
+        for name in _NEEDS_PKTCAP:
+            if name in data:
+                raise ValueError("%s: the table [%s]: %s" % (path, name, PKTCAP_LINE))
     return data

@@ -173,9 +173,9 @@ format = json
   the file, the default. A nearer layer replaces a farther one for that option only, so lists do not add up.
   Every on/off option has its opposite for the argument to switch off what the file switched on: `--no-X` for
   `--X`, and `--X` for an option that is `--no-X` (`--tsize`, `--options`, `--create`, `--packets`, `--delay`).
-- **Refused**, status 2, with a line that names the file and holds no value of it: a key or table nobody has
-  and a key a command does not have (duho's check: the usage lines, then the key by its dotted path, as
-  `serve.bogus`), a `config` key, an invalid document, a file over 65,536 octets, and without the `pktcap`
+- **Refused**, status 2, with one line that names the file and holds no value of it: a key or table nobody
+  has and a key a command does not have (duho's check: the key by its dotted path, as `serve.bogus`), a
+  `config` key, an invalid document, a file over 65,536 octets, and without the `pktcap`
   extra a `[capture]` or `[replay]` table (the line names the extra). A named file that does not exist is
   status 2 from `--config` and 1 from the variable.
 - **The tables of `capture` and `replay`** take pktcap's options too (`load`, `filter`, `format`, ...); the

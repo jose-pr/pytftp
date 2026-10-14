@@ -64,10 +64,9 @@ $ pytftp -c pytftp.ini serve /srv/tftp
   `config` extra) and YAML (`.yaml`, `.yml`; duho's `yaml` extra). The ending picks the format and any other
   ending is refused. duho's own reference, the `AGENTS.md` inside the installed `duho` package, describes
   each, and the INI dialect in particular.
-- **Refused**, status 2, with a line that names the file and holds no value of it: a key or a table nobody
+- **Refused**, status 2, with one line that names the file and holds no value of it: a key or a table nobody
   has (a misspelling would otherwise be ignored in silence), a key a command does not have (`get.max_sessions`
-  for `max_sessions` in `[get]`), a `config` key, a document that is not valid, a file over 65,536 octets. The
-  usage lines come before the line of a key. A named file that does not exist is status 2 from `--config` and 1 from the
+  for `max_sessions` in `[get]`), a `config` key, a document that is not valid, a file over 65,536 octets. A named file that does not exist is status 2 from `--config` and 1 from the
   variable. Without the `pktcap` extra a `[capture]` or `[replay]` table is refused with the line that names
   the extra.
 - **The command's options only.** The file sets what an option already sets; the `capture` and `replay`
