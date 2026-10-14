@@ -3,6 +3,24 @@
 The detailed companion to [CHANGELOG.md](CHANGELOG.md): benchmark history,
 caveats and the evidence behind each release.
 
+## [0.1.1] - 2026-10-14
+
+A dependency release: the `cli` extra requires `duho>=0.7.4,<0.8`. With it every error of a settings
+file is one line and status 2; a key nobody has no longer prints the usage lines first. Nothing else
+differs from 0.1.0.
+
+### How it was checked
+
+Measured on 2026-10-14 at commit `5086674`, with netimps 0.4.1, pktcap 0.1.1, duho 0.7.4 and
+pathlib-next 0.9.14, each as published.
+
+- **Windows on ARM64:** 3,363 passed, 84 skipped, 2 expected failures on Python 3.14; 3,332 passed, 115
+  skipped, 2 expected failures on Python 3.9.
+- **Linux** (Fedora 44 under WSL2), Python 3.14 and 3.9: 3,194 passed, 97 skipped, 2 expected failures.
+- **Intel macOS 15.7**, Python 3.9: 3,167 passed, 124 skipped, 2 expected failures. **FreeBSD 16.0**,
+  Python 3.11, an unprivileged account: 3,163 passed, 128 skipped, 2 expected failures.
+- **The hosted matrix**, the same 21 jobs as for 0.1.0: green.
+
 ## [0.1.0] - 2026-10-12
 
 ### Upgrading from 0.0.0
