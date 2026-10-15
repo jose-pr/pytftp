@@ -1,23 +1,22 @@
-"""``TFTPURIPath``: the ``tftp://`` scheme for pathlib_next's ``UriPath``.
+"""``TFTPURIPath``: the ``tftp://`` scheme for uripath's ``URIPath``.
 
-Registered both by class definition and through the ``pathlib_next.schemes``
-entry point, so ``pathlib_next.uri.UriPath("tftp://host/boot/x")`` returns a
-``TFTPURIPath`` without importing ``tftp`` first, and ``copy()``/``move()``
-cross between ``tftp:``, ``file:``, ``http:``, ``s3:``...
+Registered both by class definition and through the ``uripath.schemes`` entry
+point, so ``uripath.URIPath("tftp://host/boot/x")`` returns a ``TFTPURIPath``
+without importing ``tftp`` first, and ``copy()``/``move()`` cross between
+``tftp:``, ``file:``, ``http:``, ``s3:``...
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterator, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 from urllib.parse import quote
 
-from pathlib_next.uri import UriPath
-from pathlib_next.utils.stat import FileStat
+from uripath.schemes import DelegatingURIPath
 
 from ..client._sync import TFTPClient
 from ..exceptions import TFTPValueError
 from .._uri import _client_keywords_over, _decode, _normal_mode, _normal_options, _split_parameters
-from ._local import check_client, tftp_open, tftp_scandir, tftp_stat, tftp_unlink
+from ._local import TFTPPath, check_client
 
 __all__ = ["TFTPURIPath"]
 
@@ -27,9 +26,9 @@ class _TFTPBackend:
 
     Created from the URI's host and port with default settings, or supplied
     with ``path.with_options(blksize=8192, windowsize=16)`` /
-    ``path.with_backend(_TFTPBackend(client))``. ``explicit`` holds the keywords
-    the client was built from, which win over a URI's own options; ``None``
-    for a client that was supplied, which a URI's options never change.
+    ``path.with_client(client)``. ``explicit`` holds the keywords the client
+    was built from, which win over a URI's own options; ``None`` for a client
+    that was supplied, which a URI's options never change.
     """
 
     __slots__ = ("client", "explicit", "__weakref__")
@@ -39,7 +38,7 @@ class _TFTPBackend:
         self.explicit = None if explicit is None else dict(explicit)
 
 
-class TFTPURIPath(UriPath):
+class TFTPURIPath(DelegatingURIPath):
     """A file named by a ``tftp://host[:port]/path[;mode=netascii]`` URI (RFC 3617).
 
     The filename sent is the path after the authority's ``/``; a
@@ -49,14 +48,15 @@ class TFTPURIPath(UriPath):
     path is decoded before it is read, so a ``;`` in a file name or in a
     parameter's value cannot be told from a delimiter: spell such a value in
     the query. Options built with ``with_options`` win over the URI's own,
-    and a client given to ``with_client`` is used as it is. Same
-    operations as :class:`TFTPPath`: whole-file reads and writes, ``stat()``
-    by probe, ``exists()``, and listing against a server speaking ``x-list``;
-    no deleting or renaming.
+    and a client given to ``with_client`` is used as it is. The operations are
+    those of :class:`TFTPPath`, which does them: whole-file reads and writes,
+    ``stat()`` by probe, ``exists()``, and listing against a server speaking
+    ``x-list``; no deleting or renaming.
     """
 
     __SCHEMES = ("tftp",)
     __slots__ = ()
+    _DELEGATED = ("_scandir", "_listdir", "_open", "unlink")
 
     def _initbackend(self) -> _TFTPBackend:
         source = self.source
@@ -107,6 +107,10 @@ class TFTPURIPath(UriPath):
             source.host or "", source.port or 69, **_client_keywords_over(options, backend.explicit)
         )
 
+    def _make_core(self) -> TFTPPath:
+        filename, mode, options = self._parts()
+        return TFTPPath(filename, client=self._client_for(options), mode=mode)
+
     @property
     def filename(self) -> str:
         return self._parts()[0]
@@ -114,22 +118,3 @@ class TFTPURIPath(UriPath):
     @property
     def transfer_mode(self) -> str:
         return self._parts()[1]
-
-    def stat(self, *, follow_symlinks: bool = True) -> FileStat:
-        filename, mode, options = self._parts()
-        return tftp_stat(self._client_for(options), filename, mode, self)
-
-    def _open(self, mode: str = "r", buffering: int = -1) -> Any:
-        filename, transfer_mode, options = self._parts()
-        return tftp_open(self._client_for(options), filename, transfer_mode, mode, self)
-
-    def unlink(self, missing_ok: bool = False) -> None:
-        tftp_unlink(self, missing_ok)
-
-    def _scandir(self) -> Iterator[Tuple[str, FileStat]]:
-        filename, _, options = self._parts()
-        return tftp_scandir(self._client_for(options), filename, self)
-
-    def _listdir(self) -> Iterator[str]:
-        for name, _ in self._scandir():
-            yield name

@@ -113,7 +113,7 @@ def test_async_server_lists(root):
 
 
 def test_tftp_path_walk_glob_and_stat(root, server):
-    pytest.importorskip("pathlib_next")
+    pytest.importorskip("pathapi")
     client = client_for(server)
     top = client.path("")
     assert {p.name for p in top.iterdir()} == {p.name for p in root.iterdir()}
@@ -125,12 +125,12 @@ def test_tftp_path_walk_glob_and_stat(root, server):
 
 
 def test_uri_path_listing(root, server, tmp_path_factory):
-    pytest.importorskip("pathlib_next")
-    pytest.importorskip("uritools")
-    from pathlib_next import LocalPath
-    from pathlib_next.uri import UriPath
+    pytest.importorskip("pathapi")
+    pytest.importorskip("uripath")
+    from pathapi import LocalPath
+    from uripath import URIPath
 
-    base = UriPath("tftp://127.0.0.1:%d/" % server.server_address[1])
+    base = URIPath("tftp://127.0.0.1:%d/" % server.server_address[1])
     assert "sub" in {p.name for p in base.iterdir()}
     assert (base / "sub").is_dir()
     target = LocalPath(tmp_path_factory.mktemp("tree") / "copy")

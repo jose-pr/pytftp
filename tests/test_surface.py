@@ -11,7 +11,8 @@ import pytest
 
 from surface import EXPECTED
 
-pytest.importorskip("pathlib_next")
+pytest.importorskip("pathapi")
+pytest.importorskip("uripath")
 
 #: Root names whose home is not a module of EXPECTED: the version, and the URL and result
 #: types, which have no module path of their own.

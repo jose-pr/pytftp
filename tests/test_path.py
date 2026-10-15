@@ -7,14 +7,13 @@ import os
 
 import pytest
 
-pytest.importorskip("pathlib_next")
-pytest.importorskip("uritools")
+pytest.importorskip("pathapi")
+pytest.importorskip("uripath")
 
 import tftp  # noqa: E402
 from conftest import client_for  # noqa: E402
-from pathlib_next import LocalPath  # noqa: E402
-from pathlib_next.mempath import MemPath  # noqa: E402
-from pathlib_next.uri import UriPath  # noqa: E402
+from pathapi import LocalPath, MemPath  # noqa: E402
+from uripath import URIPath  # noqa: E402
 from tftp.path import TFTPPath, TFTPURIPath  # noqa: E402
 
 
@@ -95,28 +94,30 @@ def test_copy_between_tftp_local_and_memory(root, server, tmp_path_factory):
 
 def test_uri_path(root, server, tmp_path_factory):
     base = "tftp://127.0.0.1:%d/" % server.server_address[1]
-    path = UriPath(base + "big.bin")
+    path = URIPath(base + "big.bin")
     assert isinstance(path, TFTPURIPath)
     assert path.read_bytes() == (root / "big.bin").read_bytes()
     assert path.stat().st_size == 300_001 and path.exists()
-    assert not UriPath(base + "nope").exists()
+    assert not URIPath(base + "nope").exists()
     tuned = path.with_options(blksize=8192, windowsize=8, timeout=0.5)
     assert tuned.read_bytes() == (root / "big.bin").read_bytes()
-    assert UriPath(base + "text.txt;mode=netascii").read_bytes() == (root / "text.txt").read_bytes()
-    UriPath(base + "uri-up.bin").write_bytes(b"over a uri")
+    assert URIPath(base + "text.txt;mode=netascii").read_bytes() == (root / "text.txt").read_bytes()
+    URIPath(base + "uri-up.bin").write_bytes(b"over a uri")
     assert (root / "uri-up.bin").read_bytes() == b"over a uri"
     target = tmp_path_factory.mktemp("uri") / "out.bin"
-    path.copy(UriPath(target.as_uri()))  # tftp: -> file:
+    path.copy(URIPath(target.as_uri()))  # tftp: -> file:
     assert target.read_bytes() == (root / "big.bin").read_bytes()
     with pytest.raises(FileNotFoundError):
-        list(UriPath(base + "sub/").iterdir())
+        list(URIPath(base + "sub/").iterdir())
 
 
 def test_client_path_needs_no_pathlib_import_until_used():
     import subprocess
     import sys
 
-    code = "import sys, tftp; assert 'pathlib_next' not in sys.modules; print('ok')"
+    code = (
+        "import sys, tftp; assert 'pathapi' not in sys.modules and 'uripath' not in sys.modules; print('ok')"
+    )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert out.stdout.strip() == "ok", out.stderr
 
@@ -154,31 +155,31 @@ def test_a_path_refuses_an_asyncio_client_at_construction_and_in_with_client(ser
 def test_uri_path_options_move_the_transfer(root, spy_server):
     spy, base = spy_server()
     big = (root / "big.bin").read_bytes()
-    assert UriPath(base + "big.bin?blksize=512&windowsize=2&cookie=abc").read_bytes() == big
+    assert URIPath(base + "big.bin?blksize=512&windowsize=2&cookie=abc").read_bytes() == big
     wire = spy.requests[-1].options
     assert (wire["blksize"], wire["windowsize"], wire["cookie"]) == ("512", "2", "abc")
-    assert UriPath(base + "big.bin;blksize=1024;windowsize=4").read_bytes() == big
+    assert URIPath(base + "big.bin;blksize=1024;windowsize=4").read_bytes() == big
     wire = spy.requests[-1].options
     assert (wire["blksize"], wire["windowsize"]) == ("1024", "4")
-    UriPath(base + "uri-opts-up.bin;blksize=512;cookie=up").write_bytes(b"x" * 2000)
+    URIPath(base + "uri-opts-up.bin;blksize=512;cookie=up").write_bytes(b"x" * 2000)
     assert (root / "uri-opts-up.bin").read_bytes() == b"x" * 2000
     assert (spy.requests[-1].options["blksize"], spy.requests[-1].options["cookie"]) == ("512", "up")
 
 
 def test_uri_path_mode_and_name_come_from_the_parameters(root, spy_server):
     spy, base = spy_server()
-    path = UriPath(base + "sub/nested.bin;mode=netascii;blksize=512")
+    path = URIPath(base + "sub/nested.bin;mode=netascii;blksize=512")
     assert path.filename == "sub/nested.bin" and path.transfer_mode == "netascii"
     assert path.read_bytes() == b"nested"
     assert spy.requests[-1].mode == "netascii" and spy.requests[-1].filename == "sub/nested.bin"
-    query = UriPath(base + "sub/nested.bin?mode=netascii&blksize=512")
+    query = URIPath(base + "sub/nested.bin?mode=netascii&blksize=512")
     assert query.filename == "sub/nested.bin" and query.transfer_mode == "netascii"
-    assert UriPath(base + "one.bin").transfer_mode == "octet"
+    assert URIPath(base + "one.bin").transfer_mode == "octet"
 
 
 def test_uri_path_with_options_wins_over_the_uri(root, spy_server):
     spy, base = spy_server()
-    path = UriPath(base + "big.bin?blksize=512&windowsize=4")
+    path = URIPath(base + "big.bin?blksize=512&windowsize=4")
     tuned = path.with_options(blksize=1024, timeout=0.5)
     assert tuned.read_bytes() == (root / "big.bin").read_bytes()
     wire = spy.requests[-1].options
@@ -199,7 +200,7 @@ def test_uri_path_refuses_what_the_url_grammar_refuses(root, spy_server):
         "big.bin?a=1;b=2",
     ):
         with pytest.raises(ValueError):
-            UriPath(base + text).read_bytes()
+            URIPath(base + text).read_bytes()
     assert spy.requests == []
 
 
@@ -275,7 +276,7 @@ def _targets(server):
     base = "tftp://127.0.0.1:%d/" % server.server_address[1]
     return {
         "path": lambda name: client.path(name),
-        "uri": lambda name: UriPath(base + name),
+        "uri": lambda name: URIPath(base + name),
     }
 
 
@@ -432,7 +433,7 @@ def test_a_uri_path_refuses_text_the_url_parser_refuses(root, spy_server):
     spy, base = spy_server()
     for text in ("x;mode=mail", "x;bogus", "x;mode=octet;mode=netascii"):
         with pytest.raises(tftp.TFTPValueError):
-            UriPath(base + text).filename
+            URIPath(base + text).filename
         with pytest.raises(ValueError):
             tftp.TFTPURL.parse(base + text)
     assert spy.requests == []

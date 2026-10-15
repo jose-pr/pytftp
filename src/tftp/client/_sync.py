@@ -38,7 +38,7 @@ from ._core import (
     _source_size,
 )
 
-if TYPE_CHECKING:  # netimps and pathlib_next are imported lazily at run time
+if TYPE_CHECKING:  # netimps and pathapi are imported lazily at run time
     from netimps import HostLike
 
     from ..path._local import TFTPPath

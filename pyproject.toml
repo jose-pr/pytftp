@@ -44,9 +44,9 @@ cli = ["duho>=0.7.4,<0.8"]
 # Linux; `pytftp capture` and `pytftp replay` are its commands, and --pcap on
 # the other commands writes a capture. Importing tftp never requires it.
 pktcap = ["pktcap>=0.1.0,<0.2"]
-# pathlib-style paths: TFTPPath, and the tftp:// scheme for pathlib_next's
-# UriPath (its "uri" extra). Importing tftp never requires it.
-path = ["pathlib-next[uri]>=0.9.13,<0.10"]
+# pathlib-style paths: TFTPPath on pathapi, and the tftp:// scheme for
+# uripath's URIPath (the pathapi-uri distribution). Importing tftp never requires it.
+path = ["pathapi>=0.1.0,<0.2", "pathapi-uri>=0.1.0,<0.2"]
 # Tooling only: the extras the tests need are named here, their ranges are above.
 dev = ["black", "build", "coverage", "mypy>=1.19,<3", "pytest", "tftp[cli,path,pktcap]"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
@@ -54,8 +54,8 @@ docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 [project.scripts]
 pytftp = "tftp.cli:main"
 
-# So pathlib_next.uri.UriPath("tftp://...") finds TFTPURIPath without an import.
-[project.entry-points."pathlib_next.schemes"]
+# So uripath.URIPath("tftp://...") finds TFTPURIPath without an import.
+[project.entry-points."uripath.schemes"]
 tftp = "tftp.path:TFTPURIPath"
 
 [project.urls]

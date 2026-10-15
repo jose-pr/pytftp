@@ -1,5 +1,5 @@
 """Every public annotation resolves with ``typing.get_type_hints``, except the ones that
-name a netimps or pktcap type (or the optional ``pathlib_next``'s path class).
+name a netimps or pktcap type (or the optional ``pathapi``'s path class).
 
 ``netimps`` and ``pktcap`` are imported lazily, so the names ``HostLike``, ``IPAddressLike``, ``ListenLike``,
 ``IPNetworkLike``, ``Interface`` and the module ``pktcap`` exist only under ``TYPE_CHECKING``; a
@@ -17,10 +17,11 @@ import pytest
 
 from surface import EXPECTED
 
-pytest.importorskip("pathlib_next")
+pytest.importorskip("pathapi")
+pytest.importorskip("uripath")
 
 #: Public callable -> the one name its annotations cannot resolve at run time: a netimps type, the
-#: pktcap module, or ``TFTPPath``, which needs the optional ``pathlib_next``.
+#: pktcap module, or ``TFTPPath``, which needs the optional ``pathapi``.
 LAZILY_IMPORTED = {
     "tftp.TFTPClient": "HostLike",
     "tftp.TFTPClient.path": "TFTPPath",

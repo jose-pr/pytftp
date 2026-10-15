@@ -1,4 +1,4 @@
-"""pathlib_next's own contract suite, run over the two path classes a TFTP server yields.
+"""pathapi's own contract suite, run over the two path classes a TFTP server yields.
 
 The served directory is built on disk, because TFTP cannot create a directory
 or delete a file; the path under test is the client's view of it, with the
@@ -12,21 +12,21 @@ import functools
 
 import pytest
 
-pytest.importorskip("pathlib_next")
-pytest.importorskip("uritools")
-_testing = pytest.importorskip("pathlib_next.testing")
+pytest.importorskip("pathapi")
+pytest.importorskip("uripath")
+_testing = pytest.importorskip("pathapi.testing")
 if not all(hasattr(_testing, name) for name in ("FIXTURE_TREE", "PathContract", "populate_fixture_tree")):
-    pytest.skip("this pathlib_next ships no contract suite with a fixture tree", allow_module_level=True)
+    pytest.skip("this pathapi ships no contract suite with a fixture tree", allow_module_level=True)
 
 import tftp  # noqa: E402
 from conftest import client_for  # noqa: E402
-from pathlib_next import LocalPath  # noqa: E402
-from pathlib_next.testing import (
+from pathapi import LocalPath  # noqa: E402
+from pathapi.testing import (
     FIXTURE_TREE,
     PathContract,
     populate_fixture_tree,
 )  # noqa: E402
-from pathlib_next.uri import UriPath  # noqa: E402
+from uripath import URIPath  # noqa: E402
 
 LISTING = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS)
 
@@ -89,7 +89,7 @@ class TestTFTPURIPath(_TFTPCannot, PathContract):
     @pytest.fixture
     def root(self, served_root):
         _, base = served_root
-        return UriPath(base)
+        return URIPath(base)
 
 
 def test_the_tree_the_contract_expects_is_what_the_server_holds(served_root, tmp_path):

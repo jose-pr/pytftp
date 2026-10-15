@@ -43,15 +43,17 @@ def test_importing_the_command_package_needs_no_duho():
     ],
     ids=["import", "client-path", "import-after-use"],
 )
-def test_without_pathlib_next_a_path_names_the_extra(use):
-    done = without("pathlib_next", use + "\n")
+@pytest.mark.parametrize("missing", ["pathapi", "uripath"])
+def test_without_a_path_library_a_path_names_the_extra(use, missing):
+    done = without(missing, use + "\n")
     assert done.returncode != 0 and "Traceback" in done.stderr
     assert done.stderr.strip().splitlines()[-1] == (
         "ImportError: tftp.path needs the 'path' extra: pip install 'tftp[path]'"
     )
 
 
-def test_without_pathlib_next_the_rest_of_the_library_works():
+@pytest.mark.parametrize("missing", ["pathapi", "uripath"])
+def test_without_a_path_library_the_rest_of_the_library_works(missing):
     body = (
         "import tftp\n"
         "from tftp.backends import MemoryBackend\n"
@@ -60,22 +62,8 @@ def test_without_pathlib_next_the_rest_of_the_library_works():
         "print(client.get('f'))\n"
         "server.close()\n"
     )
-    done = without("pathlib_next", body)
+    done = without(missing, body)
     assert done.returncode == 0 and done.stdout.strip() == "b'abc'", done.stderr
-
-
-def test_without_uritools_the_uri_path_names_the_extra():
-    pytest.importorskip("pathlib_next")
-    body = (
-        "import tftp.path\n"
-        "tftp.path.TFTPPath\n"
-        "try:\n"
-        "    tftp.path.TFTPURIPath\n"
-        "except ImportError as exc:\n"
-        "    print(exc)\n"
-    )
-    done = without("uritools", body)
-    assert "'path' extra" in done.stdout and "tftp[path]" in done.stdout, (done.stdout, done.stderr)
 
 
 # -- pktcap is optional: `pip install tftp` alone transfers, serves and relays ---------------------

@@ -48,7 +48,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `test_guards.py` | the name guard refuses a host name that would leave the machine; the structure-guard modules exist |
 | `test_readme.py` | the README's Python blocks and `pytftp` command lines run as written |
 | `test_examples.py` | the docs' Python blocks and the example scripts run as written (a block that cannot run says why in a `<!-- not run: reason -->` comment), and the command-line page names every option each command's `--help` shows |
-| `test_extras.py` | a capability whose dependency is absent names the extra to install, in a fresh interpreter: duho, pathlib-next and pktcap (the bare install transfers, serves and relays; the capture functions and commands print the one line) |
+| `test_extras.py` | a capability whose dependency is absent names the extra to install, in a fresh interpreter: duho, pathapi, uripath and pktcap (the bare install transfers, serves and relays; the capture functions and commands print the one line) |
 | `test_packet.py` | the codec: wire vectors from the RFCs, round trips, the refusals |
 | `test_uri.py` | `TFTPURL`: RFC 3617's grammar, both option spellings, the conversion and value contracts |
 | `test_options.py` | negotiation: each option handler, the policy, the client side |
@@ -61,7 +61,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `test_backend_contract.py` | one script of requests run against every backend, judged from the store |
 | `test_transfer_contract.py` | one set of scenarios for each server and client in every pairing, on each Windows loop type |
 | `test_path.py` | `TFTPPath` and `TFTPURIPath` (the `path` extra) |
-| `test_path_contract.py` | pathlib_next's own contract suite over the two path classes; the capability switches that are `False` are the skips below |
+| `test_path_contract.py` | pathapi's own contract suite over the two path classes; the capability switches that are `False` are the skips below |
 | `test_capture.py` | packet events, trace hooks, reading a capture through pktcap, flow reconstruction, filters |
 | `test_capture_dissector.py` | the TFTP dissector: pktcap's contract, where it registers, the record it makes |
 | `test_capture_plugin.py` | the pktcap plugin: its keys, that the library's filter and pktcap's select the same datagrams, the refusals, which datagrams carry the layer, `follow_transfers` and the filter by the transfer, and pktcap's own command with the plugin named |

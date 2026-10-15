@@ -67,8 +67,8 @@ with tftp.TFTPServer("/srv/tftp") as server:      # IPv6 + IPv4, port 69
   (`tftp.backends`) and as `pytftp serve` flags.
 - **asyncio** — `AsyncTFTPClient` and `AsyncTFTPServer` with async handlers and streams.
 - **pathlib** — `client.path("boot/x").read_bytes()`, and `tftp://` URLs in
-  [pathlib-next](https://github.com/jose-pr/pathlib-next), so
-  `UriPath("tftp://h/x").copy("s3://bucket/x")` just works (optional extra).
+  [uripath](https://github.com/jose-pr/uripath), so
+  `URIPath("tftp://h/x").copy("s3://bucket/x")` just works (optional extra).
 - **Bounded** — limits on requests, sessions (500 by default), sessions per
   client, idle time (60 s by default), window memory and transfer time;
   counters for metrics.
@@ -86,7 +86,7 @@ pip install "tftp[cli,pktcap]"   # plus pytftp capture and replay, and --pcap
 | Extra | Adds | Needed for |
 | --- | --- | --- |
 | `cli` | `duho` | the `pytftp` command and `python -m tftp` |
-| `path` | `pathlib-next[uri]` | `TFTPPath`, and `tftp://` URLs in `pathlib_next.uri.UriPath` |
+| `path` | `pathapi`, `pathapi-uri` | `TFTPPath`, and `tftp://` URLs in `uripath.URIPath` |
 | `pktcap` | [`pktcap`](https://github.com/jose-pr/pktcap) | reading, writing and replaying captures: `pytftp capture`, `pytftp replay`, `--pcap`, `tftp.capture.analyze` of a file |
 
 Requires Python 3.9+. The one required dependency is

@@ -1,4 +1,4 @@
-"""``TFTPPath``: a pathlib_next ``Path`` for files on one TFTP server."""
+"""``TFTPPath``: a pathapi ``Path`` for files on one TFTP server."""
 
 from __future__ import annotations
 
@@ -7,8 +7,7 @@ import errno
 import posixpath
 from typing import Any, Callable, Iterator, List, Optional, Tuple
 
-from pathlib_next import Path, Pathname
-from pathlib_next.utils.stat import FileStat
+from pathapi import FileStat, Path, Pathname
 
 from ..client._sync import TFTPClient
 from ..client._core import _ClientBase, _mode
@@ -16,7 +15,7 @@ from ..exceptions import FileNotFound, TFTPError
 from .._uri import TFTPURL
 from ._stream import open_reader, open_writer, os_error
 
-__all__ = ["TFTPPath", "client_factory", "tftp_stat", "tftp_open", "tftp_scandir", "tftp_unlink"]
+__all__ = ["TFTPPath", "check_client", "client_factory"]
 
 
 def check_client(client: Any) -> Any:
@@ -57,66 +56,6 @@ def client_factory(client: TFTPClient) -> Callable[..., TFTPClient]:
     return make
 
 
-def tftp_stat(client: TFTPClient, filename: str, mode: str, path: Any) -> FileStat:
-    """A ``FileStat`` from :meth:`TFTPClient.stat`: one probe, nothing transferred.
-
-    ``st_size`` is 0 and ``st_mtime`` 0 when the server reports none; a
-    directory is recognised only by a server speaking ``x-list``.
-    """
-    try:
-        info = client.stat(filename, mode=mode)
-    except TFTPError as exc:
-        raise os_error(exc, path) from None
-    return FileStat(st_size=info.size or 0, st_mtime=info.mtime or 0, is_dir=info.is_dir)
-
-
-def tftp_scandir(client: TFTPClient, dirname: str, path: Any) -> Iterator[Tuple[str, FileStat]]:
-    """``(name, FileStat)`` per entry, from one ``x-list`` listing."""
-    try:
-        entries = client.listdir(dirname)
-    except TFTPError as exc:
-        raise os_error(exc, path) from None
-    for entry in entries:
-        yield entry.name, FileStat(st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir)
-
-
-def tftp_unlink(path: Any, missing_ok: bool) -> None:
-    """``unlink()`` for a TFTP path, which cannot delete.
-
-    ``missing_ok=True`` returns without doing anything: it is how
-    :meth:`pathlib_next.Path.copy` asks a target to make way, and the write
-    that follows replaces the file. A plain call, a deletion nobody can do,
-    raises ``NotImplementedError``.
-    """
-    if missing_ok:
-        return
-    raise NotImplementedError("TFTP cannot delete a file")
-
-
-def tftp_open(client: TFTPClient, filename: str, transfer_mode: str, mode: str, path: Any) -> Any:
-    """pathlib_next's ``_open()``: ``r`` streams a download, ``w``/``x`` an upload.
-
-    ``x`` checks existence with a size probe first, which is not atomic: TFTP
-    has no exclusive create. ``a`` and ``+`` modes cannot be expressed in TFTP.
-    """
-    factory = client_factory(client)
-    if mode == "r":
-        return open_reader(factory, filename, transfer_mode, path)
-    if mode == "x":
-        try:
-            client.size(filename, mode=transfer_mode)
-        except FileNotFound:
-            pass
-        except TFTPError as exc:
-            raise os_error(exc, path) from None
-        else:
-            raise FileExistsError(errno.EEXIST, "file exists", str(path))
-        return open_writer(factory, filename, transfer_mode, path)
-    if mode == "w":
-        return open_writer(factory, filename, transfer_mode, path)
-    raise NotImplementedError("TFTP can only read or write a whole file, not %r" % mode)
-
-
 class TFTPPath(Path):
     """A file on a TFTP server, addressed like a ``PurePosixPath``.
 
@@ -128,7 +67,7 @@ class TFTPPath(Path):
     TFTP can read and write whole files: ``open("r")``,
     ``open("w")``/``"x"``, ``read_bytes``/``write_bytes``/``read_text``/
     ``write_text``, ``stat()`` (a probe), ``exists()``, ``is_file()``, and
-    ``copy()`` to and from any pathlib_next path and ``move()`` to one. Against a server
+    ``copy()`` to and from any pathapi path and ``move()`` to one. Against a server
     speaking pytftp's ``x-list``/``x-mtime`` extensions, ``iterdir()``,
     ``is_dir()``, ``walk()``, ``glob()`` and ``st_mtime`` work too (one
     listing per directory); other servers report directories as missing.
@@ -253,16 +192,63 @@ class TFTPPath(Path):
     # -- I/O -------------------------------------------------------------------------
 
     def stat(self, *, follow_symlinks: bool = True) -> FileStat:
-        return tftp_stat(self._client, self.as_posix(), self._mode, self)
+        """A ``FileStat`` from :meth:`TFTPClient.stat`: one probe, nothing transferred.
+
+        ``st_size`` and ``st_mtime`` are 0 when the server reports none; a directory
+        is recognised only by a server speaking ``x-list``.
+        """
+        try:
+            info = self._client.stat(self.as_posix(), mode=self._mode)
+        except TFTPError as exc:
+            raise os_error(exc, self) from None
+        return FileStat(
+            st_size=info.size or 0,
+            st_mtime=info.mtime or 0,
+            is_dir=info.is_dir,
+        )
 
     def _open(self, mode: str = "r", buffering: int = -1) -> Any:
-        return tftp_open(self._client, self.as_posix(), self._mode, mode, self)
+        """``r`` streams a download, ``w`` and ``x`` an upload.
+
+        ``x`` checks existence with a size probe first, which is not atomic: TFTP
+        has no exclusive create. ``a`` and ``+`` modes cannot be expressed in TFTP.
+        """
+        factory = client_factory(self._client)
+        filename = self.as_posix()
+        if mode == "r":
+            return open_reader(factory, filename, self._mode, self)
+        if mode == "x":
+            try:
+                self._client.size(filename, mode=self._mode)
+            except FileNotFound:
+                pass
+            except TFTPError as exc:
+                raise os_error(exc, self) from None
+            else:
+                raise FileExistsError(errno.EEXIST, "file exists", str(self))
+            return open_writer(factory, filename, self._mode, self)
+        if mode == "w":
+            return open_writer(factory, filename, self._mode, self)
+        raise NotImplementedError("TFTP can only read or write a whole file, not %r" % mode)
 
     def unlink(self, missing_ok: bool = False) -> None:
-        tftp_unlink(self, missing_ok)
+        """TFTP cannot delete; ``missing_ok=True`` returns without doing anything.
+
+        That is how ``Path.copy(overwrite=True)`` asks a target to make way, and
+        the write that follows replaces the file.
+        """
+        if missing_ok:
+            return
+        raise NotImplementedError("TFTP cannot delete a file")
 
     def _scandir(self) -> Iterator[Tuple[str, FileStat]]:
-        return tftp_scandir(self._client, self.as_posix(), self)
+        """``(name, FileStat)`` per entry, from one ``x-list`` listing."""
+        try:
+            entries = self._client.listdir(self.as_posix())
+        except TFTPError as exc:
+            raise os_error(exc, self) from None
+        for entry in entries:
+            yield entry.name, FileStat(st_size=entry.size, st_mtime=entry.mtime or 0, is_dir=entry.is_dir)
 
     def iterdir(self) -> Iterator["TFTPPath"]:
         for name, _ in self._scandir():

@@ -53,7 +53,8 @@ def test_the_command_line_logs_under_the_package_name():
 
 
 def test_importing_every_module_creates_no_logger_beyond_the_named_ones():
-    pytest.importorskip("pathlib_next")  # the path and cli modules need their extras
+    pytest.importorskip("pathapi")  # the path and cli modules need their extras
+    pytest.importorskip("uripath")
     pytest.importorskip("duho")
     code = (
         "import importlib, logging, pathlib, tftp\n"
@@ -162,9 +163,6 @@ _LOCAL_IMPORTS = {
     ),
     ("client/_sync.py", "tftp.path._local"): (
         "TFTPPath needs the optional path extra, so it is loaded only when a path is asked for"
-    ),
-    ("path/__init__.py", "tftp.path._uri"): (
-        "TFTPURIPath needs uritools, an optional dependency, so it is loaded only when asked for"
     ),
     ("capture/_replay.py", "tftp.client._sync"): (
         "the client core imports capture._hook, so a top-level import here runs while the client "
@@ -286,7 +284,7 @@ def test_a_sibling_is_imported_at_the_top_of_a_module_or_the_reason_is_recorded(
 
 
 #: Dependencies the package imports inside the functions that use them, so importing it loads none.
-_LAZY = ("netimps", "pktcap", "duho", "pathlib_next")
+_LAZY = ("netimps", "pktcap", "duho", "pathapi", "uripath")
 
 
 @pytest.mark.parametrize("statement", ["import tftp", "import tftp.capture", "import tftp.cli"])

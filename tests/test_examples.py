@@ -24,7 +24,8 @@ import pytest
 import tftp
 from conftest import HAS_IPV6, PLACEHOLDERS, substitute
 
-pytest.importorskip("pathlib_next")
+pytest.importorskip("pathapi")
+pytest.importorskip("uripath")
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAGES = sorted(path for path in (ROOT / "docs").glob("*.md") if path.stem != "changelog")

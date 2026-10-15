@@ -1,7 +1,7 @@
 # `tftp.path` — public API header
 
 Header-file-style reference for the `tftp.path` package: a TFTP server as a
-`pathlib_next` path. Every public export with its signature, arguments, contract
+`pathapi` path. Every public export with its signature, arguments, contract
 and gotchas, so the package can be used without reading its source. It ships
 inside the package and is self-contained; the top header is `tftp/AGENTS.md`.
 Development documentation lives with the source at
@@ -9,8 +9,8 @@ Development documentation lives with the source at
 
 ## Paths (`tftp.path`)
 
-`pip install "tftp[path]"` adds `pathlib-next[uri]`. Importing `tftp` never
-loads it.
+`pip install "tftp[path]"` adds `pathapi` and `pathapi-uri` (import name `uripath`).
+Importing `tftp` never loads them.
 
 ```python
 TFTPPath(*segments, client=None, mode="octet")
@@ -21,7 +21,7 @@ TFTPURIPath.with_options(**client_options)
 TFTPURIPath.with_client(client)
 ```
 
-**`TFTPPath`** — a `pathlib_next.Path`
+**`TFTPPath`** — a `pathapi.Path`
 bound to a `TFTPClient` (`client.path("boot", "x")`); `mode` is checked when
 the path is built (`ValueError` for anything but `octet` and `netascii`,
 `TypeError` for a value that is not text). The client's own `on_negotiated`
@@ -35,8 +35,8 @@ it to an `AsyncTFTPClient` (`TFTPPath(..., client=)`, `with_client()`) raises
 `TypeError`, and `AsyncTFTPClient` has no `path()`.
 
 **`TFTPURIPath`** — the `tftp://host[:port]/path[;mode=netascii]` scheme
-for `pathlib_next.uri.UriPath`, registered through the
-`pathlib_next.schemes` entry point, so `UriPath("tftp://...")` returns one
+for `uripath.URIPath`, registered through the
+`uripath.schemes` entry point, so `URIPath("tftp://...")` returns one
 without importing `tftp`. `filename`, `transfer_mode`;
 `with_options(**client_options)` / `with_client(client)` choose the
 `TFTPClient` (default: the URI's host and port, library defaults). The URI host
@@ -62,7 +62,7 @@ Both support what TFTP can do, plus listing against a server speaking
   the file it had (a failed `copy()` therefore leaves its target as it was);
   one that ends normally commits.
 - `read_bytes`, `read_text`, `write_bytes`, `write_text` (text newline
-  handling is pathlib's), `copy()` to and from any pathlib_next path, and
+  handling is pathlib's), `copy()` to and from any pathapi path, and
   `move()` to one: `move()` from a TFTP path copies and then raises
   `NotImplementedError`, because the source cannot be deleted.
 - `stat()` is one `TFTPClient.stat()` probe (`FileStat`: `st_size` and
@@ -79,7 +79,7 @@ Both support what TFTP can do, plus listing against a server speaking
   follows replaces the file: it is what `copy(overwrite=True)` asks of its
   target. So `copy(target, overwrite=True)` onto a name the server has
   replaces it (the server must allow overwriting).
-- `tftp.path.TFTPURIPath` without `uritools` raises `ImportError` naming the
+- `import tftp.path` without `pathapi` or `uripath` raises `ImportError` naming the
   `path` extra.
 - TFTP errors become pathlib's: `FileNotFoundError`, `PermissionError`,
   `FileExistsError`, `OSError(ENOSPC)`, `TimeoutError`, else `OSError(EIO)`.

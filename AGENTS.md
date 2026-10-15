@@ -94,8 +94,8 @@ JSON is committed, and a release's performance claims come from CI, not a laptop
   `open_write` do too when it has `opens_fast = True`, else in a worker thread.
 - **`netimps` and `pktcap` are imported lazily**, inside functions, so `import tftp` stays cheap and
   does not install the netimps socket patch until a transfer starts; `pktcap` is an extra (`_extras.py` names it
-  when missing) and only `cli/capture.py` and `cli/replay.py` import it at the top. `duho`, `pathlib_next` and
-  `uritools` are imported only by `cli/` and `path/`; the library never requires an extra.
+  when missing) and only `cli/capture.py` and `cli/replay.py` import it at the top. `duho`, `pathapi` and
+  `uripath` are imported only by `cli/` and `path/`; the library never requires an extra.
 - **A private module imports a name from the module that owns it, never from the root.**
   `tests/test_import_structure.py` pins the direction, the 500-line module limit (the exceptions are named there, each with its reason) and the logger
   names; a public module is only one with no leading underscore.

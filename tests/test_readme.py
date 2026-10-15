@@ -16,7 +16,8 @@ import pytest
 import tftp
 from conftest import PLACEHOLDERS, substitute
 
-pytest.importorskip("pathlib_next")
+pytest.importorskip("pathapi")
+pytest.importorskip("uripath")
 
 README = pathlib.Path(__file__).resolve().parents[1] / "README.md"
 BLOCKS = re.findall(r"```python\n(.*?)```", README.read_text(encoding="utf-8"), re.S)

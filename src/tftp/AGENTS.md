@@ -15,7 +15,7 @@ module's exports. Modules starting with `_` are internal.
 
 Install with `pip install tftp`; its one required dependency is `netimps`. The `cli`
 extra (`pip install "tftp[cli]"`) adds `duho`, which the `pytftp` command needs; the `path` extra
-(`pip install "tftp[path]"`) adds `pathlib-next[uri]`, which `tftp.path` needs; the `pktcap` extra
+(`pip install "tftp[path]"`) adds `pathapi` and `pathapi-uri`, which `tftp.path` needs; the `pktcap` extra
 (`pip install "tftp[pktcap]"`) adds `pktcap`, which reading, writing, dissecting and replaying
 captures need (`pytftp capture` and `pytftp replay` need it and `cli`; `--pcap` needs it). Importing
 `tftp` never requires any of them, and a capture function or command without `pktcap` says
@@ -304,7 +304,7 @@ the others in `tftp/cli/AGENTS.md`, through its argument parser.
   import `netimps`; reading, writing or dissecting a capture imports `pktcap`, an extra: without
   it that call raises `ImportError` naming it.
   `asyncio` is not imported until `AsyncTFTPClient` or `AsyncTFTPServer` is first accessed, so
-  the blocking half never loads it; `duho`, `pathlib_next` and `uritools` are imported by the
+  the blocking half never loads it; `duho`, `pathapi` and `uripath` are imported by the
   command and by `tftp.path` only.
 - **A signature that names a netimps type** (`HostLike`, `IPNetworkLike`,
   `Interface`) cannot be resolved by `typing.get_type_hints` at run time, because

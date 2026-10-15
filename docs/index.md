@@ -17,7 +17,7 @@ pip install "tftp[cli]"     # plus the pytftp command
 | Extra | Adds | Needed for |
 | --- | --- | --- |
 | `cli` | `duho` | the `pytftp` command and `python -m tftp` |
-| `path` | `pathlib-next[uri]` | `TFTPPath` and `tftp://` URLs as `pathlib_next` paths |
+| `path` | `pathapi`, `pathapi-uri` | `TFTPPath` and `tftp://` URLs as `uripath` paths |
 
 ## 30-second tour
 
@@ -49,7 +49,7 @@ pytftp serve /srv/tftp --write --json
 - [Backends](backends.md) — memory, an HTTP(S) gateway, a terminating proxy.
 - [Relaying](relay.md) — forwarding to upstream servers, packets unchanged.
 - [Capture and debugging](capture.md) — tracing, pcaps, reconstructing transfers.
-- [Paths](paths.md) — `TFTPPath` and `tftp://` URLs for pathlib-next.
+- [Paths](paths.md) — `TFTPPath` and `tftp://` URLs for uripath.
 - [asyncio](async.md) — `AsyncTFTPClient`, `AsyncTFTPServer`, async handlers.
 - API reference: [Client](api/client.md), [Server](api/server.md),
   [Backends](api/backends.md), [Relay](api/relay.md), [Capture](api/capture.md),

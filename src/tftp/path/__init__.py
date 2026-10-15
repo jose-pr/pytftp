@@ -1,9 +1,9 @@
 """pathlib-style access to TFTP files (``path`` extra: ``pip install tftp[path]``).
 
-- :class:`TFTPPath` -- a :mod:`pathlib_next` ``Path`` bound to a
+- :class:`TFTPPath` -- a :mod:`pathapi` ``Path`` bound to a
   :class:`~tftp.TFTPClient`: ``client.path("boot/pxelinux.0").read_bytes()``.
-- :class:`TFTPURIPath` -- the ``tftp://`` scheme for ``pathlib_next.uri.UriPath``:
-  ``UriPath("tftp://192.0.2.1/boot/x").copy("s3://bucket/x")``.
+- :class:`TFTPURIPath` -- the ``tftp://`` scheme for ``uripath.URIPath``:
+  ``URIPath("tftp://192.0.2.1/boot/x").copy("s3://bucket/x")``.
 
 TFTP moves whole files and nothing else, so reading, writing, ``stat()``
 (a size probe that transfers nothing), ``exists()`` and ``copy()`` work, and
@@ -14,33 +14,14 @@ listing, deleting, renaming, ``move()`` from TFTP and directories raise
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
 try:
-    import pathlib_next
+    import pathapi
+    import uripath
 except ImportError as exc:  # pragma: no cover - exercised without the extra
     raise ImportError("tftp.path needs the 'path' extra: pip install 'tftp[path]'") from exc
-del pathlib_next  # only checking that the extra is installed
+del pathapi, uripath  # only checking that the extra is installed
 
 from ._local import TFTPPath
-
-if TYPE_CHECKING:
-    from ._uri import TFTPURIPath
+from ._uri import TFTPURIPath
 
 __all__ = ["TFTPPath", "TFTPURIPath"]
-
-
-def __getattr__(name: str) -> Any:
-    # TFTPURIPath needs pathlib_next.uri, which needs uritools (pathlib-next's
-    # own "uri" extra, included in ours); import it only when asked.
-    if name == "TFTPURIPath":
-        try:
-            from . import _uri as uri
-        except ImportError as exc:
-            if exc.name != "uritools":
-                raise
-            raise ImportError(
-                "tftp.path.TFTPURIPath needs the 'path' extra: pip install 'tftp[path]'"
-            ) from exc
-        return getattr(uri, name)
-    raise AttributeError(name)
