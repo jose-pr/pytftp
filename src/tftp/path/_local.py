@@ -5,13 +5,16 @@ from __future__ import annotations
 import copy
 import errno
 import posixpath
+import threading
+import weakref
 from typing import Any, Callable, Iterator, List, Optional, Tuple
 
 from pathapi import FileStat, Path, Pathname
+from pathapi.protocols import Listing
 
 from ..client._sync import TFTPClient
 from ..client._core import _ClientBase, _mode
-from ..exceptions import FileNotFound, TFTPError
+from ..exceptions import AccessViolation, FileNotFound, TFTPError
 from .._uri import TFTPURL
 from ._stream import open_reader, open_writer, os_error
 
@@ -56,6 +59,44 @@ def client_factory(client: TFTPClient) -> Callable[..., TFTPClient]:
     return make
 
 
+class _Probe:
+    """The answer to "does this server list directories?", asked once."""
+
+    __slots__ = ("lock", "done", "answer")
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.done = False
+        self.answer: Optional[bool] = None
+
+
+_PROBES: "weakref.WeakKeyDictionary[Any, _Probe]" = weakref.WeakKeyDictionary()
+_PROBES_LOCK = threading.Lock()
+
+
+def _lists_directories(client: TFTPClient) -> Optional[bool]:
+    """Whether the server speaks ``x-list``, from one probe of its root; ``None`` when it cannot say."""
+    try:
+        return bool(client.stat(".").is_dir)
+    except (FileNotFound, AccessViolation):
+        return False  # a server without the extension has no such file
+    except Exception:
+        return None
+
+
+def _listing_answer(key: Any, client: TFTPClient) -> Optional[bool]:
+    """The answer for ``key`` (a client, or the object standing for it), probing at most once."""
+    with _PROBES_LOCK:
+        probe = _PROBES.get(key)
+        if probe is None:
+            probe = _PROBES[key] = _Probe()
+    with probe.lock:
+        if not probe.done:
+            probe.answer = _lists_directories(client)
+            probe.done = True
+        return probe.answer
+
+
 class TFTPPath(Path):
     """A file on a TFTP server, addressed like a ``PurePosixPath``.
 
@@ -71,15 +112,16 @@ class TFTPPath(Path):
     speaking pytftp's ``x-list``/``x-mtime`` extensions, ``iterdir()``,
     ``is_dir()``, ``walk()``, ``glob()`` and ``st_mtime`` work too (one
     listing per directory); other servers report directories as missing.
-    Deleting, renaming, creating directories and permissions raise
-    ``NotImplementedError``.
+    Deleting, renaming, creating directories and permissions are not implemented:
+    ``pathapi.protocols.supports()`` says so, and calling them raises ``NotImplementedError``.
     """
 
-    __slots__ = ("_client", "_segments", "_mode")
+    __slots__ = ("_client", "_segments", "_mode", "_probe_key")
 
     _client: TFTPClient
     _segments: List[str]
     _mode: str
+    _probe_key: Any
 
     def __init__(self, *segments: Any, client: Optional[TFTPClient] = None, mode: str = "octet") -> None:
         text = ""
@@ -99,14 +141,16 @@ class TFTPPath(Path):
                 text = piece
             elif piece:
                 text = "%s/%s" % (text, piece)
+        probe_key = None
         if client is None:
             if inherited is None:
                 raise TypeError("TFTPPath needs client= (or a TFTPPath to join onto)")
-            client, mode = inherited._client, inherited._mode
+            client, mode, probe_key = inherited._client, inherited._mode, inherited._probe_key
         if not isinstance(mode, str):
             raise TypeError("a transfer mode is text, not %s" % type(mode).__name__)
         self._client = check_client(client)
         self._mode = _mode(mode)
+        self._probe_key = probe_key
         names = [name for name in text.split("/") if name and name != "."]
         if text.startswith("/"):
             self._segments = ["", *names] if names else ["", ""]
@@ -143,13 +187,17 @@ class TFTPPath(Path):
     def with_segments(self, *segments: Any) -> "TFTPPath":
         if all(isinstance(segment, str) for segment in segments):
             segments = ("/".join(segments),)
-        return type(self)(*segments, client=self._client, mode=self._mode)
+        joined = type(self)(*segments, client=self._client, mode=self._mode)
+        joined._probe_key = self._probe_key
+        return joined
 
     def with_client(self, client: TFTPClient) -> "TFTPPath":
         return type(self)(self.as_posix(), client=client, mode=self._mode)
 
     def with_mode(self, mode: str) -> "TFTPPath":
-        return type(self)(self.as_posix(), client=self._client, mode=mode)
+        changed = type(self)(self.as_posix(), client=self._client, mode=mode)
+        changed._probe_key = self._probe_key
+        return changed
 
     def is_absolute(self) -> bool:
         return bool(self._segments) and self._segments[0] == ""
@@ -194,8 +242,9 @@ class TFTPPath(Path):
     def stat(self, *, follow_symlinks: bool = True) -> FileStat:
         """A ``FileStat`` from :meth:`TFTPClient.stat`: one probe, nothing transferred.
 
-        ``st_size`` and ``st_mtime`` are 0 when the server reports none; a directory
-        is recognised only by a server speaking ``x-list``.
+        ``st_size`` is 0 with ``size_known`` False when the server reports no size,
+        and ``st_mtime`` is 0 when it reports no time; a directory is recognised only
+        by a server speaking ``x-list``.
         """
         try:
             info = self._client.stat(self.as_posix(), mode=self._mode)
@@ -205,6 +254,7 @@ class TFTPPath(Path):
             st_size=info.size or 0,
             st_mtime=info.mtime or 0,
             is_dir=info.is_dir,
+            size_known=info.is_dir or info.size is not None,
         )
 
     def _open(self, mode: str = "r", buffering: int = -1) -> Any:
@@ -231,15 +281,12 @@ class TFTPPath(Path):
             return open_writer(factory, filename, self._mode, self)
         raise NotImplementedError("TFTP can only read or write a whole file, not %r" % mode)
 
-    def unlink(self, missing_ok: bool = False) -> None:
-        """TFTP cannot delete; ``missing_ok=True`` returns without doing anything.
-
-        That is how ``Path.copy(overwrite=True)`` asks a target to make way, and
-        the write that follows replaces the file.
-        """
-        if missing_ok:
-            return
-        raise NotImplementedError("TFTP cannot delete a file")
+    def _supports(self, protocol: Any) -> Optional[bool]:
+        """Whether the server lists directories (one probe per client); the class answers the rest."""
+        if protocol is Listing:
+            key = self._client if self._probe_key is None else self._probe_key
+            return _listing_answer(key, self._client)
+        return None
 
     def _scandir(self) -> Iterator[Tuple[str, FileStat]]:
         """``(name, FileStat)`` per entry, from one ``x-list`` listing."""

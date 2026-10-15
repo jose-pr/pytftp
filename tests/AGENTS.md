@@ -61,7 +61,7 @@ not a pass, and a rising skip count beside a falling pass count is a signal, not
 | `test_backend_contract.py` | one script of requests run against every backend, judged from the store |
 | `test_transfer_contract.py` | one set of scenarios for each server and client in every pairing, on each Windows loop type |
 | `test_path.py` | `TFTPPath` and `TFTPURIPath` (the `path` extra) |
-| `test_path_contract.py` | pathapi's own contract suite over the two path classes; the capability switches that are `False` are the skips below |
+| `test_path_contract.py` | pathapi's own contract suite over the two path classes; a protocol the class lacks, and a switch that is `False`, are the skips below |
 | `test_capture.py` | packet events, trace hooks, reading a capture through pktcap, flow reconstruction, filters |
 | `test_capture_dissector.py` | the TFTP dissector: pktcap's contract, where it registers, the record it makes |
 | `test_capture_plugin.py` | the pktcap plugin: its keys, that the library's filter and pktcap's select the same datagrams, the refusals, which datagrams carry the layer, `follow_transfers` and the filter by the transfer, and pktcap's own command with the plugin named |
@@ -133,9 +133,9 @@ of the peers installed skips less.
 
 | Platform | Skipped | Why |
 | --- | --- | --- |
-| Windows, 3.14 | 34 | 16 peer tests (`in.tftpd` 5, BusyBox server 4 and client 3, dnsmasq 3, the tftp-hpa client 1: each reason names the missing binary, and a host that has the binary and passwordless `sudo` runs them), 10 capability switches of the path contract (TFTP has no append, rename or directory hierarchy, for `TFTPPath` and `TFTPURIPath`), 4 console control events driven through a driver, 1 no named pipes, 1 trailing dot (the file system drops it), 1 one file for both names, 1 no `AF_PACKET` |
+| Windows, 3.14 | 34 | 16 peer tests (`in.tftpd` 5, BusyBox server 4 and client 3, dnsmasq 3, the tftp-hpa client 1: each reason names the missing binary, and a host that has the binary and passwordless `sudo` runs them), 54 path-contract skips (27 for each of `TFTPPath` and `TFTPURIPath`: the protocols TFTP lacks, which `supports()` reports, and the switches for append, directory hierarchy, `move()` and `?` in names), 4 console control events driven through a driver, 1 no named pipes, 1 trailing dot (the file system drops it), 1 one file for both names, 1 no `AF_PACKET` |
 | Windows, 3.9 | 64 | those 34 and 30 cases of `os.path.isreserved`, which needs Python 3.13 on Windows |
-| WSL (Fedora, tftp-hpa 5.3, BusyBox, dnsmasq, curl, `sudo`), 3.14 and 3.9 | 50 each | no peer test skips; 30 `os.path.isreserved` (it skips on Linux whatever the version: the probe is the function, not the platform), 10 path-contract switches, 4 Windows console events, 2 Windows event-loop types, 1 Windows file names, 1 `select()` descriptor limit (Windows only), 1 Windows-only behaviour, 1 live capture without `CAP_NET_RAW` |
+| WSL (Fedora, tftp-hpa 5.3, BusyBox, dnsmasq, curl, `sudo`), 3.14 and 3.9 | 50 each | no peer test skips; 30 `os.path.isreserved` (it skips on Linux whatever the version: the probe is the function, not the platform), 54 path-contract skips, 4 Windows console events, 2 Windows event-loop types, 1 Windows file names, 1 `select()` descriptor limit (Windows only), 1 Windows-only behaviour, 1 live capture without `CAP_NET_RAW` |
 
 ## Scripts that are not tests
 

@@ -227,3 +227,13 @@ def test_the_capture_filter_is_pktcaps_and_this_package_has_none():
     assert "filter" not in inspect.signature(tftp.capture.analyze).parameters
     with pytest.raises(TypeError):
         tftp.capture.analyze([], filter="op=RRQ")  # type: ignore[call-arg]
+
+
+def test_what_the_path_classes_implement_is_pinned():
+    """TFTP reads, writes, stats, copies and (against a server that lists) lists; nothing else."""
+    from pathapi.protocols import BinaryOpen, Copy, Identity, Listing, Stat, capabilities
+    from tftp.path import TFTPPath, TFTPURIPath
+
+    expected = frozenset({BinaryOpen, Copy, Identity, Listing, Stat})
+    assert capabilities(TFTPPath) == expected
+    assert capabilities(TFTPURIPath) == expected

@@ -11,10 +11,13 @@ pytest.importorskip("pathapi")
 pytest.importorskip("uripath")
 
 import tftp  # noqa: E402
-from conftest import client_for  # noqa: E402
+from conftest import FakePeer, client_for  # noqa: E402
 from pathapi import LocalPath, MemPath  # noqa: E402
+from pathapi.protocols import Listing, Remove, supports  # noqa: E402
 from uripath import URIPath  # noqa: E402
 from tftp.path import TFTPPath, TFTPURIPath  # noqa: E402
+
+LISTING = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS | tftp.options.LISTING_OPTIONS)
 
 
 @pytest.fixture
@@ -431,9 +434,9 @@ def test_copy_with_overwrite_replaces_the_servers_file(root, server, tmp_path_fa
 @pytest.mark.parametrize("kind", ["path", "uri"])
 def test_unlink_deletes_nothing_and_says_so(root, server, kind):
     target = _targets(server)[kind]("one.bin")
-    with pytest.raises(NotImplementedError):
-        target.unlink()
-    target.unlink(missing_ok=True)  # the write that follows replaces the file
+    for missing_ok in (False, True):
+        with pytest.raises(NotImplementedError):
+            target.unlink(missing_ok=missing_ok)
     assert (root / "one.bin").read_bytes() == b"x"
 
 
@@ -444,6 +447,8 @@ def test_move_from_tftp_is_not_supported_and_keeps_the_source(root, server, tmp_
     with pytest.raises(NotImplementedError):
         source.move(LocalPath(destination))
     assert (root / "one.bin").read_bytes() == b"x"
+    assert not destination.exists()  # refused before anything was copied
+    assert not supports(source, Remove)
 
 
 # -- names, hooks and modes ---------------------------------------------------------------
@@ -499,3 +504,63 @@ def test_a_uri_path_refuses_text_the_url_parser_refuses(root, spy_server):
         with pytest.raises(ValueError):
             tftp.TFTPURL.parse(base + text)
     assert spy.requests == []
+
+
+# -- what the server reports, and what supports() says about it ---------------------------------
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+def test_stat_says_when_the_server_gave_no_size(root, make_server, kind):
+    no_tsize = tftp.TFTPServerOptions(allowed=tftp.options.STANDARD_OPTIONS - {"tsize"})
+    server = make_server(root, writable=True, overwrite=True, options=no_tsize)
+    target = _targets(server)[kind]
+    unknown = target("big.bin").stat()  # three blocks of 1428 and more: no tsize, no short first block
+    assert unknown.size_known is False and unknown.st_size == 0
+    small = target("one.bin").stat()  # the whole file fits in the first block, so its size is known
+    assert small.size_known is True and small.st_size == 1
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+def test_stat_with_a_size_is_known(root, server, kind):
+    known = _targets(server)[kind]("big.bin").stat()
+    assert known.size_known is True and known.st_size == 300_001
+
+
+def _listing_requests(spy):
+    return [request for request in spy.requests if request.filename == "."]
+
+
+def test_listing_support_follows_the_server_and_is_asked_once_per_client(spy_server):
+    spy, base = spy_server(options=LISTING)
+    port = int(base.rsplit(":", 1)[1].rstrip("/"))
+    client = tftp.TFTPClient("127.0.0.1", port, timeout=0.5, retries=1)
+    first = client.path("one.bin")
+    for path in (first, client.path("sub", "nested.bin"), first / "x", first.with_mode("netascii"), first):
+        assert supports(path, Listing) is True
+    assert len(_listing_requests(spy)) == 1
+    other = tftp.TFTPClient("127.0.0.1", port, timeout=0.5, retries=1)
+    assert supports(other.path("one.bin"), Listing) is True
+    assert len(_listing_requests(spy)) == 2  # another client asks for itself
+
+
+def test_a_server_without_listing_is_not_listed_and_the_uri_paths_of_an_endpoint_ask_once(spy_server):
+    spy, base = spy_server()
+    path = URIPath(base + "one.bin")
+    assert supports(path, Listing) is False
+    assert supports(path / "x", Listing) is False and supports(path.parent, Listing) is False
+    assert len(_listing_requests(spy)) == 1
+
+
+def test_a_server_that_cannot_be_asked_leaves_listing_to_the_class():
+    silent = FakePeer()
+    try:
+        path = tftp.TFTPClient("127.0.0.1", silent.port, timeout=0.1, retries=1).path("x")
+        assert path._supports(Listing) is None  # the probe failed: no answer, and no exception
+        assert supports(path, Listing) is True  # the class does list; a call will tell
+    finally:
+        silent.close()
+
+
+def test_only_listing_depends_on_the_server(server):
+    path = client_for(server).path("x")
+    assert path._supports(Remove) is None

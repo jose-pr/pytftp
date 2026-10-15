@@ -65,22 +65,28 @@ Both support what TFTP can do, plus listing against a server speaking
   leaves its target as it was). Closing commits.
 - `read_bytes`, `read_text`, `write_bytes`, `write_text` (text newline
   handling is pathlib's), `copy()` to and from any pathapi path, and
-  `move()` to one: `move()` from a TFTP path copies and then raises
-  `NotImplementedError`, because the source cannot be deleted.
-- `stat()` is one `TFTPClient.stat()` probe (`FileStat`: `st_size` and
-  `st_mtime` 0 when unknown, directory mode for a listed directory);
-  `exists()`, `is_file()`, `is_dir()`.
+  `move()` to one: `move()` from a TFTP path raises `NotImplementedError`
+  before it copies anything, because the source cannot be deleted.
+- `stat()` is one `TFTPClient.stat()` probe (`FileStat`: directory mode for a
+  listed directory; `st_mtime` 0 when the server reports no time; `st_size` 0 and
+  `size_known` False when it reports no size, which a server without `tsize`
+  does for any file longer than one block); `exists()`, `is_file()`, `is_dir()`.
 - `iterdir()`, `walk()`, `glob()`/`rglob()` and `copy(..., recursive=True)`
   need a server allowing `x-list` (one listing per directory, with each
   entry's type, size and time, so no per-entry probe). Against other servers
   a directory raises `FileNotFoundError`; listing a file raises
   `NotADirectoryError`.
-- Deleting, renaming, creating directories and permissions raise
-  `NotImplementedError`. `unlink()` raises it too, except
-  `unlink(missing_ok=True)`, which does nothing, because the write that
-  follows replaces the file: it is what `copy(overwrite=True)` asks of its
-  target. So `copy(target, overwrite=True)` onto a name the server has
-  replaces it (the server must allow overwriting).
+- Deleting (`unlink()`, with or without `missing_ok`), renaming, creating
+  directories, setting times and permissions are not implemented and raise
+  `NotImplementedError`. `pathapi.protocols.capabilities()` of either class is
+  `{Stat, BinaryOpen, Listing, Identity, Copy}`. Because the target cannot be
+  removed, `copy(target, overwrite=True)` writes over a name the server has
+  (the server must allow overwriting).
+- `pathapi.protocols.supports(path, Listing)` asks the server: one probe of its
+  root for `x-list`, made on the first question and kept for the life of the
+  client (paths joined from one path, and the `tftp://` paths of one endpoint,
+  share it); `False` for a server without the extension. When the probe fails
+  the answer is the class's (`True`) and the call tells.
 - `import tftp.path` without `pathapi` or `uripath` raises `ImportError` naming the
   `path` extra.
 - TFTP errors become pathlib's: `FileNotFoundError`, `PermissionError`,

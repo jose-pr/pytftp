@@ -56,7 +56,7 @@ class TFTPURIPath(DelegatingURIPath):
 
     __SCHEMES = ("tftp",)
     __slots__ = ()
-    _DELEGATED = ("_scandir", "_listdir", "_open", "unlink")
+    _DELEGATED = ("_scandir", "_listdir", "_open")
 
     def _initbackend(self) -> _TFTPBackend:
         source = self.source
@@ -109,7 +109,9 @@ class TFTPURIPath(DelegatingURIPath):
 
     def _make_core(self) -> TFTPPath:
         filename, mode, options = self._parts()
-        return TFTPPath(filename, client=self._client_for(options), mode=mode)
+        core = TFTPPath(filename, client=self._client_for(options), mode=mode)
+        core._probe_key = self.backend.client  # paths of one endpoint ask the server once
+        return core
 
     @property
     def filename(self) -> str:

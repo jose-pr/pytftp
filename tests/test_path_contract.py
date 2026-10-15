@@ -65,15 +65,12 @@ def with_gaps(cls):
 
 
 class _TFTPCannot:
-    """What no TFTP client can do, whichever way it is spelled."""
+    """What supports() cannot say: the protocols TFTP lacks (rename, mkdir, delete, utime) and the
+    server's listing are the contract's own defaults from supports(), so they are not set here."""
 
-    supports_rename = False  # no rename request exists
     supports_append = False  # a write replaces the file; there is no append
     enforces_directory_hierarchy = False  # a server may create nothing but a file: no mkdir exists
-    supports_mkdir = False  # no request creates a directory
-    supports_delete = False  # no request deletes a file or a directory
-    supports_move = False  # a move is a copy and a delete
-    supports_utime = False  # no request sets a file's time
+    supports_move = False  # move() refuses a source that cannot be deleted, before it copies
 
 
 @with_gaps
