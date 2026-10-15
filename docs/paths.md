@@ -21,8 +21,10 @@ kernel.copy("s3://boot-images/vmlinuz") # any uripath scheme
 TFTP moves whole files, so `open()` (read or write), `read_*`/`write_*`,
 `stat()`, `exists()` and `copy()` work against any server, `copy(dest, overwrite=True)`
 included, and `move()` works to a TFTP path (a TFTP source cannot be deleted, so
-`move()` from one raises `NotImplementedError` after copying). A `with` block over
-`open("wb")` that raises abandons the upload: the server keeps the file it had.
+`move()` from one raises `NotImplementedError` before it copies anything). An upload that
+fails before it is closed sends nothing: a `with` block over `open("w")` or `open("wb")`
+that raises, a text write that cannot be encoded and a file collected unclosed leave the
+server's file as it was. `stat()` has `size_known` False when the server sent no `tsize`.
 
 Against a pytftp server with listing allowed (`pytftp serve --listing`, or
 `TFTPServerOptions(allowed=STANDARD_OPTIONS | LISTING_OPTIONS)`), directories
@@ -31,7 +33,11 @@ work too: `iterdir()`, `is_dir()`, `walk()`, `glob("**/*.cfg")`,
 listing transfer, whose entries already carry type, size and time. Other
 servers report a directory as missing (`FileNotFoundError`).
 
-Deleting, renaming and creating directories raise `NotImplementedError`.
+Deleting (`unlink()`), renaming, creating directories, setting times and permissions are
+not implemented and raise `NotImplementedError`; ask first with
+`pathapi.protocols.supports(path, Remove)` or `capabilities(path)`, which lists `Stat`,
+`BinaryOpen`, `Listing`, `Identity` and `Copy`. `supports(path, Listing)` asks the server
+(one probe of its root, kept for the client).
 Reads and writes stream through a bounded buffer, and errors arrive as the
 usual `FileNotFoundError`, `PermissionError`, `FileExistsError`.
 

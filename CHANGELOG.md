@@ -7,7 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **`tftp.path` is built on `pathapi` and `uripath`.** The `path` extra installs
+  `pathapi>=0.1.0,<0.2` and `pathapi-uri>=0.1.0,<0.2` where it installed `pathlib-next[uri]`,
+  which cannot be installed beside them. To upgrade, import `LocalPath`, `MemPath` and `FileStat`
+  from `pathapi` instead of `pathlib_next`, and spell the URI path
+  `from uripath import URIPath; URIPath("tftp://host/file")` where it was
+  `pathlib_next.uri.UriPath`. `TFTPPath` and `TFTPURIPath` keep their names, arguments and
+  methods, and `URIPath("tftp://...")` finds `TFTPURIPath` without an import, now through the
+  `uripath.schemes` entry-point group.
+- **`unlink()` always raises `NotImplementedError`.** `unlink(missing_ok=True)` used to return
+  without doing anything, so that `copy(overwrite=True)` could clear its target. `pathapi` no
+  longer asks a target that cannot be removed to do that, and the write that follows still replaces
+  the file, so a caller of `copy()` changes nothing. A program that called `unlink(missing_ok=True)`
+  itself must stop, or ask `pathapi.protocols.supports(path, Remove)` first.
+- **`move()` from a TFTP path raises `NotImplementedError` before it copies anything.** It used to
+  copy the file and then raise because the source could not be deleted, which left a stray copy at
+  the destination. Check `supports(path, Remove)` to know in advance.
+- **`stat()` says when the server gave no size.** A server that does not send `tsize` (and a file
+  longer than one block) used to give `st_size == 0` as if it were known; the result now has
+  `size_known == False`, and `st_size` is still 0. A caller that needs the size reads the file or
+  uses a server that reports it.
+
+### Added
+
+- `pathapi.protocols.supports(path, Listing)` answers for the server: one `x-list` probe of its root
+  on the first question, kept for the life of the client, `False` for a server without the
+  extension. The classes implement `Stat`, `BinaryOpen`, `Listing`, `Identity` and `Copy`, and
+  `capabilities()` of either says so.
+
+### Fixed
+
+- **A failed or abandoned upload no longer replaces the server's file.** A `with` block over
+  `open("w")` that raised, a text write that could not be encoded (`write_text("\u00e9",
+  encoding="ascii")`) and a file collected unclosed all uploaded what had been written, even an
+  empty file. Each now sends nothing and the server keeps the file it had; a stream collected
+  unclosed emits one `ResourceWarning`. Closing a stream normally still uploads.
 
 ## [0.1.1] - 2026-10-14
 
