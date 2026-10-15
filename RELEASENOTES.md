@@ -3,6 +3,28 @@
 The detailed companion to [CHANGELOG.md](CHANGELOG.md): benchmark history,
 caveats and the evidence behind each release.
 
+## [0.2.0] - 2026-10-15
+
+`tftp.path` moves from `pathlib-next` to its successors, `pathapi` and `uripath` (published as
+`pathapi-uri`), which `pathlib-next` 0.9 cannot be installed beside. A MINOR release because the
+documented path API changed: the URI path is `uripath.URIPath("tftp://...")`, `unlink()` always
+raises, `move()` from a TFTP path refuses before copying, and `stat()` can say a size is unknown.
+It also fixes a failed or abandoned upload replacing the server's file. Nothing outside `tftp.path`
+changed.
+
+### How it was checked
+
+Measured on 2026-10-15 at commit `6c27e86` (the code of this release; the commits after it change
+the changelog, a docs page and the wheel smoke test), with pathapi 0.1.0, pathapi-uri 0.1.0,
+netimps 0.4.1, pktcap 0.1.1 and duho 0.7.4, each as published.
+
+- **Windows on ARM64:** 3,385 passed, 84 skipped, 2 expected failures on Python 3.14; 3,354 passed,
+  115 skipped, 2 expected failures on Python 3.9.
+- **Linux** (Fedora 44 under WSL2), Python 3.14 and 3.9: 3,216 passed, 97 skipped, 2 expected
+  failures.
+- **The hosted matrix**, the same 21 jobs as for 0.1.1, at `4f4d881`: green.
+- Not run for this release: the Intel macOS and FreeBSD hosts.
+
 ## [0.1.1] - 2026-10-14
 
 A dependency release: the `cli` extra requires `duho>=0.7.4,<0.8`. With it every error of a settings

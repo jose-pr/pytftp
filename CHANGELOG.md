@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] - 2026-10-15
+
 ### Changed
 
 - **`tftp.path` is built on `pathapi` and `uripath`.** The `path` extra installs
@@ -1112,7 +1116,8 @@ Old names are not kept as aliases.
 - Loopback throughput benchmark (`benchmarks/run.py`).
 - Licensed under MIT.
 
-[Unreleased]: https://github.com/jose-pr/pytftp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/jose-pr/pytftp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jose-pr/pytftp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/jose-pr/pytftp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jose-pr/pytftp/compare/v0.0.0...v0.1.0
 [0.0.0]: https://github.com/jose-pr/pytftp/releases/tag/v0.0.0
