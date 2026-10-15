@@ -9,7 +9,7 @@ TFTP moves whole files and nothing else, so reading, writing, ``stat()``
 (a size probe that transfers nothing), ``exists()`` and ``copy()`` work, and
 listing, deleting, renaming, ``move()`` from TFTP and directories raise
 ``NotImplementedError``. Reads and writes stream through a bounded buffer; a
-``with`` block over a write that raises abandons the upload.
+``with`` block over a write that raises, and a write never closed, abandon the upload.
 """
 
 from __future__ import annotations

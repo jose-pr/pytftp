@@ -12,8 +12,9 @@ from __future__ import annotations
 import errno
 import io
 import threading
-from types import TracebackType
-from typing import TYPE_CHECKING, Any, Callable, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+
+from pathapi.providers import DiscardOnError
 
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer, WriteableBuffer
@@ -216,28 +217,20 @@ def open_reader(client_factory: Callable[..., Any], filename: str, mode: str, pa
     return io.BufferedReader(_Reader(client_factory, filename, mode, path))
 
 
-class _BufferedUpload(io.BufferedWriter):
-    """The upload's buffered writer: leaving a ``with`` block by an exception abandons it."""
+class _BufferedUpload(DiscardOnError, io.BufferedWriter):
+    """The upload's buffered writer: it commits when closed, and a failed ``with`` block, a failed
+    text write or a collection before ``close()`` abandons it instead."""
 
-    def __init__(self, raw: _Writer) -> None:
-        super().__init__(raw)
-        self._upload = raw
+    raw: _Writer
 
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc: Optional[BaseException],
-        traceback: Optional[TracebackType],
-    ) -> None:
-        if exc_type is not None and not self.closed:
-            self._upload.abandon()
-        super().__exit__(exc_type, exc, traceback)
+    def discard(self) -> None:
+        self.raw.abandon()
 
 
 def open_writer(client_factory: Callable[..., Any], filename: str, mode: str, path: Any) -> io.BufferedWriter:
     """A buffered binary writer streaming an upload of ``filename``.
 
-    Closing completes the upload; leaving a ``with`` block by an exception
-    abandons it, and the server keeps what it had.
+    Closing completes the upload; leaving a ``with`` block by an exception, or
+    collecting the file unclosed, abandons it, and the server keeps what it had.
     """
     return _BufferedUpload(_Writer(client_factory, filename, mode, path))

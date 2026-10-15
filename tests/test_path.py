@@ -350,6 +350,68 @@ def test_a_copy_whose_source_fails_leaves_the_target_as_it_was(root, server, tmp
     assert _path_threads() == []
 
 
+# -- a text-mode write that fails, or is never closed, sends nothing ----------------------------
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+def test_a_text_with_block_that_raises_leaves_the_servers_file_as_it_was(root, server, kind):
+    (root / "keep.txt").write_bytes(b"the complete previous file")
+    before = sorted(os.listdir(root))
+    target = _targets(server)[kind]
+    for name in ("keep.txt", "fresh.txt"):
+        with pytest.raises(RuntimeError):
+            with target(name).open("w") as handle:
+                handle.write("PARTIAL")
+                raise RuntimeError("the producer failed")
+    assert _settled(root, before) == before
+    assert (root / "keep.txt").read_bytes() == b"the complete previous file"
+    assert _path_threads() == []
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+def test_a_text_write_that_cannot_be_encoded_leaves_the_servers_file_as_it_was(root, server, kind):
+    (root / "keep.txt").write_bytes(b"the complete previous file")
+    before = sorted(os.listdir(root))
+    target = _targets(server)[kind]
+    for name in ("keep.txt", "fresh.txt"):
+        with pytest.raises(UnicodeEncodeError):
+            target(name).write_text("é", encoding="ascii")
+    assert _settled(root, before) == before
+    assert (root / "keep.txt").read_bytes() == b"the complete previous file"
+    assert _path_threads() == []
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+@pytest.mark.parametrize("text", [False, True], ids=["binary", "text"])
+def test_a_file_collected_unclosed_is_discarded_with_one_resource_warning(root, server, kind, text):
+    import gc
+
+    (root / "keep.txt").write_bytes(b"the complete previous file")
+    before = sorted(os.listdir(root))
+    target = _targets(server)[kind]
+    for name in ("keep.txt", "fresh.txt"):
+        handle = target(name).open("w" if text else "wb")
+        handle.write("half" if text else b"half")
+        with pytest.warns(ResourceWarning) as caught:
+            del handle
+            gc.collect()
+        assert len([w for w in caught if issubclass(w.category, ResourceWarning)]) == 1
+    assert _settled(root, before) == before
+    assert (root / "keep.txt").read_bytes() == b"the complete previous file"
+    assert _path_threads() == []
+
+
+@pytest.mark.parametrize("kind", ["path", "uri"])
+def test_a_text_write_that_completes_still_commits(root, server, kind):
+    target = _targets(server)[kind]
+    with target("done.txt").open("w", newline="\n") as handle:
+        handle.write("all of it\n")
+    assert (root / "done.txt").read_bytes() == b"all of it\n"
+    target("again.txt").write_text("through write_text", newline="\n")
+    assert (root / "again.txt").read_bytes() == b"through write_text"
+    assert _path_threads() == []
+
+
 # -- copy(overwrite=True), unlink and move -------------------------------------------------
 
 

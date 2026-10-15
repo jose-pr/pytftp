@@ -57,10 +57,12 @@ Both support what TFTP can do, plus listing against a server speaking
   (not atomic). `a` and `+` modes raise `NotImplementedError`. `open()`
   returns only once the server has answered, so `FileNotFoundError`/
   `PermissionError` surface there. At most 1 MiB is buffered; an abandoned
-  read sends the server an ERROR. A `with` block over `open("wb")` that
-  raises abandons the upload the same way: the server discards it and keeps
-  the file it had (a failed `copy()` therefore leaves its target as it was);
-  one that ends normally commits.
+  read sends the server an ERROR. An upload that
+  fails before it is closed sends nothing: a `with` block over `open("w")` or
+  `open("wb")` that raises, a text write that cannot be encoded and a file
+  collected unclosed (with one `ResourceWarning`) abandon it the same way; the
+  server discards it and keeps the file it had (a failed `copy()` therefore
+  leaves its target as it was). Closing commits.
 - `read_bytes`, `read_text`, `write_bytes`, `write_text` (text newline
   handling is pathlib's), `copy()` to and from any pathapi path, and
   `move()` to one: `move()` from a TFTP path copies and then raises
