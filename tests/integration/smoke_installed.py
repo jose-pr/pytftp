@@ -100,6 +100,13 @@ def main(argv) -> int:
     path = run(sys.executable, "-c", "import tftp.path")
     if extras:
         assert path.returncode == 0, path.stderr
+        # The entry point alone registers the scheme: no import of tftp first.
+        scheme = run(
+            sys.executable,
+            "-c",
+            "import uripath; print(type(uripath.URIPath('tftp://127.0.0.1/boot/x')).__module__)",
+        )
+        assert scheme.returncode == 0 and scheme.stdout.strip() == "tftp.path._uri", scheme
     else:
         assert path.returncode != 0 and "needs the 'path' extra" in path.stderr, path.stderr
     print(
