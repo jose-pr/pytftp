@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib as _contextlib
-import errno as _errno
 import sys as _sys
 import typing as _ty
 
@@ -34,16 +33,12 @@ def error(text: str) -> None:
 
 
 def write_line(text: str) -> None:
-    """One result line on stdout, flushed; ``BrokenPipeError`` if nobody reads it any more.
+    """One result line on stdout, flushed, so that a reader that went away fails here.
 
-    A closed pipe is ``BrokenPipeError`` on POSIX and ``OSError(EINVAL)`` on Windows.
+    duho ends a run whose stdout is closed (``BrokenPipeError``, or ``OSError(EINVAL)`` on Windows) with a
+    silent status 1.
     """
-    try:
-        print(text, flush=True)
-    except OSError as exc:
-        if isinstance(exc, BrokenPipeError) or exc.errno in (_errno.EPIPE, _errno.EINVAL):
-            raise BrokenPipeError(_errno.EPIPE, "stdout is closed") from None
-        raise
+    print(text, flush=True)
 
 
 @_contextlib.contextmanager
