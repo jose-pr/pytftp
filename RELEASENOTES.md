@@ -3,6 +3,26 @@
 The detailed companion to [CHANGELOG.md](CHANGELOG.md): benchmark history,
 caveats and the evidence behind each release.
 
+## [0.2.1] - 2026-10-22
+
+A dependency release: the `cli` extra requires `duho>=0.7.8,<0.8`, and the command line runs through
+`duho.run` in place of its own handling of errors and a closed stdout. The statuses and the lines of
+every error are the ones of 0.2.0. Two things differ: `--help` answers when the settings file cannot be
+used, and Ctrl-C ends a command that does not stop on it itself with status 130 and no traceback.
+
+### How it was checked
+
+Measured on 2026-10-22 at the commit before this one, with netimps 0.4.1, pktcap 0.1.1 and duho 0.7.8,
+each as published. The same 47 command lines (statuses, stdout, stderr, with and without
+`DUHO_TRACEBACK`, a closed stdout) were run before and after the change; the only differences are the
+four `--help` runs with an unusable settings file.
+
+- **Windows on ARM64:** 3,388 passed, 84 skipped, 2 expected failures on Python 3.14; 3,357 passed, 115
+  skipped, 2 expected failures on Python 3.9.
+- **Linux** (Fedora 44 under WSL2), Python 3.14 and 3.9: 3,219 passed, 97 skipped, 2 expected
+  failures.
+- Not run for this release: the hosted matrix, the Intel macOS and FreeBSD hosts.
+
 ## [0.2.0] - 2026-10-15
 
 `tftp.path` moves from `pathlib-next` to its successors, `pathapi` and `uripath` (published as

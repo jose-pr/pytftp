@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.1] - 2026-10-22
+
 ### Changed
 
 - **The `cli` extra requires `duho>=0.7.8,<0.8`.** The command line runs through `duho.run`, which
@@ -1123,7 +1127,8 @@ Old names are not kept as aliases.
 - Loopback throughput benchmark (`benchmarks/run.py`).
 - Licensed under MIT.
 
-[Unreleased]: https://github.com/jose-pr/pytftp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jose-pr/pytftp/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/jose-pr/pytftp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jose-pr/pytftp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/jose-pr/pytftp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jose-pr/pytftp/compare/v0.0.0...v0.1.0
