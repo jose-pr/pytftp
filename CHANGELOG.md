@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **`--help` and `COMMAND --help` answer when the settings file cannot be used.** A file with an invalid
+  document, or one over the size limit, was refused before the help was printed; the refusal now comes
+  with the first run that needs the file.
+- **Ctrl-C ends a command that does not stop on it itself with status 130 and no traceback.**
 
 ## [0.2.0] - 2026-10-15
 

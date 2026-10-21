@@ -949,6 +949,18 @@ def test_the_logging_flags_work_before_the_subcommand(capsys):
     assert main(["-q", "get", "127.0.0.1", "f", "-b", "4"]) == 2
 
 
+def test_ctrl_c_is_status_130_and_says_nothing(monkeypatch, capsys):
+    from tftp.cli.serve import Serve
+
+    def interrupted(self):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(Serve, "_server", interrupted)
+    assert main(["serve", "."]) == 130
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err == ""
+
+
 def test_main_returns_an_int_for_every_outcome(root, make_server, tmp_path, capsys):
     server = make_server(root)
     status = main(["get", "127.0.0.1", "one.bin", str(tmp_path / "o"), "-p", _port(server)])

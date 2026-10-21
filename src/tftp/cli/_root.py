@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import errno as _errno
-import os as _os
 import sys as _sys
 import typing as _ty
 
-from duho import AUTO, Cli, ConfigArgs, DefaultsFormatter, LoggingArgs
-from duho import main as _duho_main
+from duho import AUTO, Cli, ConfigArgs, DefaultsFormatter, LoggingArgs, run
 from duho.config import user_path
+from duho.exceptions import ConfigError
 
 from .._extras import PKTCAP_LINE, have_pktcap
 from ._common import error
@@ -38,6 +36,31 @@ def _commands() -> _ty.List[_ty.Any]:
     return commands + [MissingCapture, MissingReplay]
 
 
+def _errors() -> _ty.Dict[type, int]:
+    """The exceptions a command ends with, and the status of each.
+
+    A ``ValueError`` out of the library is a caller error (an out-of-range ``--blksize``, an unknown mode, a
+    settings file that cannot be used): a usage error, status 2. An ``OSError`` is a file or a socket of a
+    command, or a hook that failed. Without pktcap, a capture format that needs the extra says so.
+    """
+    errors: _ty.Dict[type, int] = {ValueError: 2, OSError: 1}
+    if have_pktcap():
+        import pktcap
+
+        errors[pktcap.MissingExtraError] = 1
+    return errors
+
+
+def _report_error(message: str, code: int, exc: BaseException) -> None:
+    """One ``error: ...`` line on stderr; duho's own check of the settings file keeps the program name.
+
+    The check is the ``ConfigError`` duho raises itself, which names no file of its own: the readers' name the
+    file they were reading.
+    """
+    prefix = "%s: " % Pytftp._parsername_ if type(exc) is ConfigError and exc.path is None else ""
+    error("%serror: %s" % (prefix, message))
+
+
 class Pytftp(ConfigArgs, LoggingArgs, Cli):
     """TFTP client, server, relay, capture decoder and replay (RFC 1350, 2347-2349, 7440) for IPv4 and IPv6."""
 
@@ -54,44 +77,15 @@ class Pytftp(ConfigArgs, LoggingArgs, Cli):
     _mcp_ = False
     _help_formatter_ = DefaultsFormatter
     _subcommands_ = _commands()
-
-
-def _is_pktcap_extra(exc: ImportError) -> bool:
-    """Whether ``exc`` is pktcap's ``MissingExtraError``, the one import failure a command reports."""
-    if not have_pktcap():
-        return False
-    import pktcap
-
-    return isinstance(exc, pktcap.MissingExtraError)
-
-
-def _silence_stdout() -> None:
-    """Nobody reads stdout any more: point it at the null device so that the flush at exit does not fail again."""
-    try:
-        _os.dup2(_os.open(_os.devnull, _os.O_WRONLY), _sys.stdout.fileno())
-    except (OSError, ValueError):
-        pass
-
-
-def _stdout_closed(exc: OSError) -> bool:
-    """Whether ``exc`` is a write to a pipe its reader closed, which Windows reports as ``EINVAL``.
-
-    The test is that what stdout holds cannot be flushed either.
-    """
-    if exc.errno not in (_errno.EPIPE, _errno.EINVAL):
-        return False
-    try:
-        _sys.stdout.flush()
-    except (OSError, ValueError):
-        return True
-    return False
+    _errors_ = _errors()
+    _report_error_ = staticmethod(_report_error)
 
 
 def execute(argv: _ty.Optional[_ty.Sequence[str]]) -> int:
     """Run the command line and return its exit status.
 
-    A ``ValueError`` out of the library is a caller error (an out-of-range
-    ``--blksize``, an unknown mode) and becomes a usage error, status 2.
+    The parser ends with a ``SystemExit`` for ``--help``, ``--version`` and a usage error; everything else is
+    returned, a closed stdout and Ctrl-C included.
     """
     tokens = list(_sys.argv[1:] if argv is None else argv)
     # The parser would answer a capture option it does not know with a usage error before the
@@ -99,23 +93,4 @@ def execute(argv: _ty.Optional[_ty.Sequence[str]]) -> int:
     if command_word(tokens) in _NEEDS_PKTCAP and not have_pktcap():
         error(PKTCAP_LINE)
         return 1
-    try:
-        status = _duho_main(Pytftp, argv)
-    except ValueError as exc:
-        error("error: %s" % exc)
-        return 2
-    except BrokenPipeError:
-        _silence_stdout()
-        return 1
-    except OSError as exc:  # a file or a socket of a capture command; a hook that failed
-        if _stdout_closed(exc):
-            _silence_stdout()
-            return 1
-        error("error: %s" % exc)
-        return 1
-    except ImportError as exc:  # a capture format whose extra is missing
-        if not _is_pktcap_extra(exc):
-            raise
-        error("error: %s" % exc)
-        return 1
-    return 0 if status is None else int(status)
+    return run(Pytftp, argv, exit="parse")

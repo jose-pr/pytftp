@@ -69,6 +69,7 @@ $ pytftp -c pytftp.ini serve /srv/tftp
   for `max_sessions` in `[get]`), a `config` key, a document that is not valid, a file over 65,536 octets. A named file that does not exist is status 2 from `--config` and 1 from the
   variable. Without the `pktcap` extra a `[capture]` or `[replay]` table is refused with the line that names
   the extra.
+- **Help is not refused.** `--help` and `COMMAND --help` answer whatever the file holds.
 - **The command's options only.** The file sets what an option already sets; the `capture` and `replay`
   tables take pktcap's options too (`load`, `filter`, `format`, ...), and the plugin list may come from the
   file.
@@ -83,7 +84,9 @@ $ pytftp -c pytftp.ini serve /srv/tftp
   file or name failed (one `error: ...` line on stderr, with the characters a terminal would interpret
   escaped, and no traceback); **2** the invocation was wrong (a bad value, a missing or unrecognised
   capture file, a bad filter, an argument that would be ignored). A reader that closes stdout
-  (`pytftp capture f | head -1`) ends a printing command quietly with status 1.
+  (`pytftp capture f | head -1`) ends a printing command quietly with status 1, and Ctrl-C ends a command
+  that does not stop on it by itself (`serve`, `relay` and a live `capture` do) with status 130 and no
+  traceback.
 - A result goes to stdout and diagnostics to stderr. `get` and `put` print one line (`received N bytes
   in S s (...)` or `sent ...`), on stderr when `get HOST FILE -` writes the file to stdout; `-q` drops
   it. `ls` prints `type size time name` per entry.

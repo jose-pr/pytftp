@@ -368,6 +368,23 @@ def test_a_document_that_cannot_be_used_is_one_line_that_carries_none_of_its_tex
     assert MARKER not in err and stopped == []
 
 
+def test_help_is_answered_whatever_the_file_holds(capsys, tmp_path, stopped):
+    path = write(tmp_path, "a.ini", "[serve]\nport = 1\nthis is no line of an ini file\n")
+    for argv in (("-c", path, "--help"), ("-c", path, "serve", "--help")):
+        status, out, err = run(capsys, *argv)
+        assert status == 0 and out.startswith("usage: pytftp") and err == ""
+    assert run(capsys, "-c", path, "serve", str(tmp_path))[0] == 2
+
+
+def test_the_key_nothing_has_keeps_the_program_name_in_the_line_and_the_rest_do_not(
+    capsys, tmp_path, stopped
+):
+    typo = write(tmp_path, "typo.ini", "[serve]\nbogus = 1\n")
+    assert refused(capsys, "-c", typo, "serve", str(tmp_path)).startswith("pytftp: error: duho: config file ")
+    broken = write(tmp_path, "broken.ini", "[serve]\nthis is no line\n")
+    assert refused(capsys, "-c", broken, "serve", str(tmp_path)).startswith("error: duho: invalid INI ")
+
+
 @pytest.mark.skipif(not _toml_readable(), reason="no TOML reader (Python < 3.11 without tomli)")
 def test_a_malformed_toml_document_carries_none_of_its_text(capsys, tmp_path, stopped):
     path = write(tmp_path, "a.toml", "[serve]\nport = %s\n" % MARKER)

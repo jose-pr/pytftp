@@ -53,7 +53,8 @@ served as a tool.
   no traceback); 2 the invocation was wrong (a bad value, a missing or
   unrecognised capture file, a bad filter, an argument that would be ignored).
   A reader that closes stdout (`pytftp capture -i f | head -1`) ends a printing
-  command quietly with status 1. `capture` and `replay` end as pktcap's commands
+  command quietly with status 1. Ctrl-C ends a command that does not stop on it itself with status 130
+  and no traceback. `capture` and `replay` end as pktcap's commands
   do: a file that cannot be opened, an interface that cannot be captured on and a
   destination that does not resolve are status 1 (not 2), a file that is no capture is 2.
 - **Output**: a result goes to stdout and diagnostics to stderr. `get` and `put`
@@ -178,6 +179,7 @@ format = json
   `config` key, an invalid document, a file over 65,536 octets, and without the `pktcap`
   extra a `[capture]` or `[replay]` table (the line names the extra). A named file that does not exist is
   status 2 from `--config` and 1 from the variable.
+- **Help is not refused**: `--help` and `COMMAND --help` answer whatever the file holds.
 - **The tables of `capture` and `replay`** take pktcap's options too (`load`, `filter`, `format`, ...); the
   plugin list may come from the file, the hook only from the command line. A tool call reads no file: the
   command is not served.
