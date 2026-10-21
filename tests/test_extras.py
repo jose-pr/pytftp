@@ -171,5 +171,6 @@ def test_the_manifest_requires_netimps_alone_and_pktcap_is_an_extra_dev_installs
     extras = dict(re.findall(r"^(\w+) = \[(.*?)\]", text.split("[project.optional-dependencies]")[1], re.M))
     assert re.findall(r'"([A-Za-z][\w.-]*)', extras["pktcap"]) == ["pktcap"]
     assert "pktcap" in extras["dev"].replace("tftp[", "").split("]")[0].split(",")
-    # The range of duho is the one pktcap's own `cli` extra declares, so the two commands build together.
-    assert "duho>=0.7.4,<0.8" in extras["cli"]
+    # The floor is the release whose `run` ends a closed stdout and reports the settings file's errors; it
+    # lies inside the range pktcap's own `cli` extra declares (`>=0.7.4,<0.8`), so the two commands build together.
+    assert "duho>=0.7.8,<0.8" in extras["cli"]

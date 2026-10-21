@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The `cli` extra requires `duho>=0.7.8,<0.8`.** The command line runs through `duho.run`, which
+  ends a closed stdout and reports an error of the settings file the way it reports a command's.
 - **`--help` and `COMMAND --help` answer when the settings file cannot be used.** A file with an invalid
   document, or one over the size limit, was refused before the help was printed; the refusal now comes
   with the first run that needs the file.

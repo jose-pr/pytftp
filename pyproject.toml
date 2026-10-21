@@ -38,7 +38,7 @@ dependencies = ["netimps>=0.4.1,<0.5"]
 
 [project.optional-dependencies]
 # The CLI is optional: importing tftp never requires duho.
-cli = ["duho>=0.7.4,<0.8"]
+cli = ["duho>=0.7.8,<0.8"]
 # Captures: pktcap reads pcap and pcapng files, dissects their frames (IP
 # fragments reassembled), writes pcap and pcapng, filters and captures live on
 # Linux; `pytftp capture` and `pytftp replay` are its commands, and --pcap on
